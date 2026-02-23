@@ -59,6 +59,9 @@ type Task struct {
 	// Params are the parameters to pass to the module.
 	Params map[string]any `yaml:"-"`
 
+	// Include is a path/URL to an external tasks file to include.
+	Include string `yaml:"-"`
+
 	// RolePath is the path to the role this task belongs to (empty for play tasks).
 	RolePath string `yaml:"-"`
 
@@ -211,7 +214,7 @@ func (p *Play) Validate() error {
 
 // Validate checks the task for common errors.
 func (t *Task) Validate() error {
-	if t.Module == "" {
+	if t.Module == "" && t.Include == "" {
 		return fmt.Errorf("task has no module specified")
 	}
 

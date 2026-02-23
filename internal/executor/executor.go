@@ -16,6 +16,7 @@ import (
 	"github.com/eugenetaranov/bolt/internal/module"
 	"github.com/eugenetaranov/bolt/internal/output"
 	"github.com/eugenetaranov/bolt/internal/playbook"
+	"github.com/eugenetaranov/bolt/internal/source"
 	"github.com/eugenetaranov/bolt/pkg/facts"
 )
 
@@ -285,6 +286,17 @@ func (e *Executor) runPlayOnHost(ctx context.Context, play *playbook.Play, stats
 
 	// --- Apply phase ---
 	for _, task := range allTasks {
+		// Handle include directive
+		if task.Include != "" {
+			if err := e.runInclude(ctx, pctx, task, stats); err != nil {
+				if !task.IgnoreErrors {
+					return err
+				}
+				e.Output.TaskResult(task.String(), "failed (ignored)", false, err.Error())
+			}
+			continue
+		}
+
 		stats.Tasks++
 
 		taskResult, err := e.runTask(ctx, pctx, task)
@@ -508,6 +520,83 @@ func (e *Executor) runHandlersExpanded(ctx context.Context, pctx *PlayContext, s
 	return nil
 }
 
+// runInclude handles an include directive during the apply phase.
+func (e *Executor) runInclude(ctx context.Context, pctx *PlayContext, task *playbook.Task, stats *Stats) error {
+	taskName := task.String()
+
+	// Check 'when' condition
+	if task.When != "" {
+		shouldRun, err := e.evaluateCondition(task.When, pctx)
+		if err != nil {
+			return fmt.Errorf("failed to evaluate 'when' condition: %w", err)
+		}
+		if !shouldRun {
+			e.Output.TaskResult(taskName, "skipped", false, "when condition not met")
+			stats.Tasks++
+			stats.Skipped++
+			return nil
+		}
+	}
+
+	// Interpolate variables in the include path
+	includePath, err := e.interpolateString(task.Include, pctx)
+	if err != nil {
+		return fmt.Errorf("failed to interpolate include path: %w", err)
+	}
+	includeStr, ok := includePath.(string)
+	if !ok {
+		return fmt.Errorf("include path must be a string, got %T", includePath)
+	}
+
+	e.Output.TaskStart(taskName, "include")
+
+	// Resolve and fetch the source
+	src, err := source.Resolve(includeStr)
+	if err != nil {
+		return fmt.Errorf("failed to resolve include source %q: %w", includeStr, err)
+	}
+
+	localPath, cleanup, err := src.Fetch(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to fetch include source %q: %w", includeStr, err)
+	}
+	defer cleanup()
+
+	// Parse the included tasks file
+	includedTasks, err := playbook.LoadTasksFile(localPath)
+	if err != nil {
+		return fmt.Errorf("failed to parse included tasks from %q: %w", includeStr, err)
+	}
+
+	e.Output.TaskResult(taskName, "ok", false, fmt.Sprintf("included %d tasks from %s", len(includedTasks), includeStr))
+
+	// Execute each included task inline
+	for _, inclTask := range includedTasks {
+		stats.Tasks++
+
+		taskResult, err := e.runTask(ctx, pctx, inclTask)
+		if err != nil {
+			stats.Failed++
+			if !inclTask.IgnoreErrors {
+				return err
+			}
+			e.Output.TaskResult(inclTask.String(), "failed (ignored)", false, err.Error())
+			continue
+		}
+
+		switch taskResult.Status {
+		case "ok":
+			stats.OK++
+		case "changed":
+			stats.Changed++
+		case "skipped":
+			stats.Skipped++
+		}
+	}
+
+	return nil
+}
+
 // planTasks evaluates tasks without executing them and returns a plan.
 func (e *Executor) planTasks(ctx context.Context, pctx *PlayContext, tasks []*playbook.Task) []output.PlannedTask {
 	var plan []output.PlannedTask
@@ -520,6 +609,30 @@ func (e *Executor) planTasks(ctx context.Context, pctx *PlayContext, tasks []*pl
 	}
 
 	for _, task := range tasks {
+		// Handle include tasks in plan phase
+		if task.Include != "" {
+			pt := output.PlannedTask{
+				Name:   task.String(),
+				Module: "include",
+				Status: "will_run",
+				Params: map[string]any{"source": task.Include},
+			}
+			if task.When != "" {
+				if e.conditionReferencesRegistered(task.When, registeredNames) {
+					pt.Status = "conditional"
+					pt.Reason = task.When
+				} else {
+					shouldRun, err := e.evaluateCondition(task.When, pctx)
+					if err != nil || !shouldRun {
+						pt.Status = "will_skip"
+						pt.Reason = "when: " + task.When
+					}
+				}
+			}
+			plan = append(plan, pt)
+			continue
+		}
+
 		pt := output.PlannedTask{
 			Name:   task.String(),
 			Module: task.Module,

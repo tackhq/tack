@@ -74,18 +74,18 @@ func LoadRole(name, rolesDir string) (*Role, error) {
 // loadRoleTasks loads tasks from tasks/main.yaml in the role directory.
 func loadRoleTasks(rolePath string) ([]*Task, error) {
 	tasksFile := filepath.Join(rolePath, "tasks", "main.yaml")
-	return loadTasksFile(tasksFile)
+	return LoadTasksFile(tasksFile)
 }
 
 // loadRoleHandlers loads handlers from handlers/main.yaml in the role directory.
 func loadRoleHandlers(rolePath string) ([]*Task, error) {
 	handlersFile := filepath.Join(rolePath, "handlers", "main.yaml")
-	return loadTasksFile(handlersFile)
+	return LoadTasksFile(handlersFile)
 }
 
-// loadTasksFile loads a list of tasks from a YAML file.
+// LoadTasksFile loads a list of tasks from a YAML file.
 // Returns empty slice if file doesn't exist.
-func loadTasksFile(path string) ([]*Task, error) {
+func LoadTasksFile(path string) ([]*Task, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {

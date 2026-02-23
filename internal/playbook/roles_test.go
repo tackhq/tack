@@ -218,6 +218,37 @@ func TestExpandRoleHandlers(t *testing.T) {
 	assert.Equal(t, "Reload app", expanded[1].Name)
 }
 
+func TestLoadTasksFile(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a tasks file
+	tasksContent := `- name: Install package
+  command:
+    cmd: apt-get install -y curl
+- name: Create directory
+  file:
+    path: /tmp/mydir
+    state: directory
+`
+	tasksFile := filepath.Join(tmpDir, "tasks.yaml")
+	require.NoError(t, os.WriteFile(tasksFile, []byte(tasksContent), 0644))
+
+	tasks, err := LoadTasksFile(tasksFile)
+	require.NoError(t, err)
+	require.Len(t, tasks, 2)
+
+	assert.Equal(t, "Install package", tasks[0].Name)
+	assert.Equal(t, "command", tasks[0].Module)
+	assert.Equal(t, "Create directory", tasks[1].Name)
+	assert.Equal(t, "file", tasks[1].Module)
+}
+
+func TestLoadTasksFileNotFound(t *testing.T) {
+	tasks, err := LoadTasksFile("/nonexistent/tasks.yaml")
+	require.NoError(t, err)
+	assert.Nil(t, tasks)
+}
+
 func TestParsePlayWithRoles(t *testing.T) {
 	yamlContent := `
 name: Test Play
