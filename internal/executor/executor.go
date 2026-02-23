@@ -39,6 +39,9 @@ type Executor struct {
 	// DryRun only shows what would be done without making changes.
 	DryRun bool
 
+	// AutoApprove skips the interactive approval prompt.
+	AutoApprove bool
+
 	// Debug enables detailed output.
 	Debug bool
 
@@ -260,7 +263,27 @@ func (e *Executor) runPlayOnHost(ctx context.Context, play *playbook.Play, stats
 	allTasks := playbook.ExpandRoleTasks(roles, play.Tasks)
 	allHandlers := playbook.ExpandRoleHandlers(roles, play.Handlers)
 
-	// Execute tasks
+	// --- Plan phase ---
+	planned := e.planTasks(ctx, pctx, allTasks)
+	if len(allHandlers) > 0 {
+		planned = append(planned, e.planHandlers(allHandlers)...)
+	}
+	e.Output.DisplayPlan(planned, e.DryRun)
+
+	// Dry run stops after showing the plan
+	if e.DryRun {
+		return nil
+	}
+
+	// Prompt for approval unless auto-approved
+	if !e.AutoApprove {
+		if !e.Output.PromptApproval() {
+			e.Output.Info("Apply cancelled.")
+			return fmt.Errorf("apply cancelled by user")
+		}
+	}
+
+	// --- Apply phase ---
 	for _, task := range allTasks {
 		stats.Tasks++
 
@@ -483,6 +506,129 @@ func (e *Executor) runHandlersExpanded(ctx context.Context, pctx *PlayContext, s
 	}
 
 	return nil
+}
+
+// planTasks evaluates tasks without executing them and returns a plan.
+func (e *Executor) planTasks(ctx context.Context, pctx *PlayContext, tasks []*playbook.Task) []output.PlannedTask {
+	var plan []output.PlannedTask
+
+	// Track which variable names are registered by preceding tasks,
+	// so we can detect conditions that depend on runtime results.
+	registeredNames := make(map[string]bool)
+	for k := range pctx.Registered {
+		registeredNames[k] = true
+	}
+
+	for _, task := range tasks {
+		pt := output.PlannedTask{
+			Name:   task.String(),
+			Module: task.Module,
+		}
+
+		if len(task.Loop) > 0 {
+			pt.LoopCount = len(task.Loop)
+		}
+
+		if task.When != "" {
+			// Check if the condition references a registered variable
+			if e.conditionReferencesRegistered(task.When, registeredNames) {
+				pt.Status = "conditional"
+				pt.Reason = task.When
+			} else {
+				shouldRun, err := e.evaluateCondition(task.When, pctx)
+				if err != nil || !shouldRun {
+					pt.Status = "will_skip"
+					pt.Reason = "when: " + task.When
+				} else {
+					pt.Status = "will_run"
+				}
+			}
+		} else {
+			pt.Status = "will_run"
+		}
+
+		// Resolve params for plan display
+		taskCopy := *task
+		playbook.ExpandShorthand(&taskCopy)
+		resolved, resolveErr := e.interpolateParams(taskCopy.Params, pctx)
+		if resolveErr == nil {
+			// Filter out internal params for display
+			displayParams := make(map[string]any, len(resolved))
+			for k, v := range resolved {
+				if !strings.HasPrefix(k, "_") {
+					displayParams[k] = v
+				}
+			}
+			pt.Params = displayParams
+		}
+
+		// Attempt check for tasks that will run
+		if pt.Status == "will_run" && resolveErr == nil && pctx.Connector != nil {
+			mod := module.Get(task.Module)
+			if checker, ok := mod.(module.Checker); ok {
+				// Inject internal params needed by template/copy
+				checkParams := make(map[string]any, len(resolved))
+				for k, v := range resolved {
+					checkParams[k] = v
+				}
+				if task.RolePath != "" {
+					checkParams["_role_path"] = task.RolePath
+				}
+				if task.Module == "template" {
+					checkParams["_template_vars"] = pctx.Vars
+				}
+
+				cr, err := checker.Check(ctx, pctx.Connector, checkParams)
+				if err == nil && cr != nil {
+					if cr.Uncertain {
+						pt.Status = "always_runs"
+						pt.Reason = cr.Message
+					} else if cr.WouldChange {
+						pt.Status = "will_change"
+						pt.Reason = cr.Message
+					} else {
+						pt.Status = "no_change"
+						pt.Reason = cr.Message
+					}
+				}
+				// On error: silently fall back to "will_run"
+			}
+		}
+
+		// Track registered variable for subsequent tasks
+		if task.Register != "" {
+			registeredNames[task.Register] = true
+		}
+
+		plan = append(plan, pt)
+	}
+
+	return plan
+}
+
+// conditionReferencesRegistered checks whether a when condition references
+// any variable name that was (or will be) populated by a register directive.
+func (e *Executor) conditionReferencesRegistered(condition string, registered map[string]bool) bool {
+	for name := range registered {
+		if strings.Contains(condition, name) {
+			return true
+		}
+	}
+	return false
+}
+
+// planHandlers produces plan entries for notifiable handlers.
+func (e *Executor) planHandlers(handlers []*playbook.Task) []output.PlannedTask {
+	var plan []output.PlannedTask
+	for _, h := range handlers {
+		plan = append(plan, output.PlannedTask{
+			Name:   h.String(),
+			Module: h.Module,
+			Status: "conditional",
+			Reason: "notified",
+		})
+	}
+	return plan
 }
 
 // getConnector returns a connector for the play targeting a specific host.

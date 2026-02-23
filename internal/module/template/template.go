@@ -342,5 +342,108 @@ func getMap(params map[string]any, key string) map[string]any {
 	return m
 }
 
+// checkAttributes checks whether file attributes differ from desired values without modifying them.
+func checkAttributes(ctx context.Context, conn connector.Connector, path, mode, owner, group string) (bool, error) {
+	// Use stat to get file attributes in a portable way
+	cmd := fmt.Sprintf(`stat -c '%%a %%U %%G' %[1]s 2>/dev/null || stat -f '%%Lp %%Su %%Sg' %[1]s`, shellQuote(path))
+
+	result, err := conn.Execute(ctx, cmd)
+	if err != nil {
+		return false, err
+	}
+	if result.ExitCode != 0 {
+		return false, fmt.Errorf("stat failed: %s", result.Stderr)
+	}
+
+	parts := strings.Fields(strings.TrimSpace(result.Stdout))
+	if len(parts) < 3 {
+		return false, fmt.Errorf("unexpected stat output")
+	}
+
+	currentMode := parts[0]
+	if len(currentMode) < 4 {
+		currentMode = strings.Repeat("0", 4-len(currentMode)) + currentMode
+	}
+	currentOwner := parts[1]
+	currentGroup := parts[2]
+
+	if mode != "" && currentMode != mode {
+		return true, nil
+	}
+	if owner != "" && currentOwner != owner {
+		return true, nil
+	}
+	if group != "" && currentGroup != group {
+		return true, nil
+	}
+	return false, nil
+}
+
+// Check determines whether the template module would make changes without applying them.
+func (m *Module) Check(ctx context.Context, conn connector.Connector, params map[string]any) (*module.CheckResult, error) {
+	src, err := requireString(params, "src")
+	if err != nil {
+		return nil, err
+	}
+
+	dest, err := requireString(params, "dest")
+	if err != nil {
+		return nil, err
+	}
+
+	mode := getString(params, "mode", "0644")
+	owner := getString(params, "owner", "")
+	group := getString(params, "group", "")
+	templateVars := getMap(params, "_template_vars")
+
+	templatePath := src
+	if !filepath.IsAbs(src) {
+		if rolePath := getString(params, "_role_path", ""); rolePath != "" {
+			roleTemplatePath := filepath.Join(rolePath, "templates", src)
+			if _, err := os.Stat(roleTemplatePath); err == nil {
+				templatePath = roleTemplatePath
+			}
+		}
+	}
+
+	templateContent, err := os.ReadFile(templatePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read template file '%s': %w", templatePath, err)
+	}
+
+	renderedContent, err := renderTemplate(src, string(templateContent), templateVars)
+	if err != nil {
+		return nil, fmt.Errorf("failed to render template: %w", err)
+	}
+
+	srcChecksum := checksum(renderedContent)
+
+	destExists, destChecksum, err := getRemoteChecksum(ctx, conn, dest)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check destination: %w", err)
+	}
+
+	if !destExists {
+		return module.WouldChange("file does not exist"), nil
+	}
+
+	if srcChecksum != destChecksum {
+		return module.WouldChange("content differs"), nil
+	}
+
+	attrDiffer, err := checkAttributes(ctx, conn, dest, mode, owner, group)
+	if err != nil {
+		return nil, err
+	}
+	if attrDiffer {
+		return module.WouldChange("attributes differ"), nil
+	}
+
+	return module.NoChange("template already rendered with correct content and attributes"), nil
+}
+
 // Ensure Module implements the module.Module interface.
 var _ module.Module = (*Module)(nil)
+
+// Ensure Module implements the module.Checker interface.
+var _ module.Checker = (*Module)(nil)

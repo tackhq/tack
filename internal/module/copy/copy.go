@@ -398,5 +398,99 @@ func getBool(params map[string]any, key string, defaultValue bool) bool {
 	return b
 }
 
+// checkAttributes checks whether file attributes differ from desired values without modifying them.
+func checkAttributes(ctx context.Context, conn connector.Connector, path, mode, owner, group string) (bool, error) {
+	currentMode, currentOwner, currentGroup, err := getFileAttributes(ctx, conn, path)
+	if err != nil {
+		return false, fmt.Errorf("failed to get file attributes: %w", err)
+	}
+
+	if mode != "" && currentMode != mode {
+		return true, nil
+	}
+	if owner != "" && currentOwner != owner {
+		return true, nil
+	}
+	if group != "" && currentGroup != group {
+		return true, nil
+	}
+	return false, nil
+}
+
+// Check determines whether the copy module would make changes without applying them.
+func (m *Module) Check(ctx context.Context, conn connector.Connector, params map[string]any) (*module.CheckResult, error) {
+	dest, err := requireString(params, "dest")
+	if err != nil {
+		return nil, err
+	}
+
+	src := getString(params, "src", "")
+	content := getString(params, "content", "")
+	mode := getString(params, "mode", "0644")
+	owner := getString(params, "owner", "")
+	group := getString(params, "group", "")
+	force := getBool(params, "force", true)
+
+	if src == "" && content == "" {
+		return nil, fmt.Errorf("either 'src' or 'content' parameter is required")
+	}
+	if src != "" && content != "" {
+		return nil, fmt.Errorf("'src' and 'content' are mutually exclusive")
+	}
+
+	var srcContent []byte
+	if src != "" {
+		srcPath := src
+		if !filepath.IsAbs(src) {
+			if rolePath := getString(params, "_role_path", ""); rolePath != "" {
+				roleFilePath := filepath.Join(rolePath, "files", src)
+				if _, err := os.Stat(roleFilePath); err == nil {
+					srcPath = roleFilePath
+				}
+			}
+		}
+		data, err := os.ReadFile(srcPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read source file '%s': %w", srcPath, err)
+		}
+		srcContent = data
+	} else {
+		srcContent = []byte(content)
+	}
+
+	srcChecksum := checksum(srcContent)
+
+	destExists, destChecksum, err := getRemoteChecksum(ctx, conn, dest)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check destination: %w", err)
+	}
+
+	if !destExists {
+		return module.WouldChange("file does not exist"), nil
+	}
+
+	if destExists && !force {
+		return module.NoChange("destination exists and force=false"), nil
+	}
+
+	if srcChecksum != destChecksum {
+		return module.WouldChange("content differs"), nil
+	}
+
+	// Content matches, check attributes
+	attrDiffer, err := checkAttributes(ctx, conn, dest, mode, owner, group)
+	if err != nil {
+		return nil, err
+	}
+	if attrDiffer {
+		return module.WouldChange("attributes differ"), nil
+	}
+
+	return module.NoChange("file already exists with correct content and attributes"), nil
+}
+
 // Ensure Module implements the module.Module interface.
 var _ module.Module = (*Module)(nil)
+
+// Ensure Module implements the module.Checker interface.
+var _ module.Checker = (*Module)(nil)

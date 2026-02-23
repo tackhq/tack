@@ -34,9 +34,10 @@ var (
 
 // Global flags
 var (
-	debug   bool
-	dryRun  bool
-	noColor bool
+	debug       bool
+	dryRun      bool
+	noColor     bool
+	autoApprove bool
 )
 
 func main() {
@@ -89,8 +90,13 @@ Multiple -c flags target multiple hosts:
 
 Explicit flags (--ssh-user, --ssh-port, etc.) override URI-derived values.
 
+By default, bolt shows a plan of what will run and prompts for
+confirmation before applying. Use --auto-approve to skip the prompt
+(useful for CI/scripting), or --dry-run to show the plan without applying.
+
 Examples:
   bolt run setup.yaml
+  bolt run setup.yaml --auto-approve
   bolt run setup.yaml --debug
   bolt run setup.yaml --dry-run
   bolt run setup.yaml -c ssh://deploy@web1:2222
@@ -120,6 +126,7 @@ func init() {
 	_ = sshPassFlag
 	runCmd.Flags().Lookup("ssh-password").NoOptDefVal = ""
 	runCmd.Flags().Bool("ssh-insecure", false, "Skip SSH host key verification")
+	runCmd.Flags().BoolVar(&autoApprove, "auto-approve", false, "Skip interactive approval prompt (for CI/scripting)")
 }
 
 func runPlaybook(cmd *cobra.Command, args []string) error {
@@ -146,6 +153,7 @@ func runPlaybook(cmd *cobra.Command, args []string) error {
 	exec := executor.New()
 	exec.Debug = debug
 	exec.DryRun = dryRun
+	exec.AutoApprove = autoApprove
 	exec.Overrides = overrides
 	exec.Output.SetColor(!noColor)
 	exec.Output.SetDebug(debug)

@@ -514,5 +514,84 @@ func getInt(params map[string]any, key string, defaultValue int) int {
 	return defaultValue
 }
 
+// Check determines whether the apt module would make changes without applying them.
+func (m *Module) Check(ctx context.Context, conn connector.Connector, params map[string]any) (*module.CheckResult, error) {
+	if err := checkApt(ctx, conn); err != nil {
+		return nil, err
+	}
+
+	stateStr := getString(params, "state", "present")
+	state := State(stateStr)
+	updateCache := getBool(params, "update_cache", false)
+	upgrade := getString(params, "upgrade", "none")
+
+	// update_cache and upgrade can't be cheaply predicted
+	if updateCache {
+		return module.UncertainChange("update_cache always runs"), nil
+	}
+	if upgrade != "none" {
+		return module.UncertainChange("upgrade always runs"), nil
+	}
+
+	names := getPackageNames(params)
+	if len(names) == 0 {
+		return module.NoChange("no packages specified"), nil
+	}
+
+	pkgStates, err := getPackageStates(ctx, conn, names)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get package states: %w", err)
+	}
+
+	var toInstall, toRemove, toUpgrade, toPurge []string
+
+	for _, name := range names {
+		pkgState := pkgStates[name]
+		switch state {
+		case StatePresent:
+			if !pkgState.Installed {
+				toInstall = append(toInstall, name)
+			}
+		case StateAbsent:
+			if pkgState.Installed {
+				toRemove = append(toRemove, name)
+			}
+		case StatePurged:
+			if pkgState.Installed || pkgState.ConfigFiles {
+				toPurge = append(toPurge, name)
+			}
+		case StateLatest:
+			if !pkgState.Installed {
+				toInstall = append(toInstall, name)
+			} else if pkgState.Upgradable {
+				toUpgrade = append(toUpgrade, name)
+			}
+		}
+	}
+
+	var parts []string
+	if len(toInstall) > 0 {
+		parts = append(parts, fmt.Sprintf("install: %s", strings.Join(toInstall, ", ")))
+	}
+	if len(toRemove) > 0 {
+		parts = append(parts, fmt.Sprintf("remove: %s", strings.Join(toRemove, ", ")))
+	}
+	if len(toPurge) > 0 {
+		parts = append(parts, fmt.Sprintf("purge: %s", strings.Join(toPurge, ", ")))
+	}
+	if len(toUpgrade) > 0 {
+		parts = append(parts, fmt.Sprintf("upgrade: %s", strings.Join(toUpgrade, ", ")))
+	}
+
+	if len(parts) > 0 {
+		return module.WouldChange("would " + strings.Join(parts, "; ")), nil
+	}
+
+	return module.NoChange("packages already in desired state"), nil
+}
+
 // Ensure Module implements the module.Module interface.
 var _ module.Module = (*Module)(nil)
+
+// Ensure Module implements the module.Checker interface.
+var _ module.Checker = (*Module)(nil)
