@@ -228,12 +228,18 @@ func parseRawTask(raw map[string]any) (*Task, error) {
 
 	// Parse loop (can be "loop" or "with_items")
 	if loop, ok := raw["loop"]; ok {
-		if items, ok := loop.([]any); ok {
-			task.Loop = items
+		switch v := loop.(type) {
+		case []any:
+			task.Loop = v
+		case string:
+			task.LoopExpr = v
 		}
 	} else if loop, ok := raw["with_items"]; ok {
-		if items, ok := loop.([]any); ok {
-			task.Loop = items
+		switch v := loop.(type) {
+		case []any:
+			task.Loop = v
+		case string:
+			task.LoopExpr = v
 		}
 	}
 

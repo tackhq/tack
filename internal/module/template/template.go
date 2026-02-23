@@ -140,8 +140,7 @@ func (m *Module) Run(ctx context.Context, conn connector.Connector, params map[s
 
 // renderTemplate renders a Go template with the given variables.
 func renderTemplate(name, content string, vars map[string]any) ([]byte, error) {
-	// Create template with custom delimiters to match {{ }} syntax
-	// and add useful functions
+	// Create template with useful functions
 	tmpl := template.New(name).Funcs(template.FuncMap{
 		"default": func(def, val any) any {
 			if val == nil || val == "" {
