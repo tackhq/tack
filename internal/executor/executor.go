@@ -403,6 +403,16 @@ func (e *Executor) runTask(ctx context.Context, pctx *PlayContext, task *playboo
 		}
 	}
 
+	// Resolve loop expression (e.g. "{{ windmill_files }}") to a concrete list
+	if task.LoopExpr != "" && len(task.Loop) == 0 {
+		resolved, err := e.interpolateString(task.LoopExpr, pctx)
+		if err == nil {
+			if items, ok := resolved.([]any); ok {
+				task.Loop = items
+			}
+		}
+	}
+
 	// Handle loops
 	if len(task.Loop) > 0 {
 		return e.runTaskLoop(ctx, pctx, task)
@@ -687,6 +697,16 @@ func (e *Executor) planTasks(ctx context.Context, pctx *PlayContext, tasks []*pl
 			Module: task.Module,
 		}
 
+		// Resolve loop expression for plan display
+		if task.LoopExpr != "" && len(task.Loop) == 0 {
+			resolved, err := e.interpolateString(task.LoopExpr, pctx)
+			if err == nil {
+				if items, ok := resolved.([]any); ok {
+					task.Loop = items
+				}
+			}
+		}
+
 		if len(task.Loop) > 0 {
 			pt.LoopCount = len(task.Loop)
 		}
@@ -707,6 +727,14 @@ func (e *Executor) planTasks(ctx context.Context, pctx *PlayContext, tasks []*pl
 			}
 		} else {
 			pt.Status = "will_run"
+		}
+
+		// For looped tasks, temporarily set the loop variable to the first item
+		// so that param interpolation and checks produce meaningful results.
+		if len(task.Loop) > 0 {
+			loopVar := task.GetLoopVar()
+			pctx.Vars[loopVar] = task.Loop[0]
+			// Clean up after this iteration (deferred cleanup at end of loop body)
 		}
 
 		// Resolve params for plan display
@@ -772,6 +800,11 @@ func (e *Executor) planTasks(ctx context.Context, pctx *PlayContext, tasks []*pl
 					pctx.Connector.SetSudo(playSudo, sudoPass)
 				}
 			}
+		}
+
+		// Clean up loop variable
+		if len(task.Loop) > 0 {
+			delete(pctx.Vars, task.GetLoopVar())
 		}
 
 		// Track registered variable for subsequent tasks

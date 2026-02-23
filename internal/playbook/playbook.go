@@ -74,6 +74,9 @@ type Task struct {
 	// Loop iterates the task over a list of items.
 	Loop []any `yaml:"-"`
 
+	// LoopExpr is a variable reference (e.g. "{{ windmill_files }}") resolved at runtime.
+	LoopExpr string `yaml:"-"`
+
 	// LoopVar is the variable name for the current item (default: "item").
 	LoopVar string `yaml:"loop_var"`
 
