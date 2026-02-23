@@ -174,13 +174,14 @@ func (m *Module) Run(ctx context.Context, conn connector.Connector, params map[s
 
 // fileInfo holds information about a path.
 type fileInfo struct {
-	Exists  bool
-	IsDir   bool
-	IsLink  bool
-	Mode    string
-	Owner   string
-	Group   string
-	LinkDst string
+	Exists    bool
+	IsDir     bool
+	IsLink    bool
+	Mode      string
+	OctalMode string
+	Owner     string
+	Group     string
+	LinkDst   string
 }
 
 // getFileInfo retrieves information about a path.
@@ -194,8 +195,10 @@ func getFileInfo(ctx context.Context, conn connector.Connector, path string) (*f
 		linktarget=""
 		[ -L %[1]s ] && linktarget=$(readlink %[1]s)
 		if stat -c "%%A" /dev/null >/dev/null 2>&1; then
+			stat -c "%%a" %[1]s
 			stat -c "%%A:%%U:%%G" %[1]s
 		else
+			stat -f "%%OLp" %[1]s
 			stat -f "%%Sp:%%Su:%%Sg" %[1]s
 		fi
 		echo "$type:$linktarget"
@@ -217,8 +220,13 @@ func getFileInfo(ctx context.Context, conn connector.Connector, path string) (*f
 	info := &fileInfo{Exists: true}
 
 	if len(lines) >= 1 {
+		// Parse octal mode line (e.g., "755")
+		info.OctalMode = strings.TrimSpace(lines[0])
+	}
+
+	if len(lines) >= 2 {
 		// Parse permissions line (e.g., "drwxr-xr-x:alice:staff" or "-rw-r--r--:alice:staff")
-		parts := strings.Split(lines[0], ":")
+		parts := strings.Split(lines[1], ":")
 		if len(parts) >= 3 {
 			info.Mode = parts[0]
 			info.Owner = parts[1]
@@ -226,9 +234,9 @@ func getFileInfo(ctx context.Context, conn connector.Connector, path string) (*f
 		}
 	}
 
-	if len(lines) >= 2 {
+	if len(lines) >= 3 {
 		// Parse type and link target
-		parts := strings.Split(lines[1], ":")
+		parts := strings.Split(lines[2], ":")
 		if len(parts) >= 1 {
 			switch parts[0] {
 			case "dir":
@@ -324,6 +332,24 @@ func ensureSymlink(ctx context.Context, conn connector.Connector, src, dst strin
 
 // ensureMode ensures a path has the correct mode.
 func ensureMode(ctx context.Context, conn connector.Connector, path, mode string, recurse bool) (bool, error) {
+	// Check current mode before changing
+	if !recurse {
+		info, err := getFileInfo(ctx, conn, path)
+		if err == nil && info.Exists {
+			normalizedUser := strings.TrimLeft(mode, "0")
+			if normalizedUser == "" {
+				normalizedUser = "0"
+			}
+			normalizedActual := strings.TrimLeft(info.OctalMode, "0")
+			if normalizedActual == "" {
+				normalizedActual = "0"
+			}
+			if normalizedUser == normalizedActual {
+				return false, nil
+			}
+		}
+	}
+
 	cmd := fmt.Sprintf("chmod %s %s", mode, module.ShellQuote(path))
 	if recurse {
 		cmd = fmt.Sprintf("chmod -R %s %s", mode, module.ShellQuote(path))
@@ -337,8 +363,6 @@ func ensureMode(ctx context.Context, conn connector.Connector, path, mode string
 		return false, fmt.Errorf("failed to set mode: %s", result.Stderr)
 	}
 
-	// Note: We always report changed since checking current mode is complex
-	// A more sophisticated implementation would compare modes first
 	return true, nil
 }
 
@@ -353,6 +377,18 @@ func ensureOwnership(ctx context.Context, conn connector.Connector, path, owner,
 		ownership = fmt.Sprintf(":%s", group)
 	} else {
 		return false, nil
+	}
+
+	// Check current ownership before changing
+	if !recurse {
+		info, err := getFileInfo(ctx, conn, path)
+		if err == nil && info.Exists {
+			ownerMatch := owner == "" || info.Owner == owner
+			groupMatch := group == "" || info.Group == group
+			if ownerMatch && groupMatch {
+				return false, nil
+			}
+		}
 	}
 
 	cmd := fmt.Sprintf("chown %s %s", ownership, module.ShellQuote(path))
@@ -440,9 +476,19 @@ func (m *Module) Check(ctx context.Context, conn connector.Connector, params map
 		if group != "" && info.Group != group {
 			return module.WouldChange("group differs"), nil
 		}
-		// Mode comparison is limited since getFileInfo returns symbolic mode
 		if mode != "" {
-			return module.UncertainChange("mode check requires symbolic comparison"), nil
+			// Normalize: strip leading zeros from user mode for comparison
+			normalizedUser := strings.TrimLeft(mode, "0")
+			if normalizedUser == "" {
+				normalizedUser = "0"
+			}
+			normalizedActual := strings.TrimLeft(info.OctalMode, "0")
+			if normalizedActual == "" {
+				normalizedActual = "0"
+			}
+			if normalizedUser != normalizedActual {
+				return module.WouldChange(fmt.Sprintf("mode differs: %s → %s", info.OctalMode, strings.TrimLeft(mode, "0"))), nil
+			}
 		}
 	}
 
