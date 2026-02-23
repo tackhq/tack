@@ -413,5 +413,86 @@ func getBool(params map[string]any, key string, defaultValue bool) bool {
 	return b
 }
 
+// Check determines whether the file module would make changes without applying them.
+func (m *Module) Check(ctx context.Context, conn connector.Connector, params map[string]any) (*module.CheckResult, error) {
+	path, err := requireString(params, "path")
+	if err != nil {
+		return nil, err
+	}
+
+	stateStr := getString(params, "state", "file")
+	state := State(stateStr)
+	mode := getString(params, "mode", "")
+	owner := getString(params, "owner", "")
+	group := getString(params, "group", "")
+	src := getString(params, "src", "")
+
+	switch state {
+	case StateFile, StateDirectory, StateLink, StateAbsent, StateTouch:
+		// Valid
+	default:
+		return nil, fmt.Errorf("invalid state '%s': must be file, directory, link, absent, or touch", state)
+	}
+
+	info, err := getFileInfo(ctx, conn, path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get file info: %w", err)
+	}
+
+	switch state {
+	case StateAbsent:
+		if info.Exists {
+			return module.WouldChange("path would be removed"), nil
+		}
+		return module.NoChange("path already absent"), nil
+
+	case StateDirectory:
+		if !info.Exists {
+			return module.WouldChange("directory would be created"), nil
+		}
+		if !info.IsDir {
+			return nil, fmt.Errorf("path exists but is not a directory")
+		}
+
+	case StateFile:
+		if !info.Exists {
+			return nil, fmt.Errorf("path does not exist; use state=touch to create")
+		}
+		if info.IsDir {
+			return nil, fmt.Errorf("path is a directory, not a file")
+		}
+
+	case StateTouch:
+		return module.WouldChange("touch always updates timestamp"), nil
+
+	case StateLink:
+		if src == "" {
+			return nil, fmt.Errorf("'src' parameter is required when state=link")
+		}
+		if !info.IsLink || info.LinkDst != src {
+			return module.WouldChange("symlink would be created/updated"), nil
+		}
+	}
+
+	// Check mode/owner attributes for states that support them
+	if state != StateAbsent && (mode != "" || owner != "" || group != "") {
+		if owner != "" && info.Owner != owner {
+			return module.WouldChange("ownership differs"), nil
+		}
+		if group != "" && info.Group != group {
+			return module.WouldChange("group differs"), nil
+		}
+		// Mode comparison is limited since getFileInfo returns symbolic mode
+		if mode != "" {
+			return module.UncertainChange("mode check requires symbolic comparison"), nil
+		}
+	}
+
+	return module.NoChange("no changes needed"), nil
+}
+
 // Ensure Module implements the module.Module interface.
 var _ module.Module = (*Module)(nil)
+
+// Ensure Module implements the module.Checker interface.
+var _ module.Checker = (*Module)(nil)

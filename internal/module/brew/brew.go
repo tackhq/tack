@@ -430,5 +430,92 @@ func getStringSlice(params map[string]any, key string) []string {
 	return nil
 }
 
+// Check determines whether the brew module would make changes without applying them.
+func (m *Module) Check(ctx context.Context, conn connector.Connector, params map[string]any) (*module.CheckResult, error) {
+	if err := checkHomebrew(ctx, conn); err != nil {
+		return nil, err
+	}
+
+	stateStr := getString(params, "state", "present")
+	state := State(stateStr)
+	cask := getBool(params, "cask", false)
+	upgradeAll := getBool(params, "upgrade_all", false)
+	updateHomebrew := getBool(params, "update_homebrew", false)
+
+	if updateHomebrew {
+		return module.UncertainChange("update_homebrew always runs"), nil
+	}
+	if upgradeAll {
+		return module.UncertainChange("upgrade_all always runs"), nil
+	}
+
+	names := getPackageNames(params)
+	if len(names) == 0 {
+		return module.NoChange("no packages specified"), nil
+	}
+
+	installed, err := getInstalledPackages(ctx, conn, cask)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get installed packages: %w", err)
+	}
+
+	var toInstall, toRemove, toUpgrade []string
+
+	for _, name := range names {
+		isInstalled := installed[name]
+		switch state {
+		case StatePresent:
+			if !isInstalled {
+				toInstall = append(toInstall, name)
+			}
+		case StateAbsent:
+			if isInstalled {
+				toRemove = append(toRemove, name)
+			}
+		case StateLatest:
+			if !isInstalled {
+				toInstall = append(toInstall, name)
+			} else {
+				toUpgrade = append(toUpgrade, name)
+			}
+		}
+	}
+
+	// For latest state, check which packages are actually outdated
+	if state == StateLatest && len(toUpgrade) > 0 {
+		outdated, err := getOutdatedPackages(ctx, conn, cask)
+		if err != nil {
+			return nil, err
+		}
+		var actualUpgrade []string
+		for _, name := range toUpgrade {
+			if outdated[name] {
+				actualUpgrade = append(actualUpgrade, name)
+			}
+		}
+		toUpgrade = actualUpgrade
+	}
+
+	var parts []string
+	if len(toInstall) > 0 {
+		parts = append(parts, fmt.Sprintf("install: %s", strings.Join(toInstall, ", ")))
+	}
+	if len(toRemove) > 0 {
+		parts = append(parts, fmt.Sprintf("remove: %s", strings.Join(toRemove, ", ")))
+	}
+	if len(toUpgrade) > 0 {
+		parts = append(parts, fmt.Sprintf("upgrade: %s", strings.Join(toUpgrade, ", ")))
+	}
+
+	if len(parts) > 0 {
+		return module.WouldChange("would " + strings.Join(parts, "; ")), nil
+	}
+
+	return module.NoChange("packages already in desired state"), nil
+}
+
 // Ensure Module implements the module.Module interface.
 var _ module.Module = (*Module)(nil)
+
+// Ensure Module implements the module.Checker interface.
+var _ module.Checker = (*Module)(nil)

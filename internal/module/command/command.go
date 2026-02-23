@@ -153,5 +153,36 @@ func getString(params map[string]any, key, defaultValue string) string {
 	return s
 }
 
+// Check determines whether the command module would make changes without applying them.
+func (m *Module) Check(ctx context.Context, conn connector.Connector, params map[string]any) (*module.CheckResult, error) {
+	creates := getString(params, "creates", "")
+	removes := getString(params, "removes", "")
+
+	if creates != "" {
+		exists, err := fileExists(ctx, conn, creates)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check 'creates' path: %w", err)
+		}
+		if exists {
+			return module.NoChange(fmt.Sprintf("'%s' exists", creates)), nil
+		}
+	}
+
+	if removes != "" {
+		exists, err := fileExists(ctx, conn, removes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check 'removes' path: %w", err)
+		}
+		if !exists {
+			return module.NoChange(fmt.Sprintf("'%s' does not exist", removes)), nil
+		}
+	}
+
+	return module.UncertainChange("command always reports changed"), nil
+}
+
 // Ensure Module implements the module.Module interface.
 var _ module.Module = (*Module)(nil)
+
+// Ensure Module implements the module.Checker interface.
+var _ module.Checker = (*Module)(nil)

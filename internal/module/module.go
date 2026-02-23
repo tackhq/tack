@@ -71,6 +71,34 @@ func List() []string {
 	return names
 }
 
+// CheckResult describes what a module would do without making changes.
+type CheckResult struct {
+	WouldChange bool
+	Uncertain   bool   // true when change status can't be determined (e.g. command)
+	Message     string
+}
+
+// Checker is an optional interface for check/dry-run support.
+// Check() must be read-only — it queries remote state but MUST NOT modify it.
+type Checker interface {
+	Check(ctx context.Context, conn connector.Connector, params map[string]any) (*CheckResult, error)
+}
+
+// WouldChange creates a CheckResult indicating changes are needed.
+func WouldChange(msg string) *CheckResult {
+	return &CheckResult{WouldChange: true, Message: msg}
+}
+
+// NoChange creates a CheckResult indicating no changes are needed.
+func NoChange(msg string) *CheckResult {
+	return &CheckResult{WouldChange: false, Message: msg}
+}
+
+// UncertainChange creates a CheckResult indicating change status can't be determined.
+func UncertainChange(msg string) *CheckResult {
+	return &CheckResult{Uncertain: true, Message: msg}
+}
+
 // Helper functions for creating results
 
 // Changed creates a Result indicating a change was made.

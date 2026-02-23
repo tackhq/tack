@@ -112,7 +112,7 @@ func TestIntegration(t *testing.T) {
 
 	// Run bolt playbook
 	playbookPath := filepath.Join(projectRoot, "tests", "integration", "testdata", "playbook.yaml")
-	cmd := exec.Command(boltBinaryPath, "run", playbookPath)
+	cmd := exec.Command(boltBinaryPath, "run", playbookPath, "--auto-approve")
 	cmd.Dir = projectRoot
 	output, err := cmd.CombinedOutput()
 	require.NoError(t, err, "bolt playbook failed: %s", string(output))

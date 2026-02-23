@@ -114,6 +114,7 @@ func TestSSHIntegration(t *testing.T) {
 			"--ssh-user", "testuser",
 			"--ssh-password", "testpass",
 			"--ssh-insecure",
+			"--auto-approve",
 		)
 		cmd.Dir = projectRoot
 		// Clear SSH_AUTH_SOCK so agent doesn't interfere
@@ -138,6 +139,7 @@ func TestSSHIntegration(t *testing.T) {
 			"--ssh-user", "testuser",
 			"--ssh-key", keyPath,
 			"--ssh-insecure",
+			"--auto-approve",
 		)
 		cmd.Dir = projectRoot
 		cmd.Env = filterEnv(os.Environ(), "SSH_AUTH_SOCK")
@@ -165,6 +167,7 @@ func TestSSHIntegration(t *testing.T) {
 			"--ssh-user", "testuser",
 			"--ssh-key", keyPath,
 			"--ssh-insecure",
+			"--auto-approve",
 		)
 		cmd.Dir = projectRoot
 		// Use the empty agent instead of the host agent, and isolate HOME
@@ -193,6 +196,7 @@ func TestSSHIntegration(t *testing.T) {
 			"--ssh-user", "testuser",
 			"--ssh-password", "testpass",
 			"--ssh-insecure",
+			"--auto-approve",
 		)
 		cmd.Dir = projectRoot
 		cmd.Env = filterEnv(os.Environ(), "SSH_AUTH_SOCK")
