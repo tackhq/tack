@@ -37,6 +37,7 @@ sudo make install
 - **Ansible-compatible roles** - Reusable role structure with tasks, handlers, vars
 - **Idempotent operations** - Safe to run multiple times
 - **Cross-platform** - Supports macOS and Linux
+- **Remote playbook sources** - Run playbooks directly from git repos, S3, or HTTP URLs
 - **Multiple connectors** - Local, Docker, SSH, AWS SSM (planned)
 - **Built-in modules** - Package management, file operations, commands
 - **Variable interpolation** - Dynamic configuration with `{{ variables }}`
@@ -68,6 +69,23 @@ docker rm -f bolt-test
 # Install dev tools, apps, and configure your Mac
 bolt run examples/playbooks/macos-setup.yaml --dry-run  # preview
 bolt run examples/playbooks/macos-setup.yaml            # apply
+```
+
+**Run from a git repo:**
+
+```bash
+# Run a playbook directly from a git repo
+bolt run git@github.com:user/repo.git//path/to/playbook.yaml
+
+# Pin to a branch or tag
+bolt run git@github.com:user/repo.git@main//path/to/playbook.yaml
+bolt run https://github.com/user/repo.git@v1.0//playbook.yaml
+
+# Run from an HTTP URL
+bolt run https://example.com/playbook.yaml
+
+# Run from S3
+bolt run s3://bucket/path/to/playbook.yaml
 ```
 
 **CLI usage:**
@@ -224,7 +242,8 @@ bolt/
 │   ├── executor/       # Playbook execution engine
 │   ├── module/         # Task modules (apt, brew, file, etc.)
 │   ├── output/         # Formatted terminal output
-│   └── playbook/       # YAML parsing
+│   ├── playbook/       # YAML parsing
+│   └── source/         # Remote playbook sources (git, s3, http)
 ├── pkg/facts/          # System fact gathering
 ├── tests/integration/  # Integration tests (testcontainers)
 ├── docs/               # Documentation
