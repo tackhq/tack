@@ -11,6 +11,7 @@ import (
 )
 
 // knownTaskFields are fields that are task directives, not module names.
+// knownTaskFields are fields that are task directives, not module names.
 var knownTaskFields = map[string]bool{
 	"name":         true,
 	"when":         true,
@@ -27,6 +28,11 @@ var knownTaskFields = map[string]bool{
 	"changed_when": true,
 	"failed_when":  true,
 	"include":      true,
+	// Module argument keys that Ansible allows at task level
+	"args":    true,
+	"creates": true,
+	"removes": true,
+	"chdir":   true,
 }
 
 // ParseFileRaw parses a playbook with proper module detection.
@@ -248,6 +254,22 @@ func parseRawTask(raw map[string]any) (*Task, error) {
 			task.Params = make(map[string]any)
 		default:
 			task.Params = map[string]any{"_raw": value}
+		}
+	}
+
+	// Merge top-level module argument keys into params.
+	// Ansible allows creates/removes/chdir/args at the task level
+	// as shorthand for module parameters.
+	if v, ok := raw["args"]; ok {
+		if argsMap, ok := v.(map[string]any); ok {
+			for k, v := range argsMap {
+				task.Params[k] = v
+			}
+		}
+	}
+	for _, key := range []string{"creates", "removes", "chdir"} {
+		if v, ok := raw[key]; ok {
+			task.Params[key] = v
 		}
 	}
 

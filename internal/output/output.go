@@ -257,7 +257,7 @@ func (o *Output) DisplayPlan(tasks []PlannedTask, dryRun bool) {
 			alwaysRuns++
 		case "will_run":
 			indicator = "+"
-			col = colorGreen
+			col = colorYellow
 			willRun++
 		case "will_skip":
 			indicator = "○"
