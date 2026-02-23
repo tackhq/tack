@@ -379,3 +379,113 @@ handlers:
 		t.Errorf("expected handler name 'restart nginx', got %q", handler.Name)
 	}
 }
+
+func TestParseInclude(t *testing.T) {
+	tests := []struct {
+		name        string
+		yaml        string
+		wantInclude string
+		wantWhen    string
+	}{
+		{
+			name: "simple include",
+			yaml: `
+hosts: localhost
+tasks:
+  - name: Setup docker
+    include: https://example.com/docker-tasks.yaml
+`,
+			wantInclude: "https://example.com/docker-tasks.yaml",
+		},
+		{
+			name: "include with when",
+			yaml: `
+hosts: localhost
+tasks:
+  - name: Setup from git
+    include: git@github.com:user/repo.git//tasks/setup.yaml
+    when: facts.os_family == 'Debian'
+`,
+			wantInclude: "git@github.com:user/repo.git//tasks/setup.yaml",
+			wantWhen:    "facts.os_family == 'Debian'",
+		},
+		{
+			name: "include with local path",
+			yaml: `
+hosts: localhost
+tasks:
+  - name: Include local tasks
+    include: ./common/tasks.yaml
+`,
+			wantInclude: "./common/tasks.yaml",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pb, err := ParseRaw([]byte(tt.yaml), "test.yaml")
+			if err != nil {
+				t.Fatalf("parse error: %v", err)
+			}
+			if len(pb.Plays) == 0 || len(pb.Plays[0].Tasks) == 0 {
+				t.Fatal("no tasks parsed")
+			}
+			task := pb.Plays[0].Tasks[0]
+			if task.Include != tt.wantInclude {
+				t.Errorf("expected include %q, got %q", tt.wantInclude, task.Include)
+			}
+			if task.Module != "" {
+				t.Errorf("expected empty module for include task, got %q", task.Module)
+			}
+			if tt.wantWhen != "" && task.When != tt.wantWhen {
+				t.Errorf("expected when %q, got %q", tt.wantWhen, task.When)
+			}
+		})
+	}
+}
+
+func TestParseIncludeMixedWithModules(t *testing.T) {
+	yaml := `
+hosts: localhost
+tasks:
+  - name: Create a file
+    copy:
+      dest: /tmp/test.txt
+      content: "hello"
+  - name: Include extras
+    include: ./extras.yaml
+  - name: Run command
+    command:
+      cmd: echo done
+`
+	pb, err := ParseRaw([]byte(yaml), "test.yaml")
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	tasks := pb.Plays[0].Tasks
+	if len(tasks) != 3 {
+		t.Fatalf("expected 3 tasks, got %d", len(tasks))
+	}
+
+	// First task: module task
+	if tasks[0].Module != "copy" {
+		t.Errorf("task 0: expected module 'copy', got %q", tasks[0].Module)
+	}
+	if tasks[0].Include != "" {
+		t.Errorf("task 0: expected empty include, got %q", tasks[0].Include)
+	}
+
+	// Second task: include task
+	if tasks[1].Include != "./extras.yaml" {
+		t.Errorf("task 1: expected include './extras.yaml', got %q", tasks[1].Include)
+	}
+	if tasks[1].Module != "" {
+		t.Errorf("task 1: expected empty module, got %q", tasks[1].Module)
+	}
+
+	// Third task: module task
+	if tasks[2].Module != "command" {
+		t.Errorf("task 2: expected module 'command', got %q", tasks[2].Module)
+	}
+}

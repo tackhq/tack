@@ -26,6 +26,7 @@ var knownTaskFields = map[string]bool{
 	"become_user":  true,
 	"changed_when": true,
 	"failed_when":  true,
+	"include":      true,
 }
 
 // ParseFile parses a playbook from a YAML file.
@@ -261,6 +262,9 @@ func parseRawTask(raw map[string]any) (*Task, error) {
 	}
 	if v, ok := raw["failed_when"].(string); ok {
 		task.FailedWhen = v
+	}
+	if v, ok := raw["include"].(string); ok {
+		task.Include = v
 	}
 
 	// Parse notify (can be string or list)
