@@ -19,6 +19,7 @@ import (
 	_ "github.com/eugenetaranov/bolt/internal/module/command"
 	_ "github.com/eugenetaranov/bolt/internal/module/copy"
 	_ "github.com/eugenetaranov/bolt/internal/module/file"
+	_ "github.com/eugenetaranov/bolt/internal/module/systemd"
 	_ "github.com/eugenetaranov/bolt/internal/module/template"
 
 	"github.com/eugenetaranov/bolt/internal/executor"
@@ -191,11 +192,17 @@ func runPlaybook(cmd *cobra.Command, args []string) error {
 		<-sigCh
 		fmt.Fprintln(os.Stderr, "\nInterrupted, cleaning up...")
 		cancel()
+		// Second signal exits immediately (e.g. stuck on password prompt)
+		<-sigCh
+		os.Exit(130)
 	}()
 
 	// Run playbook
 	result, err := exec.Run(ctx, pb)
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil
+		}
 		return err
 	}
 
