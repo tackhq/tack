@@ -24,6 +24,7 @@ import (
 	"github.com/eugenetaranov/bolt/internal/executor"
 	"github.com/eugenetaranov/bolt/internal/module"
 	"github.com/eugenetaranov/bolt/internal/playbook"
+	"github.com/eugenetaranov/bolt/internal/source"
 )
 
 var (
@@ -130,12 +131,20 @@ func init() {
 }
 
 func runPlaybook(cmd *cobra.Command, args []string) error {
-	playbookPath := args[0]
-
-	// Check if file exists
-	if _, err := os.Stat(playbookPath); os.IsNotExist(err) {
-		return fmt.Errorf("playbook not found: %s", playbookPath)
+	// Resolve playbook source (local, git, s3, http)
+	src, err := source.Resolve(args[0])
+	if err != nil {
+		return fmt.Errorf("invalid playbook source: %w", err)
 	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	playbookPath, cleanup, err := src.Fetch(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to fetch playbook: %w", err)
+	}
+	defer cleanup()
 
 	// Parse playbook
 	pb, err := playbook.ParseFileRaw(playbookPath)
@@ -157,10 +166,6 @@ func runPlaybook(cmd *cobra.Command, args []string) error {
 	exec.Overrides = overrides
 	exec.Output.SetColor(!noColor)
 	exec.Output.SetDebug(debug)
-
-	// Setup context with signal handling
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	// Handle interrupt signals
 	sigCh := make(chan os.Signal, 1)
@@ -223,11 +228,17 @@ func validatePlaybooks(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func validatePlaybook(playbookPath string) error {
-	// Check if file exists
-	if _, err := os.Stat(playbookPath); os.IsNotExist(err) {
-		return fmt.Errorf("not found")
+func validatePlaybook(ref string) error {
+	src, err := source.Resolve(ref)
+	if err != nil {
+		return fmt.Errorf("invalid source: %w", err)
 	}
+
+	playbookPath, cleanup, err := src.Fetch(context.Background())
+	if err != nil {
+		return err
+	}
+	defer cleanup()
 
 	// Parse playbook
 	pb, err := playbook.ParseFileRaw(playbookPath)
