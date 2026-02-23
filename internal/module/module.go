@@ -76,6 +76,12 @@ type CheckResult struct {
 	WouldChange bool
 	Uncertain   bool   // true when change status can't be determined (e.g. command)
 	Message     string
+
+	// Optional fields for content comparison (populated by copy/template modules).
+	OldChecksum string
+	NewChecksum string
+	OldContent  string
+	NewContent  string
 }
 
 // Checker is an optional interface for check/dry-run support.

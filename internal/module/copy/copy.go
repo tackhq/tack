@@ -466,7 +466,10 @@ func (m *Module) Check(ctx context.Context, conn connector.Connector, params map
 	}
 
 	if !destExists {
-		return module.WouldChange("file does not exist"), nil
+		cr := module.WouldChange("file does not exist")
+		cr.NewChecksum = srcChecksum
+		cr.NewContent = string(srcContent)
+		return cr, nil
 	}
 
 	if destExists && !force {
@@ -474,7 +477,16 @@ func (m *Module) Check(ctx context.Context, conn connector.Connector, params map
 	}
 
 	if srcChecksum != destChecksum {
-		return module.WouldChange("content differs"), nil
+		cr := module.WouldChange("content differs")
+		cr.OldChecksum = destChecksum
+		cr.NewChecksum = srcChecksum
+		cr.NewContent = string(srcContent)
+		// Fetch old content for diff
+		result, err := conn.Execute(ctx, fmt.Sprintf("cat %s", shellQuote(dest)))
+		if err == nil && result.ExitCode == 0 {
+			cr.OldContent = result.Stdout
+		}
+		return cr, nil
 	}
 
 	// Content matches, check attributes

@@ -40,6 +40,7 @@ type Output struct {
 	w        io.Writer
 	useColor bool
 	debug    bool
+	verbose  bool
 }
 
 // New creates a new output handler.
@@ -60,9 +61,9 @@ func (o *Output) SetDebug(enabled bool) {
 	o.debug = enabled
 }
 
-// SetVerbose is an alias for SetDebug for backward compatibility.
+// SetVerbose enables or disables verbose output (full diffs in plan).
 func (o *Output) SetVerbose(enabled bool) {
-	o.debug = enabled
+	o.verbose = enabled
 }
 
 // color returns the string wrapped in color codes if enabled.
@@ -245,6 +246,12 @@ type PlannedTask struct {
 	Reason    string // skip reason or condition text
 	LoopCount int    // >0 if looped
 	Params    map[string]any
+
+	// Content comparison fields (populated from CheckResult).
+	OldChecksum string
+	NewChecksum string
+	OldContent  string
+	NewContent  string
 }
 
 // DisplayPlan renders the plan table showing what tasks will run.
@@ -299,6 +306,8 @@ func (o *Output) DisplayPlan(tasks []PlannedTask, dryRun bool) {
 			suffix = fmt.Sprintf("(%s)", t.Reason)
 		} else if t.Status == "always_runs" && t.Reason != "" {
 			suffix = fmt.Sprintf("(%s)", t.Reason)
+		} else if t.Status == "will_change" && t.Reason != "" {
+			suffix = fmt.Sprintf("(%s)", t.Reason)
 		}
 		if t.LoopCount > 0 {
 			if suffix != "" {
@@ -313,6 +322,28 @@ func (o *Output) DisplayPlan(tasks []PlannedTask, dryRun bool) {
 		// Show task parameters
 		for _, paramLine := range formatTaskParams(t.Module, t.Params) {
 			o.printf("      %s\n", o.color(colorGray, paramLine))
+		}
+
+		// Show checksums or diff when content differs
+		if t.OldChecksum != "" && t.NewChecksum != "" && t.OldChecksum != t.NewChecksum {
+			if o.verbose && t.OldContent != "" && t.NewContent != "" {
+				for _, diffLine := range unifiedDiff(t.OldContent, t.NewContent) {
+					var diffColor string
+					if strings.HasPrefix(diffLine, "+ ") {
+						diffColor = colorGreen
+					} else if strings.HasPrefix(diffLine, "- ") {
+						diffColor = colorRed
+					} else {
+						diffColor = colorGray
+					}
+					o.printf("      %s\n", o.color(diffColor, diffLine))
+				}
+			} else {
+				o.printf("      %s\n", o.color(colorRed, "old: "+t.OldChecksum))
+				o.printf("      %s\n", o.color(colorGreen, "new: "+t.NewChecksum))
+			}
+		} else if t.OldChecksum == "" && t.NewChecksum != "" {
+			o.printf("      %s\n", o.color(colorYellow, "new: "+t.NewChecksum))
 		}
 	}
 
@@ -354,7 +385,7 @@ func formatTaskParams(module string, params map[string]any) []string {
 	moduleKeys := map[string][]string{
 		"command":  {"cmd"},
 		"shell":    {"cmd"},
-		"copy":     {"dest", "src", "content", "mode"},
+		"copy":     {"dest", "src", "mode"},
 		"file":     {"path", "state", "mode", "owner"},
 		"template": {"src", "dest", "mode"},
 		"apt":      {"name", "state", "update_cache"},
@@ -389,6 +420,77 @@ func truncateParamValue(v any) string {
 		return s[:57] + "..."
 	}
 	return s
+}
+
+// unifiedDiff produces a simple unified-diff-style output comparing old and new content.
+func unifiedDiff(old, new string) []string {
+	oldLines := strings.Split(old, "\n")
+	newLines := strings.Split(new, "\n")
+
+	// Trim trailing empty line from final newline split
+	if len(oldLines) > 0 && oldLines[len(oldLines)-1] == "" {
+		oldLines = oldLines[:len(oldLines)-1]
+	}
+	if len(newLines) > 0 && newLines[len(newLines)-1] == "" {
+		newLines = newLines[:len(newLines)-1]
+	}
+
+	var result []string
+
+	// Simple line-by-line diff: walk both slices with a basic LCS approach.
+	// For brevity we use a two-pointer approach that handles common prefixes/suffixes
+	// and shows removed/added blocks in between.
+	i, j := 0, 0
+	for i < len(oldLines) && j < len(newLines) {
+		if oldLines[i] == newLines[j] {
+			result = append(result, "  "+oldLines[i])
+			i++
+			j++
+		} else {
+			// Find next matching line
+			matchI, matchJ := findNextMatch(oldLines, newLines, i, j)
+			for ; i < matchI; i++ {
+				result = append(result, "- "+oldLines[i])
+			}
+			for ; j < matchJ; j++ {
+				result = append(result, "+ "+newLines[j])
+			}
+		}
+	}
+	for ; i < len(oldLines); i++ {
+		result = append(result, "- "+oldLines[i])
+	}
+	for ; j < len(newLines); j++ {
+		result = append(result, "+ "+newLines[j])
+	}
+
+	return result
+}
+
+// findNextMatch finds the nearest matching line pair starting from positions oi and nj.
+func findNextMatch(old, new []string, oi, nj int) (int, int) {
+	// Look ahead up to 50 lines for a match
+	limit := 50
+	for dist := 1; dist < limit; dist++ {
+		// Check if old[oi+dist] matches any new[nj..nj+dist]
+		if oi+dist < len(old) {
+			for k := nj; k < len(new) && k <= nj+dist; k++ {
+				if old[oi+dist] == new[k] {
+					return oi + dist, k
+				}
+			}
+		}
+		// Check if new[nj+dist] matches any old[oi..oi+dist]
+		if nj+dist < len(new) {
+			for k := oi; k < len(old) && k <= oi+dist; k++ {
+				if old[k] == new[nj+dist] {
+					return k, nj + dist
+				}
+			}
+		}
+	}
+	// No match found within limit — dump everything remaining
+	return len(old), len(new)
 }
 
 // PromptApproval asks the user to confirm applying changes.
