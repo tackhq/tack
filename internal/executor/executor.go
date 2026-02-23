@@ -46,6 +46,9 @@ type Executor struct {
 	// Debug enables detailed output.
 	Debug bool
 
+	// Verbose enables full diffs in plan output.
+	Verbose bool
+
 	// Overrides holds CLI/env connection overrides applied to each play.
 	Overrides *ConnOverrides
 
@@ -703,6 +706,10 @@ func (e *Executor) planTasks(ctx context.Context, pctx *PlayContext, tasks []*pl
 						pt.Status = "no_change"
 						pt.Reason = cr.Message
 					}
+					pt.OldChecksum = cr.OldChecksum
+					pt.NewChecksum = cr.NewChecksum
+					pt.OldContent = cr.OldContent
+					pt.NewContent = cr.NewContent
 				}
 				// On error: silently fall back to "will_run"
 			}

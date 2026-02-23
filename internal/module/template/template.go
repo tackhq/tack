@@ -424,11 +424,23 @@ func (m *Module) Check(ctx context.Context, conn connector.Connector, params map
 	}
 
 	if !destExists {
-		return module.WouldChange("file does not exist"), nil
+		cr := module.WouldChange("file does not exist")
+		cr.NewChecksum = srcChecksum
+		cr.NewContent = string(renderedContent)
+		return cr, nil
 	}
 
 	if srcChecksum != destChecksum {
-		return module.WouldChange("content differs"), nil
+		cr := module.WouldChange("content differs")
+		cr.OldChecksum = destChecksum
+		cr.NewChecksum = srcChecksum
+		cr.NewContent = string(renderedContent)
+		// Fetch old content for diff
+		result, err := conn.Execute(ctx, fmt.Sprintf("cat %s", shellQuote(dest)))
+		if err == nil && result.ExitCode == 0 {
+			cr.OldContent = result.Stdout
+		}
+		return cr, nil
 	}
 
 	attrDiffer, err := checkAttributes(ctx, conn, dest, mode, owner, group)

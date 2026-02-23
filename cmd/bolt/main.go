@@ -36,6 +36,7 @@ var (
 // Global flags
 var (
 	debug       bool
+	verbose     bool
 	dryRun      bool
 	noColor     bool
 	autoApprove bool
@@ -61,6 +62,7 @@ Supports local execution, SSH, and AWS SSM connectors.`,
 func init() {
 	// Global flags
 	rootCmd.PersistentFlags().BoolVarP(&debug, "debug", "d", false, "Enable debug output with detailed task information")
+	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Show full diffs in plan output")
 	rootCmd.PersistentFlags().BoolVarP(&dryRun, "dry-run", "n", false, "Show what would be done without making changes")
 	rootCmd.PersistentFlags().BoolVar(&noColor, "no-color", false, "Disable colored output")
 
@@ -161,11 +163,13 @@ func runPlaybook(cmd *cobra.Command, args []string) error {
 	// Create executor
 	exec := executor.New()
 	exec.Debug = debug
+	exec.Verbose = verbose
 	exec.DryRun = dryRun
 	exec.AutoApprove = autoApprove
 	exec.Overrides = overrides
 	exec.Output.SetColor(!noColor)
 	exec.Output.SetDebug(debug)
+	exec.Output.SetVerbose(verbose)
 
 	// Handle interrupt signals
 	sigCh := make(chan os.Signal, 1)
