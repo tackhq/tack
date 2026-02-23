@@ -1,0 +1,13 @@
+name: SSH integration test
+hosts: placeholder
+connection: ssh
+gather_facts: false
+
+tasks:
+  - name: Say hello
+    command:
+      cmd: echo "hello from ssh"
+
+  - name: Create marker
+    command:
+      cmd: echo "ssh-ok" > /tmp/ssh-marker.txt

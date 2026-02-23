@@ -1,0 +1,25 @@
+- name: Test SSH connection to Linux host
+  hosts: 192.168.1.100
+  connection: ssh
+
+  tasks:
+    - name: Say hello
+      command:
+        cmd: echo "Hello from Bolt over SSH!"
+
+    - name: Show hostname
+      command:
+        cmd: hostname
+
+    - name: Show OS info
+      command:
+        cmd: cat /etc/os-release
+
+    - name: Create a test file
+      copy:
+        dest: /tmp/bolt-was-here.txt
+        content: "Bolt successfully reached this host via SSH!"
+
+    - name: Verify test file
+      command:
+        cmd: cat /tmp/bolt-was-here.txt

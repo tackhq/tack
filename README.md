@@ -37,7 +37,7 @@ sudo make install
 - **Ansible-compatible roles** - Reusable role structure with tasks, handlers, vars
 - **Idempotent operations** - Safe to run multiple times
 - **Cross-platform** - Supports macOS and Linux
-- **Multiple connectors** - Local, Docker, SSH (planned), AWS SSM (planned)
+- **Multiple connectors** - Local, Docker, SSH, AWS SSM (planned)
 - **Built-in modules** - Package management, file operations, commands
 - **Variable interpolation** - Dynamic configuration with `{{ variables }}`
 - **System facts** - Auto-detected OS, architecture, and environment info
@@ -145,6 +145,52 @@ tasks:
 docker run -d --name my-container ubuntu:22.04 sleep 600
 bolt run container-setup.yaml
 ```
+
+### Remote Host via SSH
+
+```yaml
+name: Configure Web Server
+hosts: web1
+connection: ssh
+
+vars:
+  bolt_ssh_user: deploy
+  bolt_ssh_key: ~/.ssh/deploy_key
+
+tasks:
+  - name: Install nginx
+    apt:
+      name: nginx
+      state: present
+
+  - name: Copy site config
+    copy:
+      dest: /etc/nginx/sites-available/app.conf
+      content: |
+        server {
+          listen 80;
+          root /var/www/app;
+        }
+```
+
+```bash
+# Run against a host defined in ~/.ssh/config
+bolt run server-setup.yaml
+
+# Override connection settings via CLI flags
+bolt run server-setup.yaml --ssh-user deploy --ssh-key ~/.ssh/deploy_key
+
+# Skip host key verification for new hosts
+bolt run server-setup.yaml --ssh-insecure
+
+# Use password authentication
+bolt run server-setup.yaml --ssh-user admin --ssh-password
+
+# Target multiple hosts
+bolt run server-setup.yaml --hosts web1,web2,web3
+```
+
+SSH connection settings can be provided via playbook vars, CLI flags, or environment variables (`BOLT_SSH_USER`, `BOLT_SSH_PORT`, `BOLT_SSH_KEY`, `BOLT_SSH_PASSWORD`, `BOLT_SSH_INSECURE`). CLI flags take highest precedence, then environment variables, then playbook values. Host settings from `~/.ssh/config` (HostName, User, Port, IdentityFile) are resolved automatically.
 
 ## Documentation
 

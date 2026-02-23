@@ -20,8 +20,8 @@ type Play struct {
 	// Name is an optional description of the play.
 	Name string `yaml:"name"`
 
-	// Hosts specifies which hosts to target (host, group, or pattern).
-	Hosts string `yaml:"hosts"`
+	// Hosts specifies which hosts to target.
+	Hosts []string `yaml:"hosts"`
 
 	// Connection specifies how to connect (local, ssh, ssm).
 	Connection string `yaml:"connection"`
@@ -171,7 +171,7 @@ func (t *Task) GetLoopVar() string {
 
 // Validate checks the play for common errors.
 func (p *Play) Validate() error {
-	if p.Hosts == "" {
+	if len(p.Hosts) == 0 {
 		return fmt.Errorf("play is missing required 'hosts' field")
 	}
 
