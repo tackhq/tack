@@ -79,11 +79,23 @@ Connection flags override playbook values. Environment variables
 BOLT_SSH_KEY, BOLT_SSH_PASSWORD) fill in when neither CLI flag
 nor playbook provides a value.
 
+The -c flag supports URI-style connection strings:
+  ssh://host, ssh://user@host, ssh://user@host:port, ssh://user:pass@host:port
+  docker://container-name
+  local://
+
+Multiple -c flags target multiple hosts:
+  bolt run setup.yaml -c ssh://user@web1:2222 -c ssh://user@web2:2222
+
+Explicit flags (--ssh-user, --ssh-port, etc.) override URI-derived values.
+
 Examples:
   bolt run setup.yaml
   bolt run setup.yaml --debug
   bolt run setup.yaml --dry-run
-  bolt run setup.yaml --connection=ssh --hosts=web1,web2
+  bolt run setup.yaml -c ssh://deploy@web1:2222
+  bolt run setup.yaml -c ssh://deploy@web1 -c ssh://deploy@web2
+  bolt run setup.yaml -c ssh --hosts=web1,web2
   bolt run setup.yaml --ssh-user=deploy --ssh-key=~/.ssh/deploy_key
   BOLT_SSH_HOSTS=web1,web2 bolt run setup.yaml`,
 	Args: cobra.ExactArgs(1),
@@ -99,7 +111,7 @@ func init() {
 	runCmd.Flags().IntP("forks", "f", 1, "Number of parallel processes (not yet implemented)")
 
 	// Connection override flags
-	runCmd.Flags().StringP("connection", "c", "", "Connection type (local, ssh, docker)")
+	runCmd.Flags().StringArrayP("connection", "c", nil, "Connection URI (e.g. ssh://user@host:port, docker://container, local://)")
 	runCmd.Flags().String("hosts", "", "Comma-separated list of target hosts")
 	runCmd.Flags().String("ssh-user", "", "SSH username")
 	runCmd.Flags().Int("ssh-port", 0, "SSH port")
@@ -272,13 +284,27 @@ func flagOrEnv(cmd *cobra.Command, flagName, envVar string) string {
 
 // buildConnOverrides constructs connection overrides from CLI flags and env vars.
 func buildConnOverrides(cmd *cobra.Command) (*executor.ConnOverrides, error) {
-	o := &executor.ConnOverrides{}
+	// Start with URI-derived values from -c flags
+	var o *executor.ConnOverrides
 
-	o.Connection = flagOrEnv(cmd, "connection", "BOLT_CONNECTION")
+	if cmd.Flags().Changed("connection") {
+		connVals, _ := cmd.Flags().GetStringArray("connection")
+		merged, err := executor.MergeConnectionURIs(connVals)
+		if err != nil {
+			return nil, fmt.Errorf("invalid connection flag: %w", err)
+		}
+		o = merged
+	} else if envConn := os.Getenv("BOLT_CONNECTION"); envConn != "" {
+		o = &executor.ConnOverrides{Connection: envConn}
+	} else {
+		o = &executor.ConnOverrides{}
+	}
 
-	hosts := flagOrEnv(cmd, "hosts", "BOLT_HOSTS")
-	if hosts != "" {
-		for _, h := range strings.Split(hosts, ",") {
+	// --hosts overrides any URI-derived hosts
+	hostsStr := flagOrEnv(cmd, "hosts", "BOLT_HOSTS")
+	if hostsStr != "" {
+		o.Hosts = nil
+		for _, h := range strings.Split(hostsStr, ",") {
 			h = strings.TrimSpace(h)
 			if h != "" {
 				o.Hosts = append(o.Hosts, h)
@@ -286,14 +312,23 @@ func buildConnOverrides(cmd *cobra.Command) (*executor.ConnOverrides, error) {
 		}
 	}
 
-	o.SSHUser = flagOrEnv(cmd, "ssh-user", "BOLT_SSH_USER")
-	o.SSHKey = flagOrEnv(cmd, "ssh-key", "BOLT_SSH_KEY")
+	// Explicit flags override URI-derived SSH values
+	if cmd.Flags().Changed("ssh-user") {
+		o.SSHUser, _ = cmd.Flags().GetString("ssh-user")
+	} else if envUser := os.Getenv("BOLT_SSH_USER"); envUser != "" && o.SSHUser == "" {
+		o.SSHUser = envUser
+	}
 
-	// SSH port: flag > env > 0 (no override)
+	if cmd.Flags().Changed("ssh-key") {
+		o.SSHKey, _ = cmd.Flags().GetString("ssh-key")
+	} else if envKey := os.Getenv("BOLT_SSH_KEY"); envKey != "" {
+		o.SSHKey = envKey
+	}
+
+	// SSH port: explicit flag > env > URI-derived > 0
 	if cmd.Flags().Changed("ssh-port") {
-		port, _ := cmd.Flags().GetInt("ssh-port")
-		o.SSHPort = port
-	} else if envPort := os.Getenv("BOLT_SSH_PORT"); envPort != "" {
+		o.SSHPort, _ = cmd.Flags().GetInt("ssh-port")
+	} else if envPort := os.Getenv("BOLT_SSH_PORT"); envPort != "" && o.SSHPort == 0 {
 		port, err := strconv.Atoi(envPort)
 		if err != nil {
 			return nil, fmt.Errorf("invalid BOLT_SSH_PORT: %w", err)
@@ -301,7 +336,7 @@ func buildConnOverrides(cmd *cobra.Command) (*executor.ConnOverrides, error) {
 		o.SSHPort = port
 	}
 
-	// SSH password: flag (prompt if empty) > env > no override
+	// SSH password: explicit flag > env > URI-derived
 	if cmd.Flags().Changed("ssh-password") {
 		o.HasSSHPass = true
 		val, _ := cmd.Flags().GetString("ssh-password")
@@ -317,7 +352,7 @@ func buildConnOverrides(cmd *cobra.Command) (*executor.ConnOverrides, error) {
 		} else {
 			o.SSHPass = val
 		}
-	} else if envPass := os.Getenv("BOLT_SSH_PASSWORD"); envPass != "" {
+	} else if envPass := os.Getenv("BOLT_SSH_PASSWORD"); envPass != "" && !o.HasSSHPass {
 		o.HasSSHPass = true
 		o.SSHPass = envPass
 	}
