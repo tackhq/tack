@@ -300,7 +300,7 @@ func (e *Executor) runPlayOnHost(ctx context.Context, play *playbook.Play, stats
 	if !e.AutoApprove {
 		if !e.Output.PromptApproval() {
 			e.Output.Info("Apply cancelled.")
-			return fmt.Errorf("apply cancelled by user")
+			return nil
 		}
 	}
 
