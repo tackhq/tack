@@ -206,6 +206,11 @@ func (e *Executor) applyOverrides(play *playbook.Play) {
 
 // runPlay executes a single play.
 func (e *Executor) runPlay(ctx context.Context, play *playbook.Play, stats *Stats, rolesDir string) error {
+	// Validate hosts after overrides have been applied (non-local connections need hosts)
+	if play.GetConnection() != "local" && len(play.Hosts) == 0 {
+		return fmt.Errorf("play is missing 'hosts' (provide via playbook or -c flag)")
+	}
+
 	e.Output.PlayStart(play)
 
 	// Load roles if specified

@@ -12,10 +12,9 @@ func TestPlayValidate(t *testing.T) {
 		errMsg  string
 	}{
 		{
-			name:    "missing hosts",
+			name:    "missing hosts allowed (validated later with overrides)",
 			play:    Play{},
-			wantErr: true,
-			errMsg:  "missing required 'hosts' field",
+			wantErr: false,
 		},
 		{
 			name: "valid local connection",

@@ -11,7 +11,18 @@ import (
 // LoadRole loads a role from the specified roles directory.
 // It looks for the role at rolesDir/name/ and loads tasks, handlers, vars, and defaults.
 func LoadRole(name, rolesDir string) (*Role, error) {
-	rolePath := filepath.Join(rolesDir, name)
+	// If the role name is a path (contains separator or starts with .),
+	// resolve relative to the playbook directory (parent of rolesDir)
+	// rather than inside the roles/ subdirectory.
+	var rolePath string
+	if filepath.IsAbs(name) {
+		rolePath = name
+	} else if name != filepath.Base(name) {
+		// Path-like name (e.g. "../bolt-roles/docker", "./custom/role")
+		rolePath = filepath.Join(filepath.Dir(rolesDir), name)
+	} else {
+		rolePath = filepath.Join(rolesDir, name)
+	}
 
 	// Check role directory exists
 	info, err := os.Stat(rolePath)
