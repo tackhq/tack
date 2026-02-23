@@ -10,26 +10,33 @@ import (
 	"os/exec"
 	"os/user"
 	"runtime"
+	"strings"
 
 	"github.com/eugenetaranov/bolt/internal/connector"
 )
 
 // Connector executes commands on the local machine.
 type Connector struct {
-	shell     string
-	shellArgs []string
-	sudo      bool
-	sudoUser  string
+	shell        string
+	shellArgs    []string
+	sudo         bool
+	sudoPassword string
 }
 
 // Option configures the local connector.
 type Option func(*Connector)
 
 // WithSudo enables sudo for command execution.
-func WithSudo(user string) Option {
+func WithSudo() Option {
 	return func(c *Connector) {
 		c.sudo = true
-		c.sudoUser = user
+	}
+}
+
+// WithSudoPassword sets the sudo password.
+func WithSudoPassword(password string) Option {
+	return func(c *Connector) {
+		c.sudoPassword = password
 	}
 }
 
@@ -108,18 +115,34 @@ func (c *Connector) Execute(ctx context.Context, cmd string) (*connector.Result,
 }
 
 // buildCommand wraps the command with sudo if configured.
+// Commands are wrapped in sh -c so that shell builtins and env vars work.
+// Sudo is skipped when already running as root.
 func (c *Connector) buildCommand(cmd string) string {
 	if !c.sudo {
 		return cmd
 	}
 
-	if c.sudoUser != "" {
-		return fmt.Sprintf("sudo -u %s -- %s", c.sudoUser, cmd)
+	// Skip sudo when already root
+	if u, err := user.Current(); err == nil && u.Uid == "0" {
+		return cmd
 	}
-	return fmt.Sprintf("sudo -- %s", cmd)
+
+	escaped := strings.ReplaceAll(cmd, "'", "'\"'\"'")
+	if c.sudoPassword != "" {
+		return fmt.Sprintf("printf '%%s\\n' '%s' | sudo -S sh -c '%s'", c.sudoPassword, escaped)
+	}
+	return fmt.Sprintf("sudo sh -c '%s'", escaped)
+}
+
+// SetSudo enables or disables sudo for subsequent commands.
+func (c *Connector) SetSudo(enabled bool, password string) {
+	c.sudo = enabled
+	c.sudoPassword = password
 }
 
 // Upload writes content from src to a local file at dst.
+// When sudo is enabled and the current user is not root, writes to a
+// temp file first, then moves it into place via a sudo shell command.
 func (c *Connector) Upload(ctx context.Context, src io.Reader, dst string, mode uint32) error {
 	// Check for context cancellation
 	select {
@@ -128,19 +151,59 @@ func (c *Connector) Upload(ctx context.Context, src io.Reader, dst string, mode 
 	default:
 	}
 
-	// Create the destination file
+	// When sudo is active and we're not root, write to a temp file first.
+	needsSudo := c.sudo
+	if needsSudo {
+		if u, err := user.Current(); err == nil && u.Uid == "0" {
+			needsSudo = false
+		}
+	}
+
+	if needsSudo {
+		tmpFile, err := os.CreateTemp("", "bolt-upload-*")
+		if err != nil {
+			return fmt.Errorf("failed to create temp file: %w", err)
+		}
+		tmpPath := tmpFile.Name()
+		defer os.Remove(tmpPath)
+
+		if _, err := io.Copy(tmpFile, src); err != nil {
+			tmpFile.Close()
+			return fmt.Errorf("failed to write to temp file: %w", err)
+		}
+		tmpFile.Close()
+
+		modeStr := fmt.Sprintf("%04o", mode)
+		cmd := fmt.Sprintf("mv %s %s && chmod %s %s",
+			shellQuote(tmpPath), shellQuote(dst),
+			modeStr, shellQuote(dst))
+		result, err := c.Execute(ctx, cmd)
+		if err != nil {
+			return fmt.Errorf("failed to move uploaded file to %s: %w", dst, err)
+		}
+		if result.ExitCode != 0 {
+			return fmt.Errorf("failed to move uploaded file to %s: %s", dst, result.Stderr)
+		}
+		return nil
+	}
+
+	// Direct write — no sudo needed
 	f, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, os.FileMode(mode))
 	if err != nil {
 		return fmt.Errorf("failed to create file %s: %w", dst, err)
 	}
 	defer f.Close()
 
-	// Copy content
 	if _, err := io.Copy(f, src); err != nil {
 		return fmt.Errorf("failed to write to %s: %w", dst, err)
 	}
 
 	return nil
+}
+
+// shellQuote wraps a string in single quotes for safe shell usage.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
 }
 
 // Download reads content from a local file at src to dst.
@@ -182,9 +245,6 @@ func (c *Connector) String() string {
 		hostname = "localhost"
 	}
 
-	if c.sudo && c.sudoUser != "" {
-		return fmt.Sprintf("local://%s@%s (sudo as %s)", u.Username, hostname, c.sudoUser)
-	}
 	if c.sudo {
 		return fmt.Sprintf("local://%s@%s (sudo)", u.Username, hostname)
 	}

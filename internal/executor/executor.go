@@ -22,14 +22,16 @@ import (
 
 // ConnOverrides holds CLI/env overrides for connection settings.
 type ConnOverrides struct {
-	Connection string
-	Hosts      []string
-	SSHUser    string
-	SSHPort    int
-	SSHKey     string
-	SSHPass    string
-	HasSSHPass bool // true when --ssh-password flag was explicitly provided
-	SSHInsecure bool
+	Connection   string
+	Hosts        []string
+	SSHUser      string
+	SSHPort      int
+	SSHKey       string
+	SSHPass      string
+	HasSSHPass   bool // true when --ssh-password flag was explicitly provided
+	SSHInsecure  bool
+	Sudo         bool
+	SudoPassword string
 }
 
 // Executor runs playbooks.
@@ -51,6 +53,10 @@ type Executor struct {
 
 	// Overrides holds CLI/env connection overrides applied to each play.
 	Overrides *ConnOverrides
+
+	// PromptSudoPassword is called to prompt the user for a sudo password
+	// when tasks require sudo but no password was provided.
+	PromptSudoPassword func() (string, error)
 
 	// connectors caches connectors by host.
 	connectors map[string]connector.Connector
@@ -202,6 +208,12 @@ func (e *Executor) applyOverrides(play *playbook.Play) {
 	if o.SSHInsecure {
 		play.Vars["bolt_ssh_host_key_checking"] = false
 	}
+	if o.Sudo {
+		play.Sudo = true
+	}
+	if o.SudoPassword != "" {
+		play.Vars["bolt_sudo_password"] = o.SudoPassword
+	}
 }
 
 // runPlay executes a single play.
@@ -210,8 +222,6 @@ func (e *Executor) runPlay(ctx context.Context, play *playbook.Play, stats *Stat
 	if play.GetConnection() != "local" && len(play.Hosts) == 0 {
 		return fmt.Errorf("play is missing 'hosts' (provide via playbook or -c flag)")
 	}
-
-	e.Output.PlayStart(play)
 
 	// Load roles if specified
 	var roles []*playbook.Role
@@ -222,6 +232,15 @@ func (e *Executor) runPlay(ctx context.Context, play *playbook.Play, stats *Stat
 			return fmt.Errorf("failed to load roles: %w", err)
 		}
 	}
+
+	// Prompt for sudo password before any per-host output
+	allTasks := playbook.ExpandRoleTasks(roles, play.Tasks)
+	allHandlers := playbook.ExpandRoleHandlers(roles, play.Handlers)
+	if err := e.needsSudoPassword(play, allTasks, allHandlers); err != nil {
+		return err
+	}
+
+	e.Output.PlayStart(play)
 
 	// For local connection, run once regardless of hosts list
 	if play.GetConnection() == "local" {
@@ -377,6 +396,15 @@ func (e *Executor) runTask(ctx context.Context, pctx *PlayContext, task *playboo
 func (e *Executor) runSingleTask(ctx context.Context, pctx *PlayContext, task *playbook.Task) (*TaskResult, error) {
 	taskName := task.String()
 	e.Output.TaskStart(taskName, task.Module)
+
+	// Handle task-level sudo override
+	playSudo := pctx.Play.Sudo
+	taskSudo := task.ShouldSudo(playSudo)
+	if taskSudo != playSudo {
+		sudoPass, _ := pctx.Play.Vars["bolt_sudo_password"].(string)
+		pctx.Connector.SetSudo(taskSudo, sudoPass)
+		defer pctx.Connector.SetSudo(playSudo, sudoPass)
+	}
 
 	// Expand shorthand syntax
 	playbook.ExpandShorthand(task)
@@ -680,6 +708,14 @@ func (e *Executor) planTasks(ctx context.Context, pctx *PlayContext, tasks []*pl
 		if pt.Status == "will_run" && resolveErr == nil && pctx.Connector != nil {
 			mod := module.Get(task.Module)
 			if checker, ok := mod.(module.Checker); ok {
+				// Apply task-level sudo for the check
+				playSudo := pctx.Play.Sudo
+				taskSudo := task.ShouldSudo(playSudo)
+				sudoPass, _ := pctx.Play.Vars["bolt_sudo_password"].(string)
+				if taskSudo != playSudo {
+					pctx.Connector.SetSudo(taskSudo, sudoPass)
+				}
+
 				// Inject internal params needed by template/copy
 				checkParams := make(map[string]any, len(resolved))
 				for k, v := range resolved {
@@ -710,6 +746,11 @@ func (e *Executor) planTasks(ctx context.Context, pctx *PlayContext, tasks []*pl
 					pt.NewContent = cr.NewContent
 				}
 				// On error: silently fall back to "will_run"
+
+				// Restore play-level sudo
+				if taskSudo != playSudo {
+					pctx.Connector.SetSudo(playSudo, sudoPass)
+				}
 			}
 		}
 
@@ -749,29 +790,78 @@ func (e *Executor) planHandlers(handlers []*playbook.Task) []output.PlannedTask 
 	return plan
 }
 
+// needsSudoPassword checks whether any task in the play requires sudo and
+// no password has been provided yet. If so, it prompts the user. This runs
+// before any host output so the prompt appears before "PLAY <host>".
+func (e *Executor) needsSudoPassword(play *playbook.Play, tasks, handlers []*playbook.Task) error {
+	// Already have a sudo password
+	if _, ok := play.Vars["bolt_sudo_password"].(string); ok {
+		return nil
+	}
+
+	// Check if any task or the play itself needs sudo
+	needsSudo := play.Sudo
+	if !needsSudo {
+		for _, t := range tasks {
+			if t.ShouldSudo(play.Sudo) {
+				needsSudo = true
+				break
+			}
+		}
+	}
+	if !needsSudo {
+		for _, h := range handlers {
+			if h.ShouldSudo(play.Sudo) {
+				needsSudo = true
+				break
+			}
+		}
+	}
+	if !needsSudo {
+		return nil
+	}
+
+	// Need a password — prompt for it
+	if e.PromptSudoPassword == nil {
+		return fmt.Errorf("sudo requires a password; use --sudo-password or configure passwordless sudo")
+	}
+
+	pass, err := e.PromptSudoPassword()
+	if err != nil {
+		return fmt.Errorf("failed to read sudo password: %w", err)
+	}
+
+	play.Vars["bolt_sudo_password"] = pass
+	return nil
+}
+
 // getConnector returns a connector for the play targeting a specific host.
 func (e *Executor) getConnector(play *playbook.Play, host string) (connector.Connector, error) {
 	connType := play.GetConnection()
 
+	sudoPass, _ := play.Vars["bolt_sudo_password"].(string)
+
 	switch connType {
 	case "local":
 		var opts []local.Option
-		if play.Become {
-			opts = append(opts, local.WithSudo(play.GetBecomeUser()))
+		if play.Sudo {
+			opts = append(opts, local.WithSudo())
+			if sudoPass != "" {
+				opts = append(opts, local.WithSudoPassword(sudoPass))
+			}
 		}
 		return local.New(opts...), nil
 
 	case "docker":
-		var opts []docker.Option
-		if play.Become && play.BecomeUser != "" {
-			opts = append(opts, docker.WithUser(play.GetBecomeUser()))
-		}
-		return docker.New(host, opts...), nil
+		return docker.New(host), nil
 
 	case "ssh":
 		var sshOpts []sshconn.Option
-		if play.Become {
-			sshOpts = append(sshOpts, sshconn.WithSudo(play.GetBecomeUser()))
+		if play.Sudo {
+			sshOpts = append(sshOpts, sshconn.WithSudo())
+			if sudoPass != "" {
+				sshOpts = append(sshOpts, sshconn.WithSudoPassword(sudoPass))
+			}
 		}
 		if u, ok := play.Vars["bolt_ssh_user"].(string); ok {
 			sshOpts = append(sshOpts, sshconn.WithUser(u))

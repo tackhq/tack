@@ -22,7 +22,8 @@ func TestOptions(t *testing.T) {
 		WithKeyFile("/tmp/key"),
 		WithPassword("secret"),
 		WithTimeout(10*time.Second),
-		WithSudo("root"),
+		WithSudo(),
+		WithSudoPassword("pass123"),
 	)
 
 	assert.Equal(t, "deploy", c.user)
@@ -31,7 +32,7 @@ func TestOptions(t *testing.T) {
 	assert.Equal(t, "secret", c.password)
 	assert.Equal(t, 10*time.Second, c.timeout)
 	assert.True(t, c.sudo)
-	assert.Equal(t, "root", c.sudoUser)
+	assert.Equal(t, "pass123", c.sudoPassword)
 }
 
 func TestApplyDefaults(t *testing.T) {
@@ -58,11 +59,12 @@ func TestApplyDefaultsPreservesExplicit(t *testing.T) {
 
 func TestBuildCommand(t *testing.T) {
 	tests := []struct {
-		name     string
-		sudo     bool
-		sudoUser string
-		cmd      string
-		expected string
+		name         string
+		sudo         bool
+		sudoPassword string
+		user         string
+		cmd          string
+		expected     string
 	}{
 		{
 			name:     "no sudo",
@@ -70,23 +72,30 @@ func TestBuildCommand(t *testing.T) {
 			expected: "whoami",
 		},
 		{
-			name:     "sudo without user",
+			name:     "sudo without password",
 			sudo:     true,
 			cmd:      "whoami",
-			expected: "sudo -- whoami",
+			expected: "sudo sh -c 'whoami'",
 		},
 		{
-			name:     "sudo with user",
+			name:         "sudo with password",
+			sudo:         true,
+			sudoPassword: "secret",
+			cmd:          "whoami",
+			expected:     "printf '%s\\n' 'secret' | sudo -S sh -c 'whoami'",
+		},
+		{
+			name:     "sudo skipped for root user",
 			sudo:     true,
-			sudoUser: "deploy",
+			user:     "root",
 			cmd:      "whoami",
-			expected: "sudo -u deploy -- whoami",
+			expected: "whoami",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &Connector{sudo: tt.sudo, sudoUser: tt.sudoUser}
+			c := &Connector{sudo: tt.sudo, sudoPassword: tt.sudoPassword, user: tt.user}
 			assert.Equal(t, tt.expected, c.buildCommand(tt.cmd))
 		})
 	}
@@ -113,9 +122,9 @@ func TestString(t *testing.T) {
 		},
 		{
 			name:     "with sudo",
-			opts:     []Option{WithUser("deploy"), WithPort(22), WithSudo("root")},
+			opts:     []Option{WithUser("deploy"), WithPort(22), WithSudo()},
 			hostname: "server.local",
-			expected: "ssh://deploy@server.local:22 (sudo as root)",
+			expected: "ssh://deploy@server.local:22 (sudo)",
 		},
 	}
 

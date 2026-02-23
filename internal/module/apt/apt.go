@@ -239,6 +239,9 @@ func checkApt(ctx context.Context, conn connector.Connector) error {
 		return fmt.Errorf("failed to check for apt: %w", err)
 	}
 	if result.ExitCode != 0 {
+		if strings.TrimSpace(result.Stderr) != "" {
+			return fmt.Errorf("apt-get check failed: %s", strings.TrimSpace(result.Stderr))
+		}
 		return fmt.Errorf("apt-get is not available (not a Debian/Ubuntu system?)")
 	}
 	return nil
