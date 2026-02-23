@@ -84,6 +84,65 @@ tasks:
 	}
 }
 
+func TestParseHostsFormats(t *testing.T) {
+	tests := []struct {
+		name      string
+		yaml      string
+		wantHosts []string
+	}{
+		{
+			name: "string host",
+			yaml: `
+hosts: myserver
+tasks:
+  - command:
+      cmd: echo hello
+`,
+			wantHosts: []string{"myserver"},
+		},
+		{
+			name: "list of hosts",
+			yaml: `
+hosts: [web1, web2, db1]
+tasks:
+  - command:
+      cmd: echo hello
+`,
+			wantHosts: []string{"web1", "web2", "db1"},
+		},
+		{
+			name: "block list of hosts",
+			yaml: `
+hosts:
+  - app1
+  - app2
+tasks:
+  - command:
+      cmd: echo hello
+`,
+			wantHosts: []string{"app1", "app2"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pb, err := ParseRaw([]byte(tt.yaml), "test.yaml")
+			if err != nil {
+				t.Fatalf("parse error: %v", err)
+			}
+			hosts := pb.Plays[0].Hosts
+			if len(hosts) != len(tt.wantHosts) {
+				t.Fatalf("expected %d hosts, got %d: %v", len(tt.wantHosts), len(hosts), hosts)
+			}
+			for i, h := range tt.wantHosts {
+				if hosts[i] != h {
+					t.Errorf("hosts[%d]: expected %q, got %q", i, h, hosts[i])
+				}
+			}
+		})
+	}
+}
+
 func TestParseRawTask(t *testing.T) {
 	tests := []struct {
 		name       string

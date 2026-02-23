@@ -20,7 +20,7 @@ func TestPlayValidate(t *testing.T) {
 		{
 			name: "valid local connection",
 			play: Play{
-				Hosts:      "localhost",
+				Hosts:      []string{"localhost"},
 				Connection: "local",
 				Tasks:      []*Task{{Module: "command", Params: map[string]any{"cmd": "echo"}}},
 			},
@@ -29,7 +29,7 @@ func TestPlayValidate(t *testing.T) {
 		{
 			name: "valid docker connection",
 			play: Play{
-				Hosts:      "my-container",
+				Hosts:      []string{"my-container"},
 				Connection: "docker",
 				Tasks:      []*Task{{Module: "command", Params: map[string]any{"cmd": "echo"}}},
 			},
@@ -38,7 +38,7 @@ func TestPlayValidate(t *testing.T) {
 		{
 			name: "invalid connection type",
 			play: Play{
-				Hosts:      "localhost",
+				Hosts:      []string{"localhost"},
 				Connection: "invalid",
 				Tasks:      []*Task{{Module: "command", Params: map[string]any{"cmd": "echo"}}},
 			},
@@ -48,7 +48,7 @@ func TestPlayValidate(t *testing.T) {
 		{
 			name: "task with no module",
 			play: Play{
-				Hosts: "localhost",
+				Hosts: []string{"localhost"},
 				Tasks: []*Task{{Name: "bad task"}},
 			},
 			wantErr: true,
@@ -57,7 +57,7 @@ func TestPlayValidate(t *testing.T) {
 		{
 			name: "handler without name",
 			play: Play{
-				Hosts:    "localhost",
+				Hosts:    []string{"localhost"},
 				Tasks:    []*Task{{Module: "command", Params: map[string]any{"cmd": "echo"}}},
 				Handlers: []*Task{{Module: "command", Params: map[string]any{"cmd": "echo"}}},
 			},

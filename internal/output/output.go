@@ -94,7 +94,7 @@ func (o *Output) PlaybookEnd(stats Stats) {
 func (o *Output) PlayStart(play *playbook.Play) {
 	name := play.Name
 	if name == "" {
-		name = play.Hosts
+		name = strings.Join(play.Hosts, ", ")
 	}
 	o.printf("\n%s %s\n", o.color(colorBold, "PLAY"), name)
 }

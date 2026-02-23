@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	// Import modules to register them
 	_ "github.com/eugenetaranov/bolt/internal/module/apt"
@@ -71,10 +74,18 @@ var runCmd = &cobra.Command{
 	Short: "Run a playbook",
 	Long: `Execute a playbook against the specified hosts.
 
+Connection flags override playbook values. Environment variables
+(BOLT_CONNECTION, BOLT_HOSTS, BOLT_SSH_USER, BOLT_SSH_PORT,
+BOLT_SSH_KEY, BOLT_SSH_PASSWORD) fill in when neither CLI flag
+nor playbook provides a value.
+
 Examples:
   bolt run setup.yaml
   bolt run setup.yaml --debug
-  bolt run setup.yaml --dry-run`,
+  bolt run setup.yaml --dry-run
+  bolt run setup.yaml --connection=ssh --hosts=web1,web2
+  bolt run setup.yaml --ssh-user=deploy --ssh-key=~/.ssh/deploy_key
+  BOLT_SSH_HOSTS=web1,web2 bolt run setup.yaml`,
 	Args: cobra.ExactArgs(1),
 	RunE: runPlaybook,
 }
@@ -86,6 +97,17 @@ func init() {
 	runCmd.Flags().StringSlice("tags", nil, "Only run tasks with these tags")
 	runCmd.Flags().StringSlice("skip-tags", nil, "Skip tasks with these tags")
 	runCmd.Flags().IntP("forks", "f", 1, "Number of parallel processes (not yet implemented)")
+
+	// Connection override flags
+	runCmd.Flags().StringP("connection", "c", "", "Connection type (local, ssh, docker)")
+	runCmd.Flags().String("hosts", "", "Comma-separated list of target hosts")
+	runCmd.Flags().String("ssh-user", "", "SSH username")
+	runCmd.Flags().Int("ssh-port", 0, "SSH port")
+	runCmd.Flags().String("ssh-key", "", "Path to SSH private key")
+	sshPassFlag := runCmd.Flags().String("ssh-password", "", "SSH password (prompted if flag present with no value)")
+	_ = sshPassFlag
+	runCmd.Flags().Lookup("ssh-password").NoOptDefVal = ""
+	runCmd.Flags().Bool("ssh-insecure", false, "Skip SSH host key verification")
 }
 
 func runPlaybook(cmd *cobra.Command, args []string) error {
@@ -102,10 +124,17 @@ func runPlaybook(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to parse playbook: %w", err)
 	}
 
+	// Build connection overrides from CLI flags and env vars
+	overrides, err := buildConnOverrides(cmd)
+	if err != nil {
+		return err
+	}
+
 	// Create executor
 	exec := executor.New()
 	exec.Debug = debug
 	exec.DryRun = dryRun
+	exec.Overrides = overrides
 	exec.Output.SetColor(!noColor)
 	exec.Output.SetDebug(debug)
 
@@ -230,4 +259,75 @@ var modulesCmd = &cobra.Command{
 		fmt.Println()
 		fmt.Printf("Total: %d modules\n", len(modules))
 	},
+}
+
+// flagOrEnv returns the flag value if changed, otherwise the environment variable value.
+func flagOrEnv(cmd *cobra.Command, flagName, envVar string) string {
+	if cmd.Flags().Changed(flagName) {
+		val, _ := cmd.Flags().GetString(flagName)
+		return val
+	}
+	return os.Getenv(envVar)
+}
+
+// buildConnOverrides constructs connection overrides from CLI flags and env vars.
+func buildConnOverrides(cmd *cobra.Command) (*executor.ConnOverrides, error) {
+	o := &executor.ConnOverrides{}
+
+	o.Connection = flagOrEnv(cmd, "connection", "BOLT_CONNECTION")
+
+	hosts := flagOrEnv(cmd, "hosts", "BOLT_HOSTS")
+	if hosts != "" {
+		for _, h := range strings.Split(hosts, ",") {
+			h = strings.TrimSpace(h)
+			if h != "" {
+				o.Hosts = append(o.Hosts, h)
+			}
+		}
+	}
+
+	o.SSHUser = flagOrEnv(cmd, "ssh-user", "BOLT_SSH_USER")
+	o.SSHKey = flagOrEnv(cmd, "ssh-key", "BOLT_SSH_KEY")
+
+	// SSH port: flag > env > 0 (no override)
+	if cmd.Flags().Changed("ssh-port") {
+		port, _ := cmd.Flags().GetInt("ssh-port")
+		o.SSHPort = port
+	} else if envPort := os.Getenv("BOLT_SSH_PORT"); envPort != "" {
+		port, err := strconv.Atoi(envPort)
+		if err != nil {
+			return nil, fmt.Errorf("invalid BOLT_SSH_PORT: %w", err)
+		}
+		o.SSHPort = port
+	}
+
+	// SSH password: flag (prompt if empty) > env > no override
+	if cmd.Flags().Changed("ssh-password") {
+		o.HasSSHPass = true
+		val, _ := cmd.Flags().GetString("ssh-password")
+		if val == "" {
+			// Prompt interactively
+			fmt.Fprint(os.Stderr, "SSH password: ")
+			passBytes, err := term.ReadPassword(int(syscall.Stdin))
+			fmt.Fprintln(os.Stderr)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read password: %w", err)
+			}
+			o.SSHPass = string(passBytes)
+		} else {
+			o.SSHPass = val
+		}
+	} else if envPass := os.Getenv("BOLT_SSH_PASSWORD"); envPass != "" {
+		o.HasSSHPass = true
+		o.SSHPass = envPass
+	}
+
+	// SSH insecure: flag > env > false
+	if cmd.Flags().Changed("ssh-insecure") {
+		o.SSHInsecure, _ = cmd.Flags().GetBool("ssh-insecure")
+	} else if envInsecure := os.Getenv("BOLT_SSH_INSECURE"); envInsecure != "" {
+		o.SSHInsecure = envInsecure == "1" || envInsecure == "true" || envInsecure == "yes"
+	}
+
+	return o, nil
 }

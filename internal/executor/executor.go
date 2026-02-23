@@ -12,11 +12,24 @@ import (
 	"github.com/eugenetaranov/bolt/internal/connector"
 	"github.com/eugenetaranov/bolt/internal/connector/docker"
 	"github.com/eugenetaranov/bolt/internal/connector/local"
+	sshconn "github.com/eugenetaranov/bolt/internal/connector/ssh"
 	"github.com/eugenetaranov/bolt/internal/module"
 	"github.com/eugenetaranov/bolt/internal/output"
 	"github.com/eugenetaranov/bolt/internal/playbook"
 	"github.com/eugenetaranov/bolt/pkg/facts"
 )
+
+// ConnOverrides holds CLI/env overrides for connection settings.
+type ConnOverrides struct {
+	Connection string
+	Hosts      []string
+	SSHUser    string
+	SSHPort    int
+	SSHKey     string
+	SSHPass    string
+	HasSSHPass bool // true when --ssh-password flag was explicitly provided
+	SSHInsecure bool
+}
 
 // Executor runs playbooks.
 type Executor struct {
@@ -28,6 +41,9 @@ type Executor struct {
 
 	// Debug enables detailed output.
 	Debug bool
+
+	// Overrides holds CLI/env connection overrides applied to each play.
+	Overrides *ConnOverrides
 
 	// connectors caches connectors by host.
 	connectors map[string]connector.Connector
@@ -121,6 +137,7 @@ func (e *Executor) Run(ctx context.Context, pb *playbook.Playbook) (*RunResult, 
 	rolesDir := filepath.Join(filepath.Dir(pb.Path), "roles")
 
 	for _, play := range pb.Plays {
+		e.applyOverrides(play)
 		if err := e.runPlay(ctx, play, stats, rolesDir); err != nil {
 			result.Success = false
 			e.Output.Error("Play failed: %v", err)
@@ -132,6 +149,40 @@ func (e *Executor) Run(ctx context.Context, pb *playbook.Playbook) (*RunResult, 
 	e.Output.PlaybookEnd(stats)
 
 	return result, nil
+}
+
+// applyOverrides applies CLI/env connection overrides to a play.
+func (e *Executor) applyOverrides(play *playbook.Play) {
+	if e.Overrides == nil {
+		return
+	}
+	o := e.Overrides
+
+	if o.Connection != "" {
+		play.Connection = o.Connection
+	}
+	if len(o.Hosts) > 0 {
+		play.Hosts = o.Hosts
+	}
+
+	if play.Vars == nil {
+		play.Vars = make(map[string]any)
+	}
+	if o.SSHUser != "" {
+		play.Vars["bolt_ssh_user"] = o.SSHUser
+	}
+	if o.SSHPort != 0 {
+		play.Vars["bolt_ssh_port"] = o.SSHPort
+	}
+	if o.SSHKey != "" {
+		play.Vars["bolt_ssh_key"] = o.SSHKey
+	}
+	if o.HasSSHPass {
+		play.Vars["bolt_ssh_password"] = o.SSHPass
+	}
+	if o.SSHInsecure {
+		play.Vars["bolt_ssh_host_key_checking"] = false
+	}
 }
 
 // runPlay executes a single play.
@@ -148,6 +199,23 @@ func (e *Executor) runPlay(ctx context.Context, play *playbook.Play, stats *Stat
 		}
 	}
 
+	// For local connection, run once regardless of hosts list
+	if play.GetConnection() == "local" {
+		return e.runPlayOnHost(ctx, play, stats, roles, "localhost")
+	}
+
+	// For remote connections, iterate over each host
+	for _, host := range play.Hosts {
+		if err := e.runPlayOnHost(ctx, play, stats, roles, host); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// runPlayOnHost executes a play against a single host.
+func (e *Executor) runPlayOnHost(ctx context.Context, play *playbook.Play, stats *Stats, roles []*playbook.Role, host string) error {
 	// Create play context
 	pctx := &PlayContext{
 		Play:             play,
@@ -163,16 +231,16 @@ func (e *Executor) runPlay(ctx context.Context, play *playbook.Play, stats *Stat
 	// Add environment variables
 	pctx.Vars["env"] = getEnvMap()
 
-	// Get connector for this play
-	conn, err := e.getConnector(play)
+	// Get connector for this host
+	conn, err := e.getConnector(play, host)
 	if err != nil {
-		return fmt.Errorf("failed to create connector: %w", err)
+		return fmt.Errorf("failed to create connector for host %s: %w", host, err)
 	}
 	pctx.Connector = conn
 
 	// Connect
 	if err := conn.Connect(ctx); err != nil {
-		return fmt.Errorf("failed to connect: %w", err)
+		return fmt.Errorf("failed to connect to %s: %w", host, err)
 	}
 
 	// Gather facts if enabled
@@ -417,8 +485,8 @@ func (e *Executor) runHandlersExpanded(ctx context.Context, pctx *PlayContext, s
 	return nil
 }
 
-// getConnector returns a connector for the play.
-func (e *Executor) getConnector(play *playbook.Play) (connector.Connector, error) {
+// getConnector returns a connector for the play targeting a specific host.
+func (e *Executor) getConnector(play *playbook.Play, host string) (connector.Connector, error) {
 	connType := play.GetConnection()
 
 	switch connType {
@@ -430,16 +498,33 @@ func (e *Executor) getConnector(play *playbook.Play) (connector.Connector, error
 		return local.New(opts...), nil
 
 	case "docker":
-		// For docker, hosts is the container name/ID
-		container := play.Hosts
 		var opts []docker.Option
 		if play.Become && play.BecomeUser != "" {
 			opts = append(opts, docker.WithUser(play.GetBecomeUser()))
 		}
-		return docker.New(container, opts...), nil
+		return docker.New(host, opts...), nil
 
 	case "ssh":
-		return nil, fmt.Errorf("SSH connector not yet implemented")
+		var sshOpts []sshconn.Option
+		if play.Become {
+			sshOpts = append(sshOpts, sshconn.WithSudo(play.GetBecomeUser()))
+		}
+		if u, ok := play.Vars["bolt_ssh_user"].(string); ok {
+			sshOpts = append(sshOpts, sshconn.WithUser(u))
+		}
+		if port, ok := play.Vars["bolt_ssh_port"].(int); ok {
+			sshOpts = append(sshOpts, sshconn.WithPort(port))
+		}
+		if keyFile, ok := play.Vars["bolt_ssh_key"].(string); ok {
+			sshOpts = append(sshOpts, sshconn.WithKeyFile(keyFile))
+		}
+		if pass, ok := play.Vars["bolt_ssh_password"].(string); ok {
+			sshOpts = append(sshOpts, sshconn.WithPassword(pass))
+		}
+		if hostKeyChecking, ok := play.Vars["bolt_ssh_host_key_checking"].(bool); ok && !hostKeyChecking {
+			sshOpts = append(sshOpts, sshconn.WithInsecureHostKey())
+		}
+		return sshconn.New(host, sshOpts...), nil
 
 	case "ssm":
 		return nil, fmt.Errorf("SSM connector not yet implemented")

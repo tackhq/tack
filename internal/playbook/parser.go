@@ -152,8 +152,15 @@ func parseRawPlay(raw map[string]any) (*Play, error) {
 	if v, ok := raw["name"].(string); ok {
 		play.Name = v
 	}
-	if v, ok := raw["hosts"].(string); ok {
-		play.Hosts = v
+	switch v := raw["hosts"].(type) {
+	case string:
+		play.Hosts = []string{v}
+	case []any:
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				play.Hosts = append(play.Hosts, s)
+			}
+		}
 	}
 	if v, ok := raw["connection"].(string); ok {
 		play.Connection = v
