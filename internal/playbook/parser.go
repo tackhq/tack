@@ -10,7 +10,23 @@ import (
 	"github.com/eugenetaranov/bolt/internal/module"
 )
 
-// knownTaskFields are fields that are task directives, not module names.
+// asBool converts a YAML value to a bool, handling both native booleans
+// and YAML 1.1 string booleans (yes/no/on/off) that yaml.v3 parses as strings.
+func asBool(v any) (bool, bool) {
+	switch val := v.(type) {
+	case bool:
+		return val, true
+	case string:
+		switch strings.ToLower(val) {
+		case "yes", "on", "true":
+			return true, true
+		case "no", "off", "false":
+			return false, true
+		}
+	}
+	return false, false
+}
+
 // knownTaskFields are fields that are task directives, not module names.
 var knownTaskFields = map[string]bool{
 	"name":         true,
@@ -23,8 +39,7 @@ var knownTaskFields = map[string]bool{
 	"ignore_errors": true,
 	"retries":      true,
 	"delay":        true,
-	"become":       true,
-	"become_user":  true,
+	"sudo":         true,
 	"changed_when": true,
 	"failed_when":  true,
 	"include":      true,
@@ -97,11 +112,8 @@ func parseRawPlay(raw map[string]any) (*Play, error) {
 	if v, ok := raw["connection"].(string); ok {
 		play.Connection = v
 	}
-	if v, ok := raw["become"].(bool); ok {
-		play.Become = v
-	}
-	if v, ok := raw["become_user"].(string); ok {
-		play.BecomeUser = v
+	if v, ok := asBool(raw["sudo"]); ok {
+		play.Sudo = v
 	}
 	if v, ok := raw["gather_facts"].(bool); ok {
 		play.GatherFacts = &v
@@ -187,11 +199,8 @@ func parseRawTask(raw map[string]any) (*Task, error) {
 	if v, ok := raw["delay"].(int); ok {
 		task.Delay = v
 	}
-	if v, ok := raw["become"].(bool); ok {
-		task.Become = &v
-	}
-	if v, ok := raw["become_user"].(string); ok {
-		task.BecomeUser = v
+	if v, ok := asBool(raw["sudo"]); ok {
+		task.Sudo = &v
 	}
 	if v, ok := raw["changed_when"].(string); ok {
 		task.ChangedWhen = v

@@ -45,7 +45,7 @@ type Connector struct {
 	password        string
 	timeout         time.Duration
 	sudo            bool
-	sudoUser        string
+	sudoPassword    string
 	insecureHostKey bool
 
 	client       *ssh.Client
@@ -99,10 +99,16 @@ func WithInsecureHostKey() Option {
 }
 
 // WithSudo enables sudo for command execution.
-func WithSudo(user string) Option {
+func WithSudo() Option {
 	return func(c *Connector) {
 		c.sudo = true
-		c.sudoUser = user
+	}
+}
+
+// WithSudoPassword sets the sudo password.
+func WithSudoPassword(password string) Option {
+	return func(c *Connector) {
+		c.sudoPassword = password
 	}
 }
 
@@ -227,6 +233,8 @@ func (c *Connector) Execute(ctx context.Context, cmd string) (*connector.Result,
 }
 
 // Upload copies content from src to a remote file at dst using SFTP.
+// When sudo is enabled, uploads to a temp file first, then moves it
+// into place via a sudo shell command (SFTP runs as the SSH user).
 func (c *Connector) Upload(ctx context.Context, src io.Reader, dst string, mode uint32) error {
 	if c.client == nil {
 		return fmt.Errorf("not connected")
@@ -244,21 +252,53 @@ func (c *Connector) Upload(ctx context.Context, src io.Reader, dst string, mode 
 	default:
 	}
 
-	f, err := sftpClient.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC)
+	// When sudo is active, SFTP can't write directly to privileged paths.
+	// Upload to a temp file, then move it into place via sudo.
+	target := dst
+	if c.sudo && c.user != "root" {
+		target = fmt.Sprintf("/tmp/bolt-upload-%d", time.Now().UnixNano())
+	}
+
+	f, err := sftpClient.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_TRUNC)
 	if err != nil {
-		return fmt.Errorf("failed to create remote file %s: %w", dst, err)
+		return fmt.Errorf("failed to create remote file %s: %w", target, err)
 	}
 	defer f.Close()
 
 	if _, err := io.Copy(f, src); err != nil {
-		return fmt.Errorf("failed to write to remote file %s: %w", dst, err)
+		return fmt.Errorf("failed to write to remote file %s: %w", target, err)
 	}
 
-	if err := sftpClient.Chmod(dst, os.FileMode(mode)); err != nil {
-		return fmt.Errorf("failed to set permissions on %s: %w", dst, err)
+	if target == dst {
+		// Direct write — set permissions via SFTP
+		if err := sftpClient.Chmod(dst, os.FileMode(mode)); err != nil {
+			return fmt.Errorf("failed to set permissions on %s: %w", dst, err)
+		}
+		return nil
+	}
+
+	// Sudo path: move temp file to destination and set permissions
+	modeStr := fmt.Sprintf("%04o", mode)
+	cmd := fmt.Sprintf("mv %s %s && chmod %s %s",
+		shellQuote(target), shellQuote(dst),
+		modeStr, shellQuote(dst))
+	result, err := c.Execute(ctx, cmd)
+	if err != nil {
+		// Clean up temp file
+		_, _ = c.Execute(ctx, fmt.Sprintf("rm -f %s", shellQuote(target)))
+		return fmt.Errorf("failed to move uploaded file to %s: %w", dst, err)
+	}
+	if result.ExitCode != 0 {
+		_, _ = c.Execute(ctx, fmt.Sprintf("rm -f %s", shellQuote(target)))
+		return fmt.Errorf("failed to move uploaded file to %s: %s", dst, result.Stderr)
 	}
 
 	return nil
+}
+
+// shellQuote wraps a string in single quotes for safe shell usage.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
 }
 
 // Download copies content from a remote file at src to dst using SFTP.
@@ -317,9 +357,7 @@ func (c *Connector) String() string {
 		port = defaultPort
 	}
 	desc := fmt.Sprintf("ssh://%s@%s:%d", c.user, host, port)
-	if c.sudo && c.sudoUser != "" {
-		desc += fmt.Sprintf(" (sudo as %s)", c.sudoUser)
-	} else if c.sudo {
+	if c.sudo {
 		desc += " (sudo)"
 	}
 	return desc
@@ -499,15 +537,24 @@ func loadKey(path string) (ssh.Signer, error) {
 }
 
 // buildCommand wraps the command with sudo if configured.
+// Commands are wrapped in sh -c so that shell builtins and env vars work.
+// Sudo is skipped when already connected as root.
 func (c *Connector) buildCommand(cmd string) string {
-	if !c.sudo {
+	if !c.sudo || c.user == "root" {
 		return cmd
 	}
 
-	if c.sudoUser != "" {
-		return fmt.Sprintf("sudo -u %s -- %s", c.sudoUser, cmd)
+	escaped := strings.ReplaceAll(cmd, "'", "'\"'\"'")
+	if c.sudoPassword != "" {
+		return fmt.Sprintf("printf '%%s\\n' '%s' | sudo -S sh -c '%s'", c.sudoPassword, escaped)
 	}
-	return fmt.Sprintf("sudo -- %s", cmd)
+	return fmt.Sprintf("sudo sh -c '%s'", escaped)
+}
+
+// SetSudo enables or disables sudo for subsequent commands.
+func (c *Connector) SetSudo(enabled bool, password string) {
+	c.sudo = enabled
+	c.sudoPassword = password
 }
 
 // getSFTPClient returns a cached SFTP client or creates a new one.

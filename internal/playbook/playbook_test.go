@@ -170,22 +170,6 @@ func TestPlayGetConnection(t *testing.T) {
 	})
 }
 
-func TestPlayGetBecomeUser(t *testing.T) {
-	t.Run("default is root", func(t *testing.T) {
-		p := &Play{}
-		if got := p.GetBecomeUser(); got != "root" {
-			t.Errorf("expected 'root', got %q", got)
-		}
-	})
-
-	t.Run("explicit user", func(t *testing.T) {
-		p := &Play{BecomeUser: "admin"}
-		if got := p.GetBecomeUser(); got != "admin" {
-			t.Errorf("expected 'admin', got %q", got)
-		}
-	})
-}
-
 func TestTaskGetLoopVar(t *testing.T) {
 	t.Run("default is item", func(t *testing.T) {
 		task := &Task{}
@@ -202,21 +186,21 @@ func TestTaskGetLoopVar(t *testing.T) {
 	})
 }
 
-func TestTaskShouldBecome(t *testing.T) {
+func TestTaskShouldSudo(t *testing.T) {
 	t.Run("inherits from play", func(t *testing.T) {
 		task := &Task{}
-		if task.ShouldBecome(true) != true {
+		if task.ShouldSudo(true) != true {
 			t.Error("expected to inherit true from play")
 		}
-		if task.ShouldBecome(false) != false {
+		if task.ShouldSudo(false) != false {
 			t.Error("expected to inherit false from play")
 		}
 	})
 
 	t.Run("task overrides play", func(t *testing.T) {
 		val := false
-		task := &Task{Become: &val}
-		if task.ShouldBecome(true) != false {
+		task := &Task{Sudo: &val}
+		if task.ShouldSudo(true) != false {
 			t.Error("expected task to override play")
 		}
 	})

@@ -129,6 +129,10 @@ func init() {
 	_ = sshPassFlag
 	runCmd.Flags().Lookup("ssh-password").NoOptDefVal = ""
 	runCmd.Flags().Bool("ssh-insecure", false, "Skip SSH host key verification")
+	runCmd.Flags().BoolP("sudo", "s", false, "Enable sudo for all tasks")
+	sudoPassFlag := runCmd.Flags().String("sudo-password", "", "Sudo password (prompted if flag present with no value)")
+	_ = sudoPassFlag
+	runCmd.Flags().Lookup("sudo-password").NoOptDefVal = ""
 	runCmd.Flags().BoolVar(&autoApprove, "auto-approve", false, "Skip interactive approval prompt (for CI/scripting)")
 }
 
@@ -167,6 +171,15 @@ func runPlaybook(cmd *cobra.Command, args []string) error {
 	exec.DryRun = dryRun
 	exec.AutoApprove = autoApprove
 	exec.Overrides = overrides
+	exec.PromptSudoPassword = func() (string, error) {
+		fmt.Fprint(os.Stderr, "Sudo password: ")
+		passBytes, err := term.ReadPassword(int(syscall.Stdin))
+		fmt.Fprintln(os.Stderr)
+		if err != nil {
+			return "", err
+		}
+		return string(passBytes), nil
+	}
 	exec.Output.SetColor(!noColor)
 	exec.Output.SetDebug(debug)
 	exec.Output.SetVerbose(verbose)
@@ -385,6 +398,30 @@ func buildConnOverrides(cmd *cobra.Command) (*executor.ConnOverrides, error) {
 		o.SSHInsecure, _ = cmd.Flags().GetBool("ssh-insecure")
 	} else if envInsecure := os.Getenv("BOLT_SSH_INSECURE"); envInsecure != "" {
 		o.SSHInsecure = envInsecure == "1" || envInsecure == "true" || envInsecure == "yes"
+	}
+
+	// Sudo: flag > false
+	if cmd.Flags().Changed("sudo") {
+		o.Sudo, _ = cmd.Flags().GetBool("sudo")
+	}
+
+	// Sudo password: explicit flag > env
+	if cmd.Flags().Changed("sudo-password") {
+		val, _ := cmd.Flags().GetString("sudo-password")
+		if val == "" {
+			// Prompt interactively
+			fmt.Fprint(os.Stderr, "Sudo password: ")
+			passBytes, err := term.ReadPassword(int(syscall.Stdin))
+			fmt.Fprintln(os.Stderr)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read sudo password: %w", err)
+			}
+			o.SudoPassword = string(passBytes)
+		} else {
+			o.SudoPassword = val
+		}
+	} else if envPass := os.Getenv("BOLT_SUDO_PASSWORD"); envPass != "" {
+		o.SudoPassword = envPass
 	}
 
 	return o, nil

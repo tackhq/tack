@@ -193,7 +193,11 @@ func getFileInfo(ctx context.Context, conn connector.Connector, path string) (*f
 		[ -L %[1]s ] && type="link"
 		linktarget=""
 		[ -L %[1]s ] && linktarget=$(readlink %[1]s)
-		stat -f "%%Sp:%%Su:%%Sg" %[1]s 2>/dev/null || stat -c "%%A:%%U:%%G" %[1]s 2>/dev/null
+		if stat -c "%%A" /dev/null >/dev/null 2>&1; then
+			stat -c "%%A:%%U:%%G" %[1]s
+		else
+			stat -f "%%Sp:%%Su:%%Sg" %[1]s
+		fi
 		echo "$type:$linktarget"
 	else
 		echo "NOTEXIST"

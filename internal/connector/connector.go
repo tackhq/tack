@@ -27,6 +27,9 @@ type Connector interface {
 	// Download copies a file from remote source to local destination.
 	Download(ctx context.Context, src string, dst io.Writer) error
 
+	// SetSudo enables or disables sudo for subsequent commands.
+	SetSudo(enabled bool, password string)
+
 	// Close terminates the connection.
 	Close() error
 

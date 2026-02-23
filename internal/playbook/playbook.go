@@ -38,11 +38,8 @@ type Play struct {
 	// Handlers are tasks triggered by notify.
 	Handlers []*Task `yaml:"handlers"`
 
-	// Become enables privilege escalation.
-	Become bool `yaml:"become"`
-
-	// BecomeUser is the user to become (default: root).
-	BecomeUser string `yaml:"become_user"`
+	// Sudo enables privilege escalation.
+	Sudo bool `yaml:"sudo"`
 
 	// GatherFacts controls whether to gather system facts (default: true).
 	GatherFacts *bool `yaml:"gather_facts"`
@@ -89,11 +86,8 @@ type Task struct {
 	// Delay is seconds to wait between retries.
 	Delay int `yaml:"delay"`
 
-	// Become enables privilege escalation for this task.
-	Become *bool `yaml:"become"`
-
-	// BecomeUser is the user to become for this task.
-	BecomeUser string `yaml:"become_user"`
+	// Sudo enables privilege escalation for this task.
+	Sudo *bool `yaml:"sudo"`
 
 	// Changed controls when the task reports as changed.
 	// Can be a boolean or a conditional expression.
@@ -140,28 +134,12 @@ func (p *Play) GetConnection() string {
 	return p.Connection
 }
 
-// GetBecomeUser returns the become user, defaulting to "root".
-func (p *Play) GetBecomeUser() string {
-	if p.BecomeUser == "" {
-		return "root"
+// ShouldSudo returns whether privilege escalation is enabled for this task.
+func (t *Task) ShouldSudo(playSudo bool) bool {
+	if t.Sudo != nil {
+		return *t.Sudo
 	}
-	return p.BecomeUser
-}
-
-// ShouldBecome returns whether privilege escalation is enabled for this task.
-func (t *Task) ShouldBecome(playBecome bool) bool {
-	if t.Become != nil {
-		return *t.Become
-	}
-	return playBecome
-}
-
-// GetBecomeUser returns the become user for this task.
-func (t *Task) GetBecomeUser(playBecomeUser string) string {
-	if t.BecomeUser != "" {
-		return t.BecomeUser
-	}
-	return playBecomeUser
+	return playSudo
 }
 
 // GetLoopVar returns the loop variable name, defaulting to "item".

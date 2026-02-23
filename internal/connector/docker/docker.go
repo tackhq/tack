@@ -24,13 +24,6 @@ type Connector struct {
 // Option configures the Docker connector.
 type Option func(*Connector)
 
-// WithUser sets the user for command execution.
-func WithUser(user string) Option {
-	return func(c *Connector) {
-		c.user = user
-	}
-}
-
 // WithWorkdir sets the working directory for command execution.
 func WithWorkdir(dir string) Option {
 	return func(c *Connector) {
@@ -206,6 +199,9 @@ func (c *Connector) Download(ctx context.Context, src string, dst io.Writer) err
 
 	return nil
 }
+
+// SetSudo is a no-op for Docker connections (containers run as root by default).
+func (c *Connector) SetSudo(enabled bool, password string) {}
 
 // Close is a no-op for Docker connections.
 func (c *Connector) Close() error {
