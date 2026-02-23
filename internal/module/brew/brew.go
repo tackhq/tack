@@ -46,12 +46,12 @@ func (m *Module) Run(ctx context.Context, conn connector.Connector, params map[s
 		return nil, err
 	}
 
-	stateStr := getString(params, "state", "present")
+	stateStr := module.GetString(params, "state", "present")
 	state := State(stateStr)
-	cask := getBool(params, "cask", false)
-	upgradeAll := getBool(params, "upgrade_all", false)
-	updateHomebrew := getBool(params, "update_homebrew", false)
-	options := getStringSlice(params, "options")
+	cask := module.GetBool(params, "cask", false)
+	upgradeAll := module.GetBool(params, "upgrade_all", false)
+	updateHomebrew := module.GetBool(params, "update_homebrew", false)
+	options := module.GetStringSlice(params, "options")
 
 	// Validate state
 	switch state {
@@ -242,7 +242,7 @@ func installPackages(ctx context.Context, conn connector.Connector, names []stri
 	}
 
 	for _, name := range names {
-		cmd += " " + shellQuote(name)
+		cmd += " " + module.ShellQuote(name)
 	}
 
 	result, err := conn.Execute(ctx, cmd)
@@ -264,7 +264,7 @@ func removePackages(ctx context.Context, conn connector.Connector, names []strin
 	}
 
 	for _, name := range names {
-		cmd += " " + shellQuote(name)
+		cmd += " " + module.ShellQuote(name)
 	}
 
 	result, err := conn.Execute(ctx, cmd)
@@ -304,7 +304,7 @@ func upgradePackages(ctx context.Context, conn connector.Connector, names []stri
 	}
 
 	for _, name := range toUpgrade {
-		cmd += " " + shellQuote(name)
+		cmd += " " + module.ShellQuote(name)
 	}
 
 	result, err := conn.Execute(ctx, cmd)
@@ -376,71 +376,17 @@ func getPackageNames(params map[string]any) []string {
 	return nil
 }
 
-// shellQuote quotes a string for safe use in shell commands.
-func shellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
-}
-
-// Helper functions for parameter extraction
-
-func getString(params map[string]any, key, defaultValue string) string {
-	v, ok := params[key]
-	if !ok {
-		return defaultValue
-	}
-	s, ok := v.(string)
-	if !ok {
-		return defaultValue
-	}
-	return s
-}
-
-func getBool(params map[string]any, key string, defaultValue bool) bool {
-	v, ok := params[key]
-	if !ok {
-		return defaultValue
-	}
-	b, ok := v.(bool)
-	if !ok {
-		return defaultValue
-	}
-	return b
-}
-
-func getStringSlice(params map[string]any, key string) []string {
-	v, ok := params[key]
-	if !ok {
-		return nil
-	}
-
-	if slice, ok := v.([]any); ok {
-		var result []string
-		for _, item := range slice {
-			if s, ok := item.(string); ok {
-				result = append(result, s)
-			}
-		}
-		return result
-	}
-
-	if slice, ok := v.([]string); ok {
-		return slice
-	}
-
-	return nil
-}
-
 // Check determines whether the brew module would make changes without applying them.
 func (m *Module) Check(ctx context.Context, conn connector.Connector, params map[string]any) (*module.CheckResult, error) {
 	if err := checkHomebrew(ctx, conn); err != nil {
 		return nil, err
 	}
 
-	stateStr := getString(params, "state", "present")
+	stateStr := module.GetString(params, "state", "present")
 	state := State(stateStr)
-	cask := getBool(params, "cask", false)
-	upgradeAll := getBool(params, "upgrade_all", false)
-	updateHomebrew := getBool(params, "update_homebrew", false)
+	cask := module.GetBool(params, "cask", false)
+	upgradeAll := module.GetBool(params, "upgrade_all", false)
+	updateHomebrew := module.GetBool(params, "update_homebrew", false)
 
 	if updateHomebrew {
 		return module.UncertainChange("update_homebrew always runs"), nil

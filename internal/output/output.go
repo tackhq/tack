@@ -110,33 +110,36 @@ func (o *Output) TaskStart(name, moduleName string) {
 	// Output is printed in TaskResult
 }
 
+// statusDisplay holds the visual representation of a task status.
+type statusDisplay struct {
+	indicator string
+	color     string
+	text      string
+}
+
+// resolveStatus maps a status string to its display properties.
+func resolveStatus(status string) statusDisplay {
+	switch {
+	case strings.HasPrefix(status, "ok"):
+		return statusDisplay{"✓", colorGreen, "ok"}
+	case strings.HasPrefix(status, "changed"):
+		return statusDisplay{"✓", colorYellow, "changed"}
+	case strings.HasPrefix(status, "skipped"):
+		return statusDisplay{"○", colorCyan, "skipped"}
+	case strings.HasPrefix(status, "failed"):
+		return statusDisplay{"✗", colorRed, "FAILED"}
+	default:
+		return statusDisplay{"?", colorGray, status}
+	}
+}
+
 // TaskResult prints the task result in a single line.
 // Format: [status] module | host | task name
 func (o *Output) TaskResult(name, status string, changed bool, message string) {
-	// Determine status indicator and color
-	var indicator string
-	var statusColor string
-
-	switch {
-	case strings.HasPrefix(status, "ok"):
-		indicator = "✓"
-		statusColor = colorGreen
-	case strings.HasPrefix(status, "changed"):
-		indicator = "✓"
-		statusColor = colorYellow
-	case strings.HasPrefix(status, "skipped"):
-		indicator = "○"
-		statusColor = colorCyan
-	case strings.HasPrefix(status, "failed"):
-		indicator = "✗"
-		statusColor = colorRed
-	default:
-		indicator = "?"
-		statusColor = colorGray
-	}
+	sd := resolveStatus(status)
 
 	// Print compact single line
-	o.printf("  %s %s\n", o.color(statusColor, indicator), name)
+	o.printf("  %s %s\n", o.color(sd.color, sd.indicator), name)
 
 	// In debug mode, print additional details
 	if o.debug && message != "" {
@@ -146,33 +149,7 @@ func (o *Output) TaskResult(name, status string, changed bool, message string) {
 
 // TaskResultDetailed prints detailed task result (for debug mode).
 func (o *Output) TaskResultDetailed(name, module, host, status, message string, data map[string]any) {
-	// Determine status indicator and color
-	var indicator string
-	var statusColor string
-	var statusText string
-
-	switch {
-	case strings.HasPrefix(status, "ok"):
-		indicator = "✓"
-		statusColor = colorGreen
-		statusText = "ok"
-	case strings.HasPrefix(status, "changed"):
-		indicator = "✓"
-		statusColor = colorYellow
-		statusText = "changed"
-	case strings.HasPrefix(status, "skipped"):
-		indicator = "○"
-		statusColor = colorCyan
-		statusText = "skipped"
-	case strings.HasPrefix(status, "failed"):
-		indicator = "✗"
-		statusColor = colorRed
-		statusText = "FAILED"
-	default:
-		indicator = "?"
-		statusColor = colorGray
-		statusText = status
-	}
+	sd := resolveStatus(status)
 
 	// Print compact line: [indicator] [module] name (host) - status
 	moduleStr := ""
@@ -182,11 +159,11 @@ func (o *Output) TaskResultDetailed(name, module, host, status, message string, 
 	hostStr := o.color(colorGray, fmt.Sprintf("(%s)", host))
 
 	o.printf("  %s %s%s %s %s\n",
-		o.color(statusColor, indicator),
+		o.color(sd.color, sd.indicator),
 		moduleStr,
 		name,
 		hostStr,
-		o.color(statusColor, statusText))
+		o.color(sd.color, sd.text))
 
 	// In debug mode, print additional details
 	if o.debug {

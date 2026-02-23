@@ -4,8 +4,6 @@ package copy
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -43,20 +41,20 @@ func (m *Module) Name() string {
 //   - validate (string): Command to validate file before finalizing (%s = temp file path)
 func (m *Module) Run(ctx context.Context, conn connector.Connector, params map[string]any) (*module.Result, error) {
 	// Extract parameters
-	dest, err := requireString(params, "dest")
+	dest, err := module.RequireString(params, "dest")
 	if err != nil {
 		return nil, err
 	}
 
-	src := getString(params, "src", "")
-	content := getString(params, "content", "")
-	mode := getString(params, "mode", "0644")
-	owner := getString(params, "owner", "")
-	group := getString(params, "group", "")
-	backup := getBool(params, "backup", false)
-	force := getBool(params, "force", true)
-	createDirs := getBool(params, "create_dirs", false)
-	validate := getString(params, "validate", "")
+	src := module.GetString(params, "src", "")
+	content := module.GetString(params, "content", "")
+	mode := module.GetString(params, "mode", "0644")
+	owner := module.GetString(params, "owner", "")
+	group := module.GetString(params, "group", "")
+	backup := module.GetBool(params, "backup", false)
+	force := module.GetBool(params, "force", true)
+	createDirs := module.GetBool(params, "create_dirs", false)
+	validate := module.GetString(params, "validate", "")
 
 	// Validate parameters
 	if src == "" && content == "" {
@@ -73,7 +71,7 @@ func (m *Module) Run(ctx context.Context, conn connector.Connector, params map[s
 		srcPath := src
 		if !filepath.IsAbs(src) {
 			// Check for role path (injected by executor for role tasks)
-			if rolePath := getString(params, "_role_path", ""); rolePath != "" {
+			if rolePath := module.GetString(params, "_role_path", ""); rolePath != "" {
 				// Look in role's files directory
 				roleFilePath := filepath.Join(rolePath, "files", src)
 				if _, err := os.Stat(roleFilePath); err == nil {
@@ -93,10 +91,10 @@ func (m *Module) Run(ctx context.Context, conn connector.Connector, params map[s
 	}
 
 	// Calculate checksum of source
-	srcChecksum := checksum(srcContent)
+	srcChecksum := module.Checksum(srcContent)
 
 	// Check if destination exists and compare checksums
-	destExists, destChecksum, err := getRemoteChecksum(ctx, conn, dest)
+	destExists, destChecksum, err := module.GetRemoteChecksum(ctx, conn, dest)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check destination: %w", err)
 	}
@@ -104,7 +102,7 @@ func (m *Module) Run(ctx context.Context, conn connector.Connector, params map[s
 	// If destination exists with same content, check if we need to update mode/owner
 	if destExists && srcChecksum == destChecksum {
 		// File content matches, check attributes
-		attrChanged, err := ensureAttributes(ctx, conn, dest, mode, owner, group)
+		attrChanged, err := module.EnsureAttributes(ctx, conn, dest, mode, owner, group)
 		if err != nil {
 			return nil, err
 		}
@@ -140,7 +138,7 @@ func (m *Module) Run(ctx context.Context, conn connector.Connector, params map[s
 	}
 
 	// Upload the file
-	modeInt, err := parseMode(mode)
+	modeInt, err := module.ParseMode(mode)
 	if err != nil {
 		return nil, fmt.Errorf("invalid mode: %w", err)
 	}
@@ -151,21 +149,21 @@ func (m *Module) Run(ctx context.Context, conn connector.Connector, params map[s
 
 	// Run validation if specified
 	if validate != "" {
-		validateCmd := strings.ReplaceAll(validate, "%s", shellQuote(targetPath))
+		validateCmd := strings.ReplaceAll(validate, "%s", module.ShellQuote(targetPath))
 		result, err := conn.Execute(ctx, validateCmd)
 		if err != nil {
 			// Clean up temp file (ignore error)
-			_, _ = conn.Execute(ctx, fmt.Sprintf("rm -f %s", shellQuote(targetPath)))
+			_, _ = conn.Execute(ctx, fmt.Sprintf("rm -f %s", module.ShellQuote(targetPath)))
 			return nil, fmt.Errorf("validation command failed: %w", err)
 		}
 		if result.ExitCode != 0 {
 			// Clean up temp file (ignore error)
-			_, _ = conn.Execute(ctx, fmt.Sprintf("rm -f %s", shellQuote(targetPath)))
+			_, _ = conn.Execute(ctx, fmt.Sprintf("rm -f %s", module.ShellQuote(targetPath)))
 			return nil, fmt.Errorf("validation failed: %s", result.Stderr)
 		}
 
 		// Move temp file to destination
-		result, err = conn.Execute(ctx, fmt.Sprintf("mv %s %s", shellQuote(targetPath), shellQuote(dest)))
+		result, err = conn.Execute(ctx, fmt.Sprintf("mv %s %s", module.ShellQuote(targetPath), module.ShellQuote(dest)))
 		if err != nil {
 			return nil, fmt.Errorf("failed to move validated file: %w", err)
 		}
@@ -175,7 +173,7 @@ func (m *Module) Run(ctx context.Context, conn connector.Connector, params map[s
 	}
 
 	// Set attributes
-	if _, err := ensureAttributes(ctx, conn, dest, mode, owner, group); err != nil {
+	if _, err := module.EnsureAttributes(ctx, conn, dest, mode, owner, group); err != nil {
 		return nil, err
 	}
 
@@ -192,125 +190,10 @@ func (m *Module) Run(ctx context.Context, conn connector.Connector, params map[s
 	}), nil
 }
 
-// checksum calculates SHA256 checksum of data.
-func checksum(data []byte) string {
-	h := sha256.Sum256(data)
-	return hex.EncodeToString(h[:])
-}
-
-// getRemoteChecksum gets the SHA256 checksum of a remote file.
-func getRemoteChecksum(ctx context.Context, conn connector.Connector, path string) (exists bool, sum string, err error) {
-	// Check if file exists and get checksum
-	cmd := fmt.Sprintf(`if [ -f %[1]s ]; then
-		if command -v sha256sum >/dev/null 2>&1; then
-			sha256sum %[1]s | cut -d' ' -f1
-		elif command -v shasum >/dev/null 2>&1; then
-			shasum -a 256 %[1]s | cut -d' ' -f1
-		else
-			echo "NO_SHA"
-		fi
-	else
-		echo "NO_FILE"
-	fi`, shellQuote(path))
-
-	result, err := conn.Execute(ctx, cmd)
-	if err != nil {
-		return false, "", err
-	}
-
-	output := strings.TrimSpace(result.Stdout)
-	switch output {
-	case "NO_FILE":
-		return false, "", nil
-	case "NO_SHA":
-		// Can't compute checksum, assume different
-		return true, "", nil
-	default:
-		return true, output, nil
-	}
-}
-
-// ensureAttributes sets mode and ownership on a file, only if they differ from desired.
-func ensureAttributes(ctx context.Context, conn connector.Connector, path, mode, owner, group string) (bool, error) {
-	var changed bool
-
-	// Get current attributes
-	currentMode, currentOwner, currentGroup, err := getFileAttributes(ctx, conn, path)
-	if err != nil {
-		return false, fmt.Errorf("failed to get file attributes: %w", err)
-	}
-
-	// Set mode only if different
-	if mode != "" && currentMode != mode {
-		result, err := conn.Execute(ctx, fmt.Sprintf("chmod %s %s", mode, shellQuote(path)))
-		if err != nil {
-			return false, fmt.Errorf("failed to set mode: %w", err)
-		}
-		if result.ExitCode != 0 {
-			return false, fmt.Errorf("chmod failed: %s", result.Stderr)
-		}
-		changed = true
-	}
-
-	// Set ownership only if different
-	needOwnerChange := owner != "" && currentOwner != owner
-	needGroupChange := group != "" && currentGroup != group
-
-	if needOwnerChange || needGroupChange {
-		var ownership string
-		if owner != "" && group != "" {
-			ownership = fmt.Sprintf("%s:%s", owner, group)
-		} else if owner != "" {
-			ownership = owner
-		} else {
-			ownership = fmt.Sprintf(":%s", group)
-		}
-
-		result, err := conn.Execute(ctx, fmt.Sprintf("chown %s %s", ownership, shellQuote(path)))
-		if err != nil {
-			return false, fmt.Errorf("failed to set ownership: %w", err)
-		}
-		if result.ExitCode != 0 {
-			return false, fmt.Errorf("chown failed: %s", result.Stderr)
-		}
-		changed = true
-	}
-
-	return changed, nil
-}
-
-// getFileAttributes returns the mode, owner, and group of a file.
-func getFileAttributes(ctx context.Context, conn connector.Connector, path string) (mode, owner, group string, err error) {
-	// Use stat to get file attributes in a portable way
-	// Format: mode owner group (e.g., "0644 root wheel")
-	cmd := fmt.Sprintf(`stat -c '%%a %%U %%G' %[1]s 2>/dev/null || stat -f '%%Lp %%Su %%Sg' %[1]s`, shellQuote(path))
-
-	result, err := conn.Execute(ctx, cmd)
-	if err != nil {
-		return "", "", "", err
-	}
-	if result.ExitCode != 0 {
-		return "", "", "", fmt.Errorf("stat failed: %s", result.Stderr)
-	}
-
-	parts := strings.Fields(strings.TrimSpace(result.Stdout))
-	if len(parts) >= 3 {
-		// Normalize mode to 4 digits with leading zero
-		mode = parts[0]
-		if len(mode) < 4 {
-			mode = strings.Repeat("0", 4-len(mode)) + mode
-		}
-		owner = parts[1]
-		group = parts[2]
-	}
-
-	return mode, owner, group, nil
-}
-
 // createParentDirs creates parent directories for a path.
 func createParentDirs(ctx context.Context, conn connector.Connector, path string) error {
 	// Extract directory from path
-	cmd := fmt.Sprintf("mkdir -p \"$(dirname %s)\"", shellQuote(path))
+	cmd := fmt.Sprintf("mkdir -p \"$(dirname %s)\"", module.ShellQuote(path))
 	result, err := conn.Execute(ctx, cmd)
 	if err != nil {
 		return fmt.Errorf("failed to create parent directories: %w", err)
@@ -326,7 +209,7 @@ func createBackup(ctx context.Context, conn connector.Connector, path string) er
 	timestamp := time.Now().Format("20060102150405")
 	backupPath := fmt.Sprintf("%s.%s.bak", path, timestamp)
 
-	result, err := conn.Execute(ctx, fmt.Sprintf("cp -p %s %s", shellQuote(path), shellQuote(backupPath)))
+	result, err := conn.Execute(ctx, fmt.Sprintf("cp -p %s %s", module.ShellQuote(path), module.ShellQuote(backupPath)))
 	if err != nil {
 		return err
 	}
@@ -336,100 +219,19 @@ func createBackup(ctx context.Context, conn connector.Connector, path string) er
 	return nil
 }
 
-// parseMode converts an octal mode string to uint32.
-func parseMode(mode string) (uint32, error) {
-	// Remove leading zeros for parsing
-	mode = strings.TrimLeft(mode, "0")
-	if mode == "" {
-		mode = "0"
-	}
-
-	var m uint32
-	_, err := fmt.Sscanf("0"+mode, "%o", &m)
-	if err != nil {
-		return 0, err
-	}
-	return m, nil
-}
-
-// shellQuote quotes a string for safe use in shell commands.
-func shellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
-}
-
-// Helper functions for parameter extraction
-
-func requireString(params map[string]any, key string) (string, error) {
-	v, ok := params[key]
-	if !ok {
-		return "", fmt.Errorf("required parameter '%s' is missing", key)
-	}
-	s, ok := v.(string)
-	if !ok {
-		return "", fmt.Errorf("parameter '%s' must be a string", key)
-	}
-	if s == "" {
-		return "", fmt.Errorf("parameter '%s' cannot be empty", key)
-	}
-	return s, nil
-}
-
-func getString(params map[string]any, key, defaultValue string) string {
-	v, ok := params[key]
-	if !ok {
-		return defaultValue
-	}
-	s, ok := v.(string)
-	if !ok {
-		return defaultValue
-	}
-	return s
-}
-
-func getBool(params map[string]any, key string, defaultValue bool) bool {
-	v, ok := params[key]
-	if !ok {
-		return defaultValue
-	}
-	b, ok := v.(bool)
-	if !ok {
-		return defaultValue
-	}
-	return b
-}
-
-// checkAttributes checks whether file attributes differ from desired values without modifying them.
-func checkAttributes(ctx context.Context, conn connector.Connector, path, mode, owner, group string) (bool, error) {
-	currentMode, currentOwner, currentGroup, err := getFileAttributes(ctx, conn, path)
-	if err != nil {
-		return false, fmt.Errorf("failed to get file attributes: %w", err)
-	}
-
-	if mode != "" && currentMode != mode {
-		return true, nil
-	}
-	if owner != "" && currentOwner != owner {
-		return true, nil
-	}
-	if group != "" && currentGroup != group {
-		return true, nil
-	}
-	return false, nil
-}
-
 // Check determines whether the copy module would make changes without applying them.
 func (m *Module) Check(ctx context.Context, conn connector.Connector, params map[string]any) (*module.CheckResult, error) {
-	dest, err := requireString(params, "dest")
+	dest, err := module.RequireString(params, "dest")
 	if err != nil {
 		return nil, err
 	}
 
-	src := getString(params, "src", "")
-	content := getString(params, "content", "")
-	mode := getString(params, "mode", "0644")
-	owner := getString(params, "owner", "")
-	group := getString(params, "group", "")
-	force := getBool(params, "force", true)
+	src := module.GetString(params, "src", "")
+	content := module.GetString(params, "content", "")
+	mode := module.GetString(params, "mode", "0644")
+	owner := module.GetString(params, "owner", "")
+	group := module.GetString(params, "group", "")
+	force := module.GetBool(params, "force", true)
 
 	if src == "" && content == "" {
 		return nil, fmt.Errorf("either 'src' or 'content' parameter is required")
@@ -442,7 +244,7 @@ func (m *Module) Check(ctx context.Context, conn connector.Connector, params map
 	if src != "" {
 		srcPath := src
 		if !filepath.IsAbs(src) {
-			if rolePath := getString(params, "_role_path", ""); rolePath != "" {
+			if rolePath := module.GetString(params, "_role_path", ""); rolePath != "" {
 				roleFilePath := filepath.Join(rolePath, "files", src)
 				if _, err := os.Stat(roleFilePath); err == nil {
 					srcPath = roleFilePath
@@ -458,9 +260,9 @@ func (m *Module) Check(ctx context.Context, conn connector.Connector, params map
 		srcContent = []byte(content)
 	}
 
-	srcChecksum := checksum(srcContent)
+	srcChecksum := module.Checksum(srcContent)
 
-	destExists, destChecksum, err := getRemoteChecksum(ctx, conn, dest)
+	destExists, destChecksum, err := module.GetRemoteChecksum(ctx, conn, dest)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check destination: %w", err)
 	}
@@ -482,7 +284,7 @@ func (m *Module) Check(ctx context.Context, conn connector.Connector, params map
 		cr.NewChecksum = srcChecksum
 		cr.NewContent = string(srcContent)
 		// Fetch old content for diff
-		result, err := conn.Execute(ctx, fmt.Sprintf("cat %s", shellQuote(dest)))
+		result, err := conn.Execute(ctx, fmt.Sprintf("cat %s", module.ShellQuote(dest)))
 		if err == nil && result.ExitCode == 0 {
 			cr.OldContent = result.Stdout
 		}
@@ -490,7 +292,7 @@ func (m *Module) Check(ctx context.Context, conn connector.Connector, params map
 	}
 
 	// Content matches, check attributes
-	attrDiffer, err := checkAttributes(ctx, conn, dest, mode, owner, group)
+	attrDiffer, err := module.CheckAttributes(ctx, conn, dest, mode, owner, group)
 	if err != nil {
 		return nil, err
 	}

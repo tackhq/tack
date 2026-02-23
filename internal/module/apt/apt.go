@@ -49,14 +49,14 @@ func (m *Module) Run(ctx context.Context, conn connector.Connector, params map[s
 		return nil, err
 	}
 
-	stateStr := getString(params, "state", "present")
+	stateStr := module.GetString(params, "state", "present")
 	state := State(stateStr)
-	updateCache := getBool(params, "update_cache", false)
-	upgrade := getString(params, "upgrade", "none")
-	cacheValidTime := getInt(params, "cache_valid_time", 0)
-	installRecommends := getBool(params, "install_recommends", true)
-	autoremove := getBool(params, "autoremove", false)
-	debFile := getString(params, "deb", "")
+	updateCache := module.GetBool(params, "update_cache", false)
+	upgrade := module.GetString(params, "upgrade", "none")
+	cacheValidTime := module.GetInt(params, "cache_valid_time", 0)
+	installRecommends := module.GetBool(params, "install_recommends", true)
+	autoremove := module.GetBool(params, "autoremove", false)
+	debFile := module.GetString(params, "deb", "")
 
 	// Validate state
 	switch state {
@@ -396,7 +396,7 @@ func installDebFile(ctx context.Context, conn connector.Connector, path string) 
 	localPath := path
 	if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
 		localPath = "/tmp/bolt-pkg.deb"
-		cmd := fmt.Sprintf("curl -fsSL -o %s %s", shellQuote(localPath), shellQuote(path))
+		cmd := fmt.Sprintf("curl -fsSL -o %s %s", module.ShellQuote(localPath), module.ShellQuote(path))
 		result, err := conn.Execute(ctx, cmd)
 		if err != nil {
 			return false, fmt.Errorf("failed to download deb file: %w", err)
@@ -408,7 +408,7 @@ func installDebFile(ctx context.Context, conn connector.Connector, path string) 
 
 	// Install the .deb file
 	cmd := fmt.Sprintf("DEBIAN_FRONTEND=noninteractive dpkg -i %s || apt-get install -f -y -qq",
-		shellQuote(localPath))
+		module.ShellQuote(localPath))
 	result, err := conn.Execute(ctx, cmd)
 	if err != nil {
 		return false, fmt.Errorf("failed to install deb file: %w", err)
@@ -467,63 +467,16 @@ func getPackageNames(params map[string]any) []string {
 	return nil
 }
 
-// shellQuote quotes a string for safe use in shell commands.
-func shellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
-}
-
-// Helper functions for parameter extraction
-
-func getString(params map[string]any, key, defaultValue string) string {
-	v, ok := params[key]
-	if !ok {
-		return defaultValue
-	}
-	s, ok := v.(string)
-	if !ok {
-		return defaultValue
-	}
-	return s
-}
-
-func getBool(params map[string]any, key string, defaultValue bool) bool {
-	v, ok := params[key]
-	if !ok {
-		return defaultValue
-	}
-	b, ok := v.(bool)
-	if !ok {
-		return defaultValue
-	}
-	return b
-}
-
-func getInt(params map[string]any, key string, defaultValue int) int {
-	v, ok := params[key]
-	if !ok {
-		return defaultValue
-	}
-	switch n := v.(type) {
-	case int:
-		return n
-	case int64:
-		return int(n)
-	case float64:
-		return int(n)
-	}
-	return defaultValue
-}
-
 // Check determines whether the apt module would make changes without applying them.
 func (m *Module) Check(ctx context.Context, conn connector.Connector, params map[string]any) (*module.CheckResult, error) {
 	if err := checkApt(ctx, conn); err != nil {
 		return nil, err
 	}
 
-	stateStr := getString(params, "state", "present")
+	stateStr := module.GetString(params, "state", "present")
 	state := State(stateStr)
-	updateCache := getBool(params, "update_cache", false)
-	upgrade := getString(params, "upgrade", "none")
+	updateCache := module.GetBool(params, "update_cache", false)
+	upgrade := module.GetString(params, "upgrade", "none")
 
 	// update_cache and upgrade can't be cheaply predicted
 	if updateCache {

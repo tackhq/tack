@@ -29,81 +29,6 @@ var knownTaskFields = map[string]bool{
 	"include":      true,
 }
 
-// ParseFile parses a playbook from a YAML file.
-func ParseFile(path string) (*Playbook, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read playbook: %w", err)
-	}
-
-	playbook, err := Parse(data)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse playbook %s: %w", path, err)
-	}
-
-	playbook.Path = path
-	return playbook, nil
-}
-
-// Parse parses a playbook from YAML data.
-func Parse(data []byte) (*Playbook, error) {
-	// Try parsing as a list of plays first
-	var plays []*Play
-	if err := yaml.Unmarshal(data, &plays); err == nil && len(plays) > 0 {
-		// Parsed as list of plays
-		for i, play := range plays {
-			if err := parsePlayTasks(play); err != nil {
-				return nil, fmt.Errorf("play %d: %w", i+1, err)
-			}
-			if err := play.Validate(); err != nil {
-				return nil, fmt.Errorf("play %d: %w", i+1, err)
-			}
-		}
-		return &Playbook{Plays: plays}, nil
-	}
-
-	// Try parsing as a single play
-	var play Play
-	if err := yaml.Unmarshal(data, &play); err != nil {
-		return nil, fmt.Errorf("invalid playbook format: %w", err)
-	}
-
-	if err := parsePlayTasks(&play); err != nil {
-		return nil, err
-	}
-
-	if err := play.Validate(); err != nil {
-		return nil, err
-	}
-
-	return &Playbook{Plays: []*Play{&play}}, nil
-}
-
-// parsePlayTasks extracts module information from raw task maps.
-func parsePlayTasks(play *Play) error {
-	// We need to re-parse tasks to extract module information
-	// This is because the module name is a dynamic key in the YAML
-
-	// Re-parse the play to get raw task data
-	playData, err := yaml.Marshal(play)
-	if err != nil {
-		return err
-	}
-
-	var rawPlay struct {
-		Tasks    []map[string]any `yaml:"tasks"`
-		Handlers []map[string]any `yaml:"handlers"`
-	}
-	if err := yaml.Unmarshal(playData, &rawPlay); err != nil {
-		return err
-	}
-
-	// This won't work because we already parsed. Let's use a different approach.
-	// We need to parse the tasks specially.
-
-	return nil
-}
-
 // ParseFileRaw parses a playbook with proper module detection.
 func ParseFileRaw(path string) (*Playbook, error) {
 	data, err := os.ReadFile(path)
@@ -191,36 +116,41 @@ func parseRawPlay(raw map[string]any) (*Play, error) {
 	}
 
 	// Parse tasks
-	if tasks, ok := raw["tasks"].([]any); ok {
-		for i, rawTask := range tasks {
-			taskMap, ok := rawTask.(map[string]any)
-			if !ok {
-				return nil, fmt.Errorf("task %d: invalid task format", i+1)
-			}
-			task, err := parseRawTask(taskMap)
-			if err != nil {
-				return nil, fmt.Errorf("task %d: %w", i+1, err)
-			}
-			play.Tasks = append(play.Tasks, task)
+	if items, ok := raw["tasks"].([]any); ok {
+		tasks, err := parseTaskList(items, "task")
+		if err != nil {
+			return nil, err
 		}
+		play.Tasks = tasks
 	}
 
 	// Parse handlers
-	if handlers, ok := raw["handlers"].([]any); ok {
-		for i, rawHandler := range handlers {
-			handlerMap, ok := rawHandler.(map[string]any)
-			if !ok {
-				return nil, fmt.Errorf("handler %d: invalid handler format", i+1)
-			}
-			handler, err := parseRawTask(handlerMap)
-			if err != nil {
-				return nil, fmt.Errorf("handler %d: %w", i+1, err)
-			}
-			play.Handlers = append(play.Handlers, handler)
+	if items, ok := raw["handlers"].([]any); ok {
+		handlers, err := parseTaskList(items, "handler")
+		if err != nil {
+			return nil, err
 		}
+		play.Handlers = handlers
 	}
 
 	return play, nil
+}
+
+// parseTaskList parses a list of raw task/handler maps into Task structs.
+func parseTaskList(items []any, itemType string) ([]*Task, error) {
+	var tasks []*Task
+	for i, raw := range items {
+		m, ok := raw.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("%s %d: invalid %s format", itemType, i+1, itemType)
+		}
+		task, err := parseRawTask(m)
+		if err != nil {
+			return nil, fmt.Errorf("%s %d: %w", itemType, i+1, err)
+		}
+		tasks = append(tasks, task)
+	}
+	return tasks, nil
 }
 
 // parseRawTask parses a single task from a raw map.
