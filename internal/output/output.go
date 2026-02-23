@@ -294,29 +294,32 @@ func (o *Output) DisplayPlan(tasks []PlannedTask, dryRun bool) {
 
 		module := ""
 		if t.Module != "" {
-			module = fmt.Sprintf("[%s]", t.Module)
+			module = fmt.Sprintf("%s: ", t.Module)
 		}
 
 		suffix := ""
 		if t.Status == "will_skip" && t.Reason != "" {
-			suffix = fmt.Sprintf("(%s)", t.Reason)
+			suffix = t.Reason
 		} else if t.Status == "conditional" && t.Reason != "" {
-			suffix = fmt.Sprintf("(when: %s)", t.Reason)
+			suffix = fmt.Sprintf("when: %s", t.Reason)
 		} else if t.Status == "no_change" && t.Reason != "" {
-			suffix = fmt.Sprintf("(%s)", t.Reason)
+			suffix = t.Reason
 		} else if t.Status == "always_runs" && t.Reason != "" {
-			suffix = fmt.Sprintf("(%s)", t.Reason)
+			suffix = t.Reason
 		} else if t.Status == "will_change" && t.Reason != "" {
-			suffix = fmt.Sprintf("(%s)", t.Reason)
+			suffix = t.Reason
 		}
 		if t.LoopCount > 0 {
 			if suffix != "" {
 				suffix += " "
 			}
-			suffix += fmt.Sprintf("(%d items)", t.LoopCount)
+			suffix += fmt.Sprintf("%d items", t.LoopCount)
 		}
 
-		line := fmt.Sprintf("  %s %-30s %-12s %s", indicator, t.Name, module, suffix)
+		line := fmt.Sprintf("  %s %s%s", indicator, module, t.Name)
+		if suffix != "" {
+			line += " - " + suffix
+		}
 		o.printf("%s\n", o.color(col, strings.TrimRight(line, " ")))
 
 		// Show task parameters
