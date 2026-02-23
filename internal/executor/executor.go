@@ -164,6 +164,9 @@ func (e *Executor) Run(ctx context.Context, pb *playbook.Playbook) (*RunResult, 
 	for _, play := range pb.Plays {
 		e.applyOverrides(play)
 		if err := e.runPlay(ctx, play, stats, rolesDir); err != nil {
+			if ctx.Err() != nil {
+				return result, nil
+			}
 			result.Success = false
 			e.Output.Error("Play failed: %v", err)
 			break
@@ -240,6 +243,10 @@ func (e *Executor) runPlay(ctx context.Context, play *playbook.Play, stats *Stat
 		return err
 	}
 
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
 	e.Output.PlayStart(play)
 
 	// For local connection, run once regardless of hosts list
@@ -306,12 +313,25 @@ func (e *Executor) runPlayOnHost(ctx context.Context, play *playbook.Play, stats
 	// --- Plan phase ---
 	planned := e.planTasks(ctx, pctx, allTasks)
 	if len(allHandlers) > 0 {
-		planned = append(planned, e.planHandlers(allHandlers)...)
+		planned = append(planned, e.planHandlers(allTasks, planned, allHandlers)...)
 	}
 	e.Output.DisplayPlan(planned, e.DryRun)
 
 	// Dry run stops after showing the plan
 	if e.DryRun {
+		return nil
+	}
+
+	// No drift detected — nothing to apply
+	if allNoChange(planned) {
+		for _, t := range planned {
+			stats.Tasks++
+			if t.Status == "will_skip" {
+				stats.Skipped++
+			} else {
+				stats.OK++
+			}
+		}
 		return nil
 	}
 
@@ -777,9 +797,34 @@ func (e *Executor) conditionReferencesRegistered(condition string, registered ma
 }
 
 // planHandlers produces plan entries for notifiable handlers.
-func (e *Executor) planHandlers(handlers []*playbook.Task) []output.PlannedTask {
+// It uses task definitions and their plan results to determine whether
+// any notifying task would actually produce a change.
+func (e *Executor) planHandlers(tasks []*playbook.Task, taskPlan []output.PlannedTask, handlers []*playbook.Task) []output.PlannedTask {
+	// Build a set of handler names that could potentially be notified.
+	// A handler could be notified if at least one task that lists it in
+	// notify has a plan status that implies change (will_change, always_runs,
+	// will_run, conditional — anything other than no_change / will_skip).
+	maybeNotified := make(map[string]bool)
+	for i, task := range tasks {
+		if len(task.Notify) == 0 {
+			continue
+		}
+		if i >= len(taskPlan) {
+			break
+		}
+		st := taskPlan[i].Status
+		if st != "no_change" && st != "will_skip" {
+			for _, name := range task.Notify {
+				maybeNotified[name] = true
+			}
+		}
+	}
+
 	var plan []output.PlannedTask
 	for _, h := range handlers {
+		if !maybeNotified[h.Name] {
+			continue
+		}
 		plan = append(plan, output.PlannedTask{
 			Name:   h.String(),
 			Module: h.Module,
@@ -1014,4 +1059,14 @@ func getEnvMap() map[string]string {
 		}
 	}
 	return env
+}
+
+// allNoChange returns true if every planned task has status "no_change" or "will_skip".
+func allNoChange(tasks []output.PlannedTask) bool {
+	for _, t := range tasks {
+		if t.Status != "no_change" && t.Status != "will_skip" {
+			return false
+		}
+	}
+	return true
 }
