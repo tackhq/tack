@@ -293,6 +293,15 @@ func ExpandShorthand(task *Task) {
 		return
 	}
 
+	// Collect any extra keys (creates, removes, chdir) already in params
+	// so they survive the replacement below.
+	extra := make(map[string]any)
+	for k, v := range task.Params {
+		if k != "_raw" {
+			extra[k] = v
+		}
+	}
+
 	// Check if it's key=value format
 	if !strings.Contains(raw, "=") {
 		// Single argument - module-specific handling
@@ -305,6 +314,9 @@ func ExpandShorthand(task *Task) {
 			task.Params = map[string]any{"dest": raw}
 		default:
 			task.Params = map[string]any{"name": raw}
+		}
+		for k, v := range extra {
+			task.Params[k] = v
 		}
 		return
 	}
@@ -320,6 +332,9 @@ func ExpandShorthand(task *Task) {
 			value = strings.Trim(value, "\"'")
 			newParams[key] = value
 		}
+	}
+	for k, v := range extra {
+		newParams[k] = v
 	}
 
 	task.Params = newParams

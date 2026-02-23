@@ -143,6 +143,14 @@ func (m *Module) Check(ctx context.Context, conn connector.Connector, params map
 		}
 	}
 
+	// If creates or removes was specified and we got here, the condition triggers a change
+	if creates != "" {
+		return module.WouldChange(fmt.Sprintf("'%s' does not exist", creates)), nil
+	}
+	if removes != "" {
+		return module.WouldChange(fmt.Sprintf("'%s' exists", removes)), nil
+	}
+
 	return module.UncertainChange("command always reports changed"), nil
 }
 

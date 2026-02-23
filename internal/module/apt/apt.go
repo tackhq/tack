@@ -77,13 +77,15 @@ func (m *Module) Run(ctx context.Context, conn connector.Connector, params map[s
 	var changed bool
 	var messages []string
 
-	// Update cache if requested
+	// Update cache if requested (don't count as a change when packages are
+	// the main operation — cache update is just a prerequisite step).
+	names := getPackageNames(params)
 	if updateCache {
 		updated, err := runAptUpdate(ctx, conn, cacheValidTime)
 		if err != nil {
 			return nil, fmt.Errorf("failed to update cache: %w", err)
 		}
-		if updated {
+		if updated && len(names) == 0 {
 			messages = append(messages, "cache updated")
 			changed = true
 		}
@@ -113,8 +115,6 @@ func (m *Module) Run(ctx context.Context, conn connector.Connector, params map[s
 		}
 	}
 
-	// Get package names
-	names := getPackageNames(params)
 	if len(names) == 0 {
 		if !updateCache && upgrade == "none" && debFile == "" {
 			return nil, fmt.Errorf("'name' parameter is required when not using update_cache, upgrade, or deb")
@@ -481,16 +481,16 @@ func (m *Module) Check(ctx context.Context, conn connector.Connector, params map
 	updateCache := module.GetBool(params, "update_cache", false)
 	upgrade := module.GetString(params, "upgrade", "none")
 
-	// update_cache and upgrade can't be cheaply predicted
-	if updateCache {
-		return module.UncertainChange("update_cache always runs"), nil
-	}
+	// upgrade can't be cheaply predicted
 	if upgrade != "none" {
 		return module.UncertainChange("upgrade always runs"), nil
 	}
 
 	names := getPackageNames(params)
 	if len(names) == 0 {
+		if updateCache {
+			return module.UncertainChange("update_cache always runs"), nil
+		}
 		return module.NoChange("no packages specified"), nil
 	}
 
