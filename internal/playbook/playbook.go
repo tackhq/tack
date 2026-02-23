@@ -174,10 +174,6 @@ func (t *Task) GetLoopVar() string {
 
 // Validate checks the play for common errors.
 func (p *Play) Validate() error {
-	if len(p.Hosts) == 0 {
-		return fmt.Errorf("play is missing required 'hosts' field")
-	}
-
 	conn := p.GetConnection()
 	switch conn {
 	case "local", "docker", "ssh", "ssm":
