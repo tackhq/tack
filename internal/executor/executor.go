@@ -90,6 +90,18 @@ func (s *Stats) Duration() time.Duration {
 	return s.EndTime.Sub(s.StartTime)
 }
 
+// RecordResult increments the appropriate counter based on task status.
+func (s *Stats) RecordResult(status string) {
+	switch status {
+	case "ok":
+		s.OK++
+	case "changed":
+		s.Changed++
+	case "skipped":
+		s.Skipped++
+	}
+}
+
 // GetOK returns the OK count (implements output.Stats).
 func (s *Stats) GetOK() int { return s.OK }
 
@@ -312,14 +324,7 @@ func (e *Executor) runPlayOnHost(ctx context.Context, play *playbook.Play, stats
 			continue
 		}
 
-		switch taskResult.Status {
-		case "ok":
-			stats.OK++
-		case "changed":
-			stats.Changed++
-		case "skipped":
-			stats.Skipped++
-		}
+		stats.RecordResult(taskResult.Status)
 	}
 
 	// Run notified handlers (using expanded handlers)
@@ -512,12 +517,7 @@ func (e *Executor) runHandlersExpanded(ctx context.Context, pctx *PlayContext, s
 			return fmt.Errorf("handler '%s' failed: %w", handler.Name, err)
 		}
 
-		switch result.Status {
-		case "ok":
-			stats.OK++
-		case "changed":
-			stats.Changed++
-		}
+		stats.RecordResult(result.Status)
 	}
 
 	return nil
@@ -587,14 +587,7 @@ func (e *Executor) runInclude(ctx context.Context, pctx *PlayContext, task *play
 			continue
 		}
 
-		switch taskResult.Status {
-		case "ok":
-			stats.OK++
-		case "changed":
-			stats.Changed++
-		case "skipped":
-			stats.Skipped++
-		}
+		stats.RecordResult(taskResult.Status)
 	}
 
 	return nil

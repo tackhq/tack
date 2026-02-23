@@ -32,14 +32,14 @@ func (m *Module) Name() string {
 //   - warn (bool): Whether to warn about common issues (default: true)
 func (m *Module) Run(ctx context.Context, conn connector.Connector, params map[string]any) (*module.Result, error) {
 	// Extract parameters
-	cmd, err := requireString(params, "cmd")
+	cmd, err := module.RequireString(params, "cmd")
 	if err != nil {
 		return nil, err
 	}
 
-	chdir := getString(params, "chdir", "")
-	creates := getString(params, "creates", "")
-	removes := getString(params, "removes", "")
+	chdir := module.GetString(params, "chdir", "")
+	creates := module.GetString(params, "creates", "")
+	removes := module.GetString(params, "removes", "")
 
 	// Check 'creates' condition - skip if file exists
 	if creates != "" {
@@ -66,7 +66,7 @@ func (m *Module) Run(ctx context.Context, conn connector.Connector, params map[s
 	// Build the command with chdir if specified
 	fullCmd := cmd
 	if chdir != "" {
-		fullCmd = fmt.Sprintf("cd %s && %s", shellQuote(chdir), cmd)
+		fullCmd = fmt.Sprintf("cd %s && %s", module.ShellQuote(chdir), cmd)
 	}
 
 	// Execute the command
@@ -111,52 +111,17 @@ func (e *CommandError) Error() string {
 
 // fileExists checks if a file or directory exists on the target.
 func fileExists(ctx context.Context, conn connector.Connector, path string) (bool, error) {
-	result, err := conn.Execute(ctx, fmt.Sprintf("test -e %s", shellQuote(path)))
+	result, err := conn.Execute(ctx, fmt.Sprintf("test -e %s", module.ShellQuote(path)))
 	if err != nil {
 		return false, err
 	}
 	return result.ExitCode == 0, nil
 }
 
-// shellQuote quotes a string for safe use in shell commands.
-func shellQuote(s string) string {
-	// Use single quotes and escape any single quotes in the string
-	return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
-}
-
-// Helper functions for parameter extraction
-
-func requireString(params map[string]any, key string) (string, error) {
-	v, ok := params[key]
-	if !ok {
-		return "", fmt.Errorf("required parameter '%s' is missing", key)
-	}
-	s, ok := v.(string)
-	if !ok {
-		return "", fmt.Errorf("parameter '%s' must be a string", key)
-	}
-	if s == "" {
-		return "", fmt.Errorf("parameter '%s' cannot be empty", key)
-	}
-	return s, nil
-}
-
-func getString(params map[string]any, key, defaultValue string) string {
-	v, ok := params[key]
-	if !ok {
-		return defaultValue
-	}
-	s, ok := v.(string)
-	if !ok {
-		return defaultValue
-	}
-	return s
-}
-
 // Check determines whether the command module would make changes without applying them.
 func (m *Module) Check(ctx context.Context, conn connector.Connector, params map[string]any) (*module.CheckResult, error) {
-	creates := getString(params, "creates", "")
-	removes := getString(params, "removes", "")
+	creates := module.GetString(params, "creates", "")
+	removes := module.GetString(params, "removes", "")
 
 	if creates != "" {
 		exists, err := fileExists(ctx, conn, creates)
