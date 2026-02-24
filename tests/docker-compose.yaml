@@ -1,0 +1,22 @@
+services:
+  node1:
+    build:
+      context: integration/
+      dockerfile: Dockerfile.ssh
+    container_name: bolt-test-node1
+    ports:
+      - "2201:22"
+  node2:
+    build:
+      context: integration/
+      dockerfile: Dockerfile.ssh
+    container_name: bolt-test-node2
+    ports:
+      - "2202:22"
+  node3:
+    build:
+      context: integration/
+      dockerfile: Dockerfile.ssh
+    container_name: bolt-test-node3
+    ports:
+      - "2203:22"

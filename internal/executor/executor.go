@@ -4,8 +4,10 @@ package executor
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -944,7 +946,15 @@ func (e *Executor) getConnector(play *playbook.Play, host string) (connector.Con
 		if u, ok := play.Vars["bolt_ssh_user"].(string); ok {
 			sshOpts = append(sshOpts, sshconn.WithUser(u))
 		}
-		if port, ok := play.Vars["bolt_ssh_port"].(int); ok {
+		// Check if the host string embeds a port (e.g. "host:2222" from a URI).
+		// Per-host port takes priority over the global bolt_ssh_port.
+		sshHost := host
+		if h, p, err := net.SplitHostPort(host); err == nil {
+			sshHost = h
+			if pn, err := strconv.Atoi(p); err == nil {
+				sshOpts = append(sshOpts, sshconn.WithPort(pn))
+			}
+		} else if port, ok := play.Vars["bolt_ssh_port"].(int); ok {
 			sshOpts = append(sshOpts, sshconn.WithPort(port))
 		}
 		if keyFile, ok := play.Vars["bolt_ssh_key"].(string); ok {
@@ -956,7 +966,7 @@ func (e *Executor) getConnector(play *playbook.Play, host string) (connector.Con
 		if hostKeyChecking, ok := play.Vars["bolt_ssh_host_key_checking"].(bool); ok && !hostKeyChecking {
 			sshOpts = append(sshOpts, sshconn.WithInsecureHostKey())
 		}
-		return sshconn.New(host, sshOpts...), nil
+		return sshconn.New(sshHost, sshOpts...), nil
 
 	case "ssm":
 		return nil, fmt.Errorf("SSM connector not yet implemented")

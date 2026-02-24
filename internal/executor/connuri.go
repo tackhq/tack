@@ -2,6 +2,7 @@ package executor
 
 import (
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 )
@@ -89,10 +90,11 @@ func parseSSHURI(o *ConnOverrides, rest string) (*ConnOverrides, error) {
 		return nil, fmt.Errorf("ssh:// URI requires a host")
 	}
 
-	o.Hosts = []string{host}
-
 	if port != 0 {
+		o.Hosts = []string{net.JoinHostPort(host, strconv.Itoa(port))}
 		o.SSHPort = port
+	} else {
+		o.Hosts = []string{host}
 	}
 
 	return o, nil

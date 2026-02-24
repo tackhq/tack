@@ -26,4 +26,6 @@ Thumbs.db
 .env
 .envrc
 
+tests/.ssh/
+
 .claude
