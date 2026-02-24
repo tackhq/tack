@@ -96,12 +96,13 @@ Explicit flags (--ssh-user, --ssh-port, etc.) override URI-derived values.
 
 By default, bolt shows a plan of what will run and prompts for
 confirmation before applying. Use --auto-approve to skip the prompt
-(useful for CI/scripting), or --dry-run to show the plan without applying.
+(useful for CI/scripting), or --check/--dry-run to show the plan without applying.
 
 Examples:
   bolt run setup.yaml
   bolt run setup.yaml --auto-approve
   bolt run setup.yaml --debug
+  bolt run setup.yaml --check
   bolt run setup.yaml --dry-run
   bolt run setup.yaml -c ssh://deploy@web1:2222
   bolt run setup.yaml -c ssh://deploy@web1 -c ssh://deploy@web2
@@ -135,6 +136,7 @@ func init() {
 	_ = sudoPassFlag
 	runCmd.Flags().Lookup("sudo-password").NoOptDefVal = ""
 	runCmd.Flags().BoolVar(&autoApprove, "auto-approve", false, "Skip interactive approval prompt (for CI/scripting)")
+	runCmd.Flags().BoolVar(&dryRun, "check", false, "Show plan and exit without applying (alias for --dry-run)")
 }
 
 func runPlaybook(cmd *cobra.Command, args []string) error {
