@@ -55,13 +55,12 @@ func (m *Module) Run(ctx context.Context, conn connector.Connector, params map[s
 	var changed bool
 	var messages []string
 
-	// Daemon reload
+	// Daemon reload (side-effect, not a state change)
 	if daemonReload {
 		if err := runDaemonReload(ctx, conn); err != nil {
 			return nil, err
 		}
 		messages = append(messages, "daemon reloaded")
-		changed = true
 	}
 
 	// Handle masked
@@ -217,8 +216,20 @@ func (m *Module) Check(ctx context.Context, conn connector.Connector, params map
 		parts = append(parts, "would reload")
 	}
 
-	if len(parts) > 0 {
+	// Filter out daemon-reload — it's a side-effect, not a state change
+	hasRealChange := false
+	for _, p := range parts {
+		if p != "daemon-reload" {
+			hasRealChange = true
+			break
+		}
+	}
+
+	if hasRealChange {
 		return module.WouldChange(strings.Join(parts, ", ")), nil
+	}
+	if len(parts) > 0 {
+		return module.NoChange("service already in desired state (daemon-reload only)"), nil
 	}
 	return module.NoChange("service already in desired state"), nil
 }
