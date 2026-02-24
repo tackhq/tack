@@ -30,13 +30,13 @@ func TestParseConnectionURI(t *testing.T) {
 		{
 			name:  "ssh user@host:port",
 			input: "ssh://deploy@myhost:2222",
-			want:  &ConnOverrides{Connection: "ssh", Hosts: []string{"myhost"}, SSHUser: "deploy", SSHPort: 2222},
+			want:  &ConnOverrides{Connection: "ssh", Hosts: []string{"myhost:2222"}, SSHUser: "deploy", SSHPort: 2222},
 		},
 		{
 			name:  "ssh user:pass@host:port",
 			input: "ssh://deploy:s3cret@myhost:2222",
 			want: &ConnOverrides{
-				Connection: "ssh", Hosts: []string{"myhost"},
+				Connection: "ssh", Hosts: []string{"myhost:2222"},
 				SSHUser: "deploy", SSHPass: "s3cret", HasSSHPass: true, SSHPort: 2222,
 			},
 		},
@@ -44,19 +44,19 @@ func TestParseConnectionURI(t *testing.T) {
 			name:  "ssh password with @ sign",
 			input: "ssh://deploy:p@ss@myhost:22",
 			want: &ConnOverrides{
-				Connection: "ssh", Hosts: []string{"myhost"},
+				Connection: "ssh", Hosts: []string{"myhost:22"},
 				SSHUser: "deploy", SSHPass: "p@ss", HasSSHPass: true, SSHPort: 22,
 			},
 		},
 		{
 			name:  "ssh host:port no user",
 			input: "ssh://myhost:8022",
-			want:  &ConnOverrides{Connection: "ssh", Hosts: []string{"myhost"}, SSHPort: 8022},
+			want:  &ConnOverrides{Connection: "ssh", Hosts: []string{"myhost:8022"}, SSHPort: 8022},
 		},
 		{
 			name:  "ssh IPv6 host with port",
 			input: "ssh://user@[::1]:2222",
-			want:  &ConnOverrides{Connection: "ssh", Hosts: []string{"::1"}, SSHUser: "user", SSHPort: 2222},
+			want:  &ConnOverrides{Connection: "ssh", Hosts: []string{"[::1]:2222"}, SSHUser: "user", SSHPort: 2222},
 		},
 		{
 			name:  "ssh IPv6 host without port",
@@ -142,7 +142,7 @@ func TestMergeConnectionURIs(t *testing.T) {
 			name:  "single URI",
 			input: []string{"ssh://deploy@web1:2222"},
 			want: &ConnOverrides{
-				Connection: "ssh", Hosts: []string{"web1"},
+				Connection: "ssh", Hosts: []string{"web1:2222"},
 				SSHUser: "deploy", SSHPort: 2222,
 			},
 		},
@@ -150,7 +150,7 @@ func TestMergeConnectionURIs(t *testing.T) {
 			name:  "multiple URIs accumulate hosts",
 			input: []string{"ssh://deploy@web1:2222", "ssh://deploy@web2:2222"},
 			want: &ConnOverrides{
-				Connection: "ssh", Hosts: []string{"web1", "web2"},
+				Connection: "ssh", Hosts: []string{"web1:2222", "web2:2222"},
 				SSHUser: "deploy", SSHPort: 2222,
 			},
 		},
@@ -166,8 +166,16 @@ func TestMergeConnectionURIs(t *testing.T) {
 			name:  "last non-empty port wins",
 			input: []string{"ssh://web1:2222", "ssh://web2:3333"},
 			want: &ConnOverrides{
-				Connection: "ssh", Hosts: []string{"web1", "web2"},
+				Connection: "ssh", Hosts: []string{"web1:2222", "web2:3333"},
 				SSHPort: 3333,
+			},
+		},
+		{
+			name:  "different ports per host are preserved",
+			input: []string{"ssh://user@127.0.0.1:2201", "ssh://user@127.0.0.1:2202", "ssh://user@127.0.0.1:2203"},
+			want: &ConnOverrides{
+				Connection: "ssh", Hosts: []string{"127.0.0.1:2201", "127.0.0.1:2202", "127.0.0.1:2203"},
+				SSHUser: "user", SSHPort: 2203,
 			},
 		},
 		{

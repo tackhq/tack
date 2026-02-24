@@ -1,4 +1,4 @@
-.PHONY: build test test-integration lint clean run install release release-dry-run release-snapshot
+.PHONY: build test test-integration test-docker test-docker-up test-docker-run test-docker-down lint clean run install release release-dry-run release-snapshot
 
 BINARY=bolt
 BUILD_DIR=bin
@@ -33,6 +33,24 @@ test-coverage:
 
 test-integration:
 	go test -v -timeout 5m ./tests/integration/...
+
+test-docker: test-docker-up test-docker-run test-docker-down
+
+test-docker-up:
+	docker compose -f tests/docker-compose.yaml up -d --build
+	bash tests/setup-keys.sh
+
+test-docker-run: build
+	./bin/bolt run tests/docker-playbook.yaml \
+		-c ssh://testuser@127.0.0.1:2201 \
+		-c ssh://testuser@127.0.0.1:2202 \
+		-c ssh://testuser@127.0.0.1:2203 \
+		--ssh-key tests/.ssh/id_ed25519 \
+		--ssh-insecure --auto-approve
+
+test-docker-down:
+	docker compose -f tests/docker-compose.yaml down -v
+	rm -rf tests/.ssh
 
 lint:
 	golangci-lint run

@@ -1,0 +1,16 @@
+name: Docker SSH integration test
+hosts:
+  - 127.0.0.1
+connection: ssh
+gather_facts: true
+
+roles:
+  - webserver
+
+vars:
+  app_name: myapp
+
+tasks:
+  - name: Show configuration
+    command:
+      cmd: echo "App {{ app_name }} running on port {{ server_port }}"
