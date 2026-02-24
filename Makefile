@@ -1,4 +1,7 @@
-.PHONY: build test test-integration test-docker test-docker-up test-docker-run test-docker-down lint clean run install release release-dry-run release-snapshot
+.PHONY: build test test-integration test-docker test-docker-up test-docker-run test-docker-down lint clean run install release release-dry-run release-snapshot list
+
+list: ## Show available targets
+	@grep -E '^[a-zA-Z_-]+:.*##' $(MAKEFILE_LIST) | sort | awk -F ':.*## ' '{printf "  %-24s %s\n", $$1, $$2}'
 
 BINARY=bolt
 BUILD_DIR=bin
@@ -8,39 +11,39 @@ DATE ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 LDFLAGS=-ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)"
 
-build:
+build: ## Build the binary
 	@mkdir -p $(BUILD_DIR)
 	go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY) ./cmd/bolt
 
-build-all: build-linux build-darwin
+build-all: build-linux build-darwin ## Build for all platforms
 
-build-linux:
+build-linux: ## Build for Linux (amd64, arm64)
 	@mkdir -p $(BUILD_DIR)
 	GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY)-linux-amd64 ./cmd/bolt
 	GOOS=linux GOARCH=arm64 go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY)-linux-arm64 ./cmd/bolt
 
-build-darwin:
+build-darwin: ## Build for macOS (amd64, arm64)
 	@mkdir -p $(BUILD_DIR)
 	GOOS=darwin GOARCH=amd64 go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY)-darwin-amd64 ./cmd/bolt
 	GOOS=darwin GOARCH=arm64 go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY)-darwin-arm64 ./cmd/bolt
 
-test:
+test: ## Run unit tests
 	go test -v -short ./...
 
-test-coverage:
+test-coverage: ## Run tests with coverage report
 	go test -short -coverprofile=coverage.out ./...
 	go tool cover -html=coverage.out -o coverage.html
 
-test-integration:
+test-integration: ## Run Go integration tests
 	go test -v -timeout 5m ./tests/integration/...
 
-test-docker: test-docker-up test-docker-run test-docker-down
+test-docker: test-docker-up test-docker-run test-docker-down ## Run Docker SSH integration test (all-in-one)
 
-test-docker-up:
+test-docker-up: ## Start 3 SSH Docker containers
 	docker compose -f tests/docker-compose.yaml up -d --build
 	bash tests/setup-keys.sh
 
-test-docker-run: build
+test-docker-run: build ## Run playbook against Docker containers
 	./bin/bolt run tests/docker-playbook.yaml \
 		-c ssh://testuser@127.0.0.1:2201 \
 		-c ssh://testuser@127.0.0.1:2202 \
@@ -48,38 +51,33 @@ test-docker-run: build
 		--ssh-key tests/.ssh/id_ed25519 \
 		--ssh-insecure --auto-approve
 
-test-docker-down:
+test-docker-down: ## Tear down Docker containers and clean keys
 	docker compose -f tests/docker-compose.yaml down -v
 	rm -rf tests/.ssh
 
-lint:
+lint: ## Run linter
 	golangci-lint run
 
-clean:
+clean: ## Remove build artifacts
 	rm -rf $(BUILD_DIR)
 	rm -f coverage.out coverage.html
 
-run:
+run: ## Run bolt directly via go run
 	go run ./cmd/bolt
 
-install: build
+install: build ## Build and install to /usr/local/bin
 	cp $(BUILD_DIR)/$(BINARY) /usr/local/bin/
 
-# Install dependencies
-deps:
+deps: ## Install dependencies
 	go mod tidy
 
-# Validate example playbooks
-validate-examples:
+validate-examples: ## Validate example playbooks
 	go run ./cmd/bolt validate examples/playbooks/*.yaml
 
-# Run example playbook (dry-run)
-example:
+example: ## Run example playbook (dry-run)
 	go run ./cmd/bolt run examples/playbooks/setup-dev.yaml --dry-run --debug
 
-# Create and push a release tag
-# Usage: make release [TAG=v1.0.0]
-release:
+release: ## Create and push a release tag
 	@if [ -z "$(TAG)" ]; then \
 		LATEST=$$(git tag --sort=-version:refname 2>/dev/null | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$$' | head -1); \
 		if [ -z "$$LATEST" ]; then \
@@ -106,14 +104,11 @@ release:
 		echo "Release $(TAG) pushed. GitHub Actions will build and publish artifacts."; \
 	fi
 
-# GoReleaser: test release configuration without publishing
-release-dry-run:
+release-dry-run: ## Test release without publishing
 	goreleaser release --snapshot --clean --skip=publish
 
-# GoReleaser: create snapshot release (for testing)
-release-snapshot:
+release-snapshot: ## Create snapshot release
 	goreleaser release --snapshot --clean
 
-# GoReleaser: check configuration
-release-check:
+release-check: ## Check GoReleaser configuration
 	goreleaser check
