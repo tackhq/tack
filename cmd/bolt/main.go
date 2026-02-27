@@ -23,6 +23,7 @@ import (
 	_ "github.com/eugenetaranov/bolt/internal/module/template"
 
 	"github.com/eugenetaranov/bolt/internal/executor"
+	"github.com/eugenetaranov/bolt/internal/generate"
 	"github.com/eugenetaranov/bolt/internal/module"
 	"github.com/eugenetaranov/bolt/internal/playbook"
 	"github.com/eugenetaranov/bolt/internal/source"
@@ -71,6 +72,7 @@ func init() {
 	rootCmd.AddCommand(runCmd)
 	rootCmd.AddCommand(validateCmd)
 	rootCmd.AddCommand(modulesCmd)
+	rootCmd.AddCommand(generateCmd)
 }
 
 // runCmd executes a playbook
@@ -316,6 +318,134 @@ var modulesCmd = &cobra.Command{
 		fmt.Println()
 		fmt.Printf("Total: %d modules\n", len(modules))
 	},
+}
+
+// generateCmd captures live system resources and outputs a playbook.
+var generateCmd = &cobra.Command{
+	Use:   "generate",
+	Short: "Capture live system state as a playbook",
+	Long: `Connect to a target system, read the current state of specified resources,
+and generate a ready-to-use playbook YAML.
+
+Specify which resources to capture using --packages, --files, --services,
+and --users flags. At least one resource flag is required.
+
+Examples:
+  bolt generate --packages neovim,tmux
+  bolt generate -c ssh://root@web1 --packages nginx --services nginx --files /etc/nginx/nginx.conf
+  bolt generate --connection local --files /etc/hosts -o setup.yaml
+  bolt generate -c ssh://deploy@web1 --users deploy,app --sudo`,
+	RunE: runGenerate,
+}
+
+func init() {
+	// Resource flags
+	generateCmd.Flags().StringSlice("packages", nil, "Packages to capture (comma-separated)")
+	generateCmd.Flags().StringSlice("files", nil, "Files/directories to capture (comma-separated)")
+	generateCmd.Flags().StringSlice("services", nil, "Systemd services to capture (comma-separated)")
+	generateCmd.Flags().StringSlice("users", nil, "Users to capture (comma-separated)")
+	generateCmd.Flags().StringP("output", "o", "", "Output file (default: stdout)")
+
+	// Connection flags (same as run command)
+	generateCmd.Flags().StringArrayP("connection", "c", nil, "Connection URI (e.g. ssh://user@host:port, local://)")
+	generateCmd.Flags().String("hosts", "", "Comma-separated list of target hosts")
+	generateCmd.Flags().String("ssh-user", "", "SSH username")
+	generateCmd.Flags().Int("ssh-port", 0, "SSH port")
+	generateCmd.Flags().String("ssh-key", "", "Path to SSH private key")
+	sshPassFlag := generateCmd.Flags().String("ssh-password", "", "SSH password (prompted if flag present with no value)")
+	_ = sshPassFlag
+	generateCmd.Flags().Lookup("ssh-password").NoOptDefVal = ""
+	generateCmd.Flags().Bool("ssh-insecure", false, "Skip SSH host key verification")
+	generateCmd.Flags().BoolP("sudo", "s", false, "Enable sudo for queries")
+	sudoPassFlag := generateCmd.Flags().String("sudo-password", "", "Sudo password (prompted if flag present with no value)")
+	_ = sudoPassFlag
+	generateCmd.Flags().Lookup("sudo-password").NoOptDefVal = ""
+}
+
+func runGenerate(cmd *cobra.Command, _ []string) error {
+	packages, _ := cmd.Flags().GetStringSlice("packages")
+	files, _ := cmd.Flags().GetStringSlice("files")
+	services, _ := cmd.Flags().GetStringSlice("services")
+	users, _ := cmd.Flags().GetStringSlice("users")
+	output, _ := cmd.Flags().GetString("output")
+
+	if len(packages) == 0 && len(files) == 0 && len(services) == 0 && len(users) == 0 {
+		return fmt.Errorf("at least one resource flag is required (--packages, --files, --services, --users)")
+	}
+
+	// Build connection overrides
+	overrides, err := buildConnOverrides(cmd)
+	if err != nil {
+		return err
+	}
+
+	// Build a minimal play to get a connector
+	play := &playbook.Play{
+		Connection: overrides.Connection,
+		Hosts:      overrides.Hosts,
+		Vars:       make(map[string]any),
+	}
+	if play.Connection == "" {
+		play.Connection = "local"
+	}
+
+	// Apply SSH vars
+	if overrides.SSHUser != "" {
+		play.Vars["bolt_ssh_user"] = overrides.SSHUser
+	}
+	if overrides.SSHPort != 0 {
+		play.Vars["bolt_ssh_port"] = overrides.SSHPort
+	}
+	if overrides.SSHKey != "" {
+		play.Vars["bolt_ssh_key"] = overrides.SSHKey
+	}
+	if overrides.HasSSHPass {
+		play.Vars["bolt_ssh_password"] = overrides.SSHPass
+	}
+	if overrides.SSHInsecure {
+		play.Vars["bolt_ssh_host_key_checking"] = false
+	}
+	if overrides.Sudo {
+		play.Sudo = true
+	}
+	if overrides.SudoPassword != "" {
+		play.Vars["bolt_sudo_password"] = overrides.SudoPassword
+	}
+
+	// Create connector
+	exec := executor.New()
+	host := "localhost"
+	if len(play.Hosts) > 0 {
+		host = play.Hosts[0]
+	}
+	conn, err := exec.GetConnector(play, host)
+	if err != nil {
+		return fmt.Errorf("failed to create connector: %w", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Handle interrupt signals
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		fmt.Fprintln(os.Stderr, "\nInterrupted, cleaning up...")
+		cancel()
+	}()
+
+	opts := generate.Options{
+		Packages:   packages,
+		Files:      files,
+		Services:   services,
+		Users:      users,
+		Hosts:      play.Hosts,
+		Connection: play.Connection,
+		Output:     output,
+	}
+
+	return generate.Generate(ctx, conn, opts)
 }
 
 // flagOrEnv returns the flag value if changed, otherwise the environment variable value.

@@ -104,6 +104,32 @@ bolt validate playbook.yaml
 bolt modules
 ```
 
+## Generating Playbooks from Live Systems
+
+`bolt generate` connects to a target system, reads the current state of specified resources, and outputs a ready-to-use playbook.
+
+```bash
+# Capture installed packages (auto-detects brew/apt/dnf)
+bolt generate --packages neovim,tmux,ripgrep
+
+# Capture files, services, and users from a remote host
+bolt generate -c ssh://root@web1 \
+  --packages nginx \
+  --files /etc/nginx/nginx.conf,/etc/systemd/system/myapp.service \
+  --services nginx,myapp \
+  --users deploy,app \
+  -o playbook.yaml
+
+# Use sudo for privileged queries
+bolt generate -c ssh://deploy@web1 --services nginx --sudo
+```
+
+Resource flags (use any combination):
+- `--packages` — installed packages (apt, brew, or dnf/yum based on target OS)
+- `--files` — file content/permissions, directory permissions, symlink targets
+- `--services` — systemd unit enabled/running state
+- `--users` — user existence, uid, groups, shell, home directory
+
 ## Examples
 
 ### Local Machine Setup

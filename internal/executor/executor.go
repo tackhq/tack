@@ -284,7 +284,7 @@ func (e *Executor) runPlayOnHost(ctx context.Context, play *playbook.Play, stats
 	pctx.Vars["env"] = getEnvMap()
 
 	// Get connector for this host
-	conn, err := e.getConnector(play, host)
+	conn, err := e.GetConnector(play, host)
 	if err != nil {
 		return fmt.Errorf("failed to create connector for host %s: %w", host, err)
 	}
@@ -915,8 +915,8 @@ func (e *Executor) needsSudoPassword(play *playbook.Play, tasks, handlers []*pla
 	return nil
 }
 
-// getConnector returns a connector for the play targeting a specific host.
-func (e *Executor) getConnector(play *playbook.Play, host string) (connector.Connector, error) {
+// GetConnector returns a connector for the play targeting a specific host.
+func (e *Executor) GetConnector(play *playbook.Play, host string) (connector.Connector, error) {
 	connType := play.GetConnection()
 
 	sudoPass, _ := play.Vars["bolt_sudo_password"].(string)
