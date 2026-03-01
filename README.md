@@ -56,11 +56,8 @@ make build && ./bin/bolt run examples/playbooks/setup-dev.yaml --dry-run
 **Try with Docker:**
 
 ```bash
-# Build, start container, run playbook, cleanup
-make build && \
-docker run -d --name bolt-test alpine sleep 3600 && \
-./bin/bolt run examples/playbooks/docker-test.yaml && \
-docker rm -f bolt-test
+# Test a role in a Docker container (container is reused across runs)
+make build && ./bin/bolt test examples/roles-demo/roles/webserver
 ```
 
 **Bootstrap macOS:**
@@ -106,6 +103,11 @@ bolt modules
 # Scaffold a new role with sample files
 bolt scaffold myrole
 bolt scaffold myrole --path ./my-roles
+
+# Test a role in a Docker container
+bolt test myrole
+bolt test myrole --new       # force fresh container
+bolt test myrole --rm        # remove container after run
 ```
 
 ## Generating Playbooks from Live Systems
@@ -156,6 +158,33 @@ roles/myrole/
 ├── vars/main.yaml        # Role variables (placeholder)
 ├── files/config.txt      # Sample static file for copy module
 └── templates/app.conf.j2 # Sample Go template
+```
+
+## Testing Roles
+
+`bolt test` runs a role or playbook inside a Docker container. Containers are **reused by default** — the container name is derived from the target, so repeated runs hit the same container. This lets you verify idempotency: the first run applies changes, the second run should show no drift.
+
+```bash
+# Run a role — creates container "bolt-test-webserver", keeps it after
+bolt test myrole
+
+# Second run reuses the container — verify idempotency
+bolt test myrole
+
+# Force a fresh container (removes existing first)
+bolt test myrole --new
+
+# Remove container after the run
+bolt test myrole --rm
+
+# Fresh + disposable (one-shot, like the old default)
+bolt test myrole --new --rm
+
+# Use a different base image
+bolt test myrole --image debian:12
+
+# Test a playbook file directly
+bolt test setup.yaml
 ```
 
 ## Examples
