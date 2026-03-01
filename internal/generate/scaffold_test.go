@@ -66,7 +66,9 @@ func TestScaffoldRoleAlreadyExists(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Create the role directory first
-	os.MkdirAll(filepath.Join(tmpDir, "myrole"), 0o755)
+	if err := os.MkdirAll(filepath.Join(tmpDir, "myrole"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	err := ScaffoldRole("myrole", tmpDir)
 	if err == nil {
