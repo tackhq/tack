@@ -27,6 +27,7 @@ import (
 	"github.com/eugenetaranov/bolt/internal/module"
 	"github.com/eugenetaranov/bolt/internal/playbook"
 	"github.com/eugenetaranov/bolt/internal/source"
+	"github.com/eugenetaranov/bolt/internal/testrun"
 )
 
 var (
@@ -74,6 +75,7 @@ func init() {
 	rootCmd.AddCommand(modulesCmd)
 	rootCmd.AddCommand(generateCmd)
 	rootCmd.AddCommand(scaffoldCmd)
+	rootCmd.AddCommand(testCmd)
 }
 
 // runCmd executes a playbook
@@ -473,6 +475,68 @@ Examples:
 
 func init() {
 	scaffoldCmd.Flags().String("path", "roles", "Base directory for the role")
+}
+
+// testCmd tests a role or playbook in an ephemeral Docker container.
+var testCmd = &cobra.Command{
+	Use:   "test <playbook.yaml | rolename>",
+	Short: "Test a role or playbook in an ephemeral Docker container",
+	Long: `Run a role or playbook in a Docker container and report results.
+
+Containers are reused by default — the container name is derived from the
+target so repeated runs hit the same container, letting you verify
+idempotency. Use --new to force a fresh container or --rm to remove
+the container after the run.
+
+If the argument ends in .yaml/.yml or is an existing file, it is treated
+as a playbook. Otherwise it is treated as a role name (looked up under ./roles/).
+
+The playbook's connection and hosts are overridden to use the Docker container.
+
+Examples:
+  bolt test myrole                  # reuse or create, keep after
+  bolt test myrole --new            # force fresh container
+  bolt test myrole --rm             # remove container after run
+  bolt test myrole --new --rm       # fresh + disposable (one-shot)
+  bolt test playbook.yaml
+  bolt test myrole --image debian:12`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		image, _ := cmd.Flags().GetString("image")
+		newFlag, _ := cmd.Flags().GetBool("new")
+		rmFlag, _ := cmd.Flags().GetBool("rm")
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		// Handle interrupt signals
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+		go func() {
+			<-sigCh
+			fmt.Fprintln(os.Stderr, "\nInterrupted, cleaning up...")
+			cancel()
+			<-sigCh
+			os.Exit(130)
+		}()
+
+		return testrun.Run(ctx, testrun.Options{
+			Target:  args[0],
+			Image:   image,
+			New:     newFlag,
+			Remove:  rmFlag,
+			Debug:   debug,
+			Verbose: verbose,
+			DryRun:  dryRun,
+			NoColor: noColor,
+		})
+	},
+}
+
+func init() {
+	testCmd.Flags().String("image", "ubuntu:24.04", "Docker image to use for the test container")
+	testCmd.Flags().Bool("new", false, "Force a fresh container (remove existing first)")
+	testCmd.Flags().Bool("rm", false, "Remove the container after the test run")
 }
 
 // flagOrEnv returns the flag value if changed, otherwise the environment variable value.
