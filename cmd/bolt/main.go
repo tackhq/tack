@@ -73,6 +73,7 @@ func init() {
 	rootCmd.AddCommand(validateCmd)
 	rootCmd.AddCommand(modulesCmd)
 	rootCmd.AddCommand(generateCmd)
+	rootCmd.AddCommand(scaffoldCmd)
 }
 
 // runCmd executes a playbook
@@ -446,6 +447,32 @@ func runGenerate(cmd *cobra.Command, _ []string) error {
 	}
 
 	return generate.Generate(ctx, conn, opts)
+}
+
+// scaffoldCmd generates a sample role directory structure.
+var scaffoldCmd = &cobra.Command{
+	Use:   "scaffold <rolename>",
+	Short: "Generate a sample role directory structure",
+	Long: `Create a new role with sample files demonstrating all resource types
+(packages, files, services, templates).
+
+Examples:
+  bolt scaffold myrole
+  bolt scaffold myrole --path ./my-roles`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		path, _ := cmd.Flags().GetString("path")
+		name := args[0]
+		if err := generate.ScaffoldRole(name, path); err != nil {
+			return err
+		}
+		fmt.Printf("Created role %s at %s/%s\n", name, path, name)
+		return nil
+	},
+}
+
+func init() {
+	scaffoldCmd.Flags().String("path", "roles", "Base directory for the role")
 }
 
 // flagOrEnv returns the flag value if changed, otherwise the environment variable value.

@@ -102,6 +102,10 @@ bolt validate playbook.yaml
 
 # List available modules
 bolt modules
+
+# Scaffold a new role with sample files
+bolt scaffold myrole
+bolt scaffold myrole --path ./my-roles
 ```
 
 ## Generating Playbooks from Live Systems
@@ -129,6 +133,30 @@ Resource flags (use any combination):
 - `--files` — file content/permissions, directory permissions, symlink targets
 - `--services` — systemd unit enabled/running state
 - `--users` — user existence, uid, groups, shell, home directory
+
+## Scaffolding Roles
+
+`bolt scaffold` creates a new role directory with sample files demonstrating all resource types.
+
+```bash
+# Create roles/myrole/ with sample tasks, handlers, vars, files, and templates
+bolt scaffold myrole
+
+# Create in a custom directory
+bolt scaffold myrole --path ./my-roles
+```
+
+Generated structure:
+
+```
+roles/myrole/
+├── tasks/main.yaml       # Sample tasks: packages, copy, file, systemd, template
+├── handlers/main.yaml    # Sample handler (restart service)
+├── defaults/main.yaml    # Default variables referenced by tasks
+├── vars/main.yaml        # Role variables (placeholder)
+├── files/config.txt      # Sample static file for copy module
+└── templates/app.conf.j2 # Sample Go template
+```
 
 ## Examples
 
