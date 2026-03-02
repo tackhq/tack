@@ -12,6 +12,7 @@ var validSchemes = map[string]bool{
 	"ssh":    true,
 	"docker": true,
 	"local":  true,
+	"ssm":    true,
 }
 
 // ParseConnectionURI parses a single connection URI string.

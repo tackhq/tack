@@ -1,7 +1,10 @@
 package executor
 
 import (
+	"fmt"
 	"testing"
+
+	"github.com/eugenetaranov/bolt/internal/playbook"
 )
 
 func TestEvaluateCondition(t *testing.T) {
@@ -197,3 +200,265 @@ func TestGetEnvMap(t *testing.T) {
 		t.Log("PATH not found in environment (might be ok in some test environments)")
 	}
 }
+
+func TestApplyOverrides_SSMRegionAndBucket(t *testing.T) {
+	exec := New()
+	exec.Overrides = &ConnOverrides{
+		SSMRegion: "us-west-2",
+		SSMBucket: "my-bucket",
+	}
+	play := &playbook.Play{Vars: make(map[string]any)}
+
+	exec.applyOverrides(play)
+
+	if got, ok := play.Vars["bolt_ssm_region"].(string); !ok || got != "us-west-2" {
+		t.Errorf("bolt_ssm_region = %v, want us-west-2", play.Vars["bolt_ssm_region"])
+	}
+	if got, ok := play.Vars["bolt_ssm_bucket"].(string); !ok || got != "my-bucket" {
+		t.Errorf("bolt_ssm_bucket = %v, want my-bucket", play.Vars["bolt_ssm_bucket"])
+	}
+}
+
+func TestApplyOverrides_SSMInstances(t *testing.T) {
+	exec := New()
+	exec.Overrides = &ConnOverrides{
+		Connection:   "ssm",
+		SSMInstances: []string{"i-aaa", "i-bbb"},
+	}
+	play := &playbook.Play{
+		Connection: "ssm",
+		Vars:       make(map[string]any),
+	}
+
+	exec.applyOverrides(play)
+
+	if len(play.Hosts) != 2 || play.Hosts[0] != "i-aaa" || play.Hosts[1] != "i-bbb" {
+		t.Errorf("Hosts = %v, want [i-aaa i-bbb]", play.Hosts)
+	}
+}
+
+func TestApplyOverrides_SSMTags(t *testing.T) {
+	exec := New()
+	exec.Overrides = &ConnOverrides{
+		Connection: "ssm",
+		SSMTags:    map[string]string{"Env": "prod", "Role": "web"},
+	}
+	play := &playbook.Play{
+		Connection: "ssm",
+		Vars:       make(map[string]any),
+	}
+
+	exec.applyOverrides(play)
+
+	tags, ok := play.Vars["bolt_ssm_tags"].(map[string]string)
+	if !ok {
+		t.Fatalf("bolt_ssm_tags not set or wrong type: %T", play.Vars["bolt_ssm_tags"])
+	}
+	if tags["Env"] != "prod" || tags["Role"] != "web" {
+		t.Errorf("bolt_ssm_tags = %v, want {Env:prod Role:web}", tags)
+	}
+}
+
+func TestApplyOverrides_SSMInstancesPreferredOverTags(t *testing.T) {
+	exec := New()
+	exec.Overrides = &ConnOverrides{
+		Connection:   "ssm",
+		SSMInstances: []string{"i-explicit"},
+		SSMTags:      map[string]string{"Env": "prod"},
+	}
+	play := &playbook.Play{
+		Connection: "ssm",
+		Vars:       make(map[string]any),
+	}
+
+	exec.applyOverrides(play)
+
+	// Instances should be set, tags should NOT be (instances take priority)
+	if len(play.Hosts) != 1 || play.Hosts[0] != "i-explicit" {
+		t.Errorf("Hosts = %v, want [i-explicit]", play.Hosts)
+	}
+	if _, ok := play.Vars["bolt_ssm_tags"]; ok {
+		t.Error("bolt_ssm_tags should not be set when instances are provided")
+	}
+}
+
+func TestApplyOverrides_SSMSkippedForNonSSM(t *testing.T) {
+	exec := New()
+	exec.Overrides = &ConnOverrides{
+		Connection:   "ssh",
+		SSMInstances: []string{"i-aaa"},
+		SSMTags:      map[string]string{"Env": "prod"},
+	}
+	play := &playbook.Play{
+		Connection: "ssh",
+		Vars:       make(map[string]any),
+	}
+
+	exec.applyOverrides(play)
+
+	// SSM instances/tags should not populate hosts for non-SSM connections
+	if len(play.Hosts) != 0 {
+		t.Errorf("Hosts = %v, want empty (non-SSM connection)", play.Hosts)
+	}
+}
+
+func TestApplyOverrides_SSMDoesNotOverrideExistingHosts(t *testing.T) {
+	exec := New()
+	exec.Overrides = &ConnOverrides{
+		Connection:   "ssm",
+		Hosts:        []string{"i-from-hosts"},
+		SSMInstances: []string{"i-from-instances"},
+	}
+	play := &playbook.Play{
+		Connection: "ssm",
+		Vars:       make(map[string]any),
+	}
+
+	exec.applyOverrides(play)
+
+	// Hosts from --hosts override should be used, SSMInstances should not override
+	if len(play.Hosts) != 1 || play.Hosts[0] != "i-from-hosts" {
+		t.Errorf("Hosts = %v, want [i-from-hosts]", play.Hosts)
+	}
+}
+
+func TestGetConnector_SSM(t *testing.T) {
+	exec := New()
+	play := &playbook.Play{
+		Connection: "ssm",
+		Vars: map[string]any{
+			"bolt_ssm_region": "eu-west-1",
+			"bolt_ssm_bucket": "transfer-bucket",
+		},
+	}
+
+	conn, err := exec.GetConnector(play, "i-test123")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got := conn.String()
+	if got != "ssm://i-test123 (region=eu-west-1)" {
+		t.Errorf("String() = %q, want %q", got, "ssm://i-test123 (region=eu-west-1)")
+	}
+}
+
+func TestGetConnector_SSMWithSudo(t *testing.T) {
+	exec := New()
+	play := &playbook.Play{
+		Connection: "ssm",
+		Sudo:       true,
+		Vars:       map[string]any{},
+	}
+
+	conn, err := exec.GetConnector(play, "i-test123")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got := conn.String()
+	if got != "ssm://i-test123 (sudo)" {
+		t.Errorf("String() = %q, want %q", got, "ssm://i-test123 (sudo)")
+	}
+}
+
+func TestGetConnector_SSMMinimal(t *testing.T) {
+	exec := New()
+	play := &playbook.Play{
+		Connection: "ssm",
+		Vars:       map[string]any{},
+	}
+
+	conn, err := exec.GetConnector(play, "i-abc")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := conn.String(); got != "ssm://i-abc" {
+		t.Errorf("String() = %q, want %q", got, "ssm://i-abc")
+	}
+}
+
+func TestToStringMap(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   any
+		want    map[string]string
+		wantOK  bool
+	}{
+		{
+			name:   "map[string]string",
+			input:  map[string]string{"a": "1", "b": "2"},
+			want:   map[string]string{"a": "1", "b": "2"},
+			wantOK: true,
+		},
+		{
+			name:   "map[string]any with strings",
+			input:  map[string]any{"a": "1", "b": "2"},
+			want:   map[string]string{"a": "1", "b": "2"},
+			wantOK: true,
+		},
+		{
+			name:   "map[string]any with mixed types",
+			input:  map[string]any{"a": "hello", "b": 42},
+			want:   map[string]string{"a": "hello", "b": "42"},
+			wantOK: true,
+		},
+		{
+			name:   "nil",
+			input:  nil,
+			want:   nil,
+			wantOK: false,
+		},
+		{
+			name:   "string (wrong type)",
+			input:  "not a map",
+			want:   nil,
+			wantOK: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := toStringMap(tt.input)
+			if ok != tt.wantOK {
+				t.Errorf("ok = %v, want %v", ok, tt.wantOK)
+			}
+			if tt.wantOK {
+				if len(got) != len(tt.want) {
+					t.Errorf("got %v, want %v", got, tt.want)
+				} else {
+					for k, v := range tt.want {
+						if got[k] != v {
+							t.Errorf("got[%q] = %q, want %q", k, got[k], v)
+						}
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestConnOverrides_SSMFields(t *testing.T) {
+	o := &ConnOverrides{
+		SSMInstances: []string{"i-111", "i-222"},
+		SSMTags:      map[string]string{"Env": "prod"},
+		SSMRegion:    "ap-southeast-1",
+		SSMBucket:    "my-bucket",
+	}
+
+	if len(o.SSMInstances) != 2 {
+		t.Errorf("SSMInstances = %v, want 2 elements", o.SSMInstances)
+	}
+	if o.SSMTags["Env"] != "prod" {
+		t.Errorf("SSMTags[Env] = %q, want prod", o.SSMTags["Env"])
+	}
+	if o.SSMRegion != "ap-southeast-1" {
+		t.Errorf("SSMRegion = %q, want ap-southeast-1", o.SSMRegion)
+	}
+	if o.SSMBucket != "my-bucket" {
+		t.Errorf("SSMBucket = %q, want my-bucket", o.SSMBucket)
+	}
+}
+
+// Silence the unused import warning.
+var _ = fmt.Sprintf
