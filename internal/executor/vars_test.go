@@ -1,7 +1,11 @@
 package executor
 
 import (
+	"context"
+	"fmt"
 	"testing"
+
+	"github.com/eugenetaranov/bolt/pkg/ssmparams"
 )
 
 func TestInterpolateString(t *testing.T) {
@@ -71,9 +75,10 @@ func TestInterpolateString(t *testing.T) {
 		},
 	}
 
+	ctx := context.Background()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := exec.interpolateString(tt.input, pctx)
+			got, err := exec.interpolateString(ctx, tt.input, pctx)
 			if err != nil {
 				t.Errorf("unexpected error: %v", err)
 				return
@@ -217,7 +222,7 @@ func TestInterpolateParams(t *testing.T) {
 		"count": 5,
 	}
 
-	result, err := exec.interpolateParams(params, pctx)
+	result, err := exec.interpolateParams(context.Background(), params, pctx)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -250,7 +255,7 @@ func TestInterpolateNestedParams(t *testing.T) {
 		"items": []any{"{{ user }}", "guest"},
 	}
 
-	result, err := exec.interpolateParams(params, pctx)
+	result, err := exec.interpolateParams(context.Background(), params, pctx)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -264,4 +269,86 @@ func TestInterpolateNestedParams(t *testing.T) {
 	if items[0] != "admin" {
 		t.Errorf("items[0]: expected 'admin', got %v", items[0])
 	}
+}
+
+func TestSSMParamLiteral(t *testing.T) {
+	exec := New()
+	pctx := &PlayContext{
+		Vars:       make(map[string]any),
+		Registered: make(map[string]any),
+		SSMParams:  ssmparams.NewWithMock(map[string]string{"/prod/db/password": "s3cret"}),
+	}
+
+	got, err := exec.interpolateString(context.Background(), "{{ ssm_param('/prod/db/password') }}", pctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "s3cret" {
+		t.Errorf("expected 's3cret', got %v", got)
+	}
+}
+
+func TestSSMParamVariable(t *testing.T) {
+	exec := New()
+	pctx := &PlayContext{
+		Vars: map[string]any{
+			"db_param_path": "/staging/db/host",
+		},
+		Registered: make(map[string]any),
+		SSMParams:  ssmparams.NewWithMock(map[string]string{"/staging/db/host": "db.staging.example.com"}),
+	}
+
+	got, err := exec.interpolateString(context.Background(), "{{ ssm_param(db_param_path) }}", pctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "db.staging.example.com" {
+		t.Errorf("expected 'db.staging.example.com', got %v", got)
+	}
+}
+
+func TestSSMParamInText(t *testing.T) {
+	exec := New()
+	pctx := &PlayContext{
+		Vars:       make(map[string]any),
+		Registered: make(map[string]any),
+		SSMParams:  ssmparams.NewWithMock(map[string]string{"/app/key": "mykey123"}),
+	}
+
+	got, err := exec.interpolateString(context.Background(), "key={{ ssm_param('/app/key') }}", pctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "key=mykey123" {
+		t.Errorf("expected 'key=mykey123', got %v", got)
+	}
+}
+
+func TestSSMParamNoClient(t *testing.T) {
+	exec := New()
+	pctx := &PlayContext{
+		Vars:       make(map[string]any),
+		Registered: make(map[string]any),
+		// SSMParams is nil
+	}
+
+	_, err := exec.interpolateString(context.Background(), "{{ ssm_param('/key') }}", pctx)
+	if err == nil {
+		t.Fatal("expected error when SSMParams is nil")
+	}
+}
+
+func TestSSMParamMissing(t *testing.T) {
+	exec := New()
+	pctx := &PlayContext{
+		Vars:       make(map[string]any),
+		Registered: make(map[string]any),
+		SSMParams:  ssmparams.NewWithMock(map[string]string{}),
+	}
+
+	_, err := exec.interpolateString(context.Background(), "{{ ssm_param('/nonexistent') }}", pctx)
+	if err == nil {
+		t.Fatal("expected error for missing parameter")
+	}
+	fmt.Println("got expected error:", err)
 }

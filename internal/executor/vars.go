@@ -1,6 +1,7 @@
 package executor
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"strings"
@@ -9,12 +10,15 @@ import (
 // varPattern matches {{ variable }} syntax.
 var varPattern = regexp.MustCompile(`\{\{\s*([^}]+?)\s*\}\}`)
 
+// ssmParamPattern matches ssm_param('literal') or ssm_param(varname) calls.
+var ssmParamPattern = regexp.MustCompile(`^ssm_param\(\s*(.+?)\s*\)$`)
+
 // interpolateParams recursively interpolates variables in task parameters.
-func (e *Executor) interpolateParams(params map[string]any, pctx *PlayContext) (map[string]any, error) {
+func (e *Executor) interpolateParams(ctx context.Context, params map[string]any, pctx *PlayContext) (map[string]any, error) {
 	result := make(map[string]any)
 
 	for k, v := range params {
-		interpolated, err := e.interpolateValue(v, pctx)
+		interpolated, err := e.interpolateValue(ctx, v, pctx)
 		if err != nil {
 			return nil, fmt.Errorf("parameter '%s': %w", k, err)
 		}
@@ -25,15 +29,15 @@ func (e *Executor) interpolateParams(params map[string]any, pctx *PlayContext) (
 }
 
 // interpolateValue interpolates variables in a single value.
-func (e *Executor) interpolateValue(v any, pctx *PlayContext) (any, error) {
+func (e *Executor) interpolateValue(ctx context.Context, v any, pctx *PlayContext) (any, error) {
 	switch val := v.(type) {
 	case string:
-		return e.interpolateString(val, pctx)
+		return e.interpolateString(ctx, val, pctx)
 
 	case []any:
 		result := make([]any, len(val))
 		for i, item := range val {
-			interpolated, err := e.interpolateValue(item, pctx)
+			interpolated, err := e.interpolateValue(ctx, item, pctx)
 			if err != nil {
 				return nil, err
 			}
@@ -44,7 +48,7 @@ func (e *Executor) interpolateValue(v any, pctx *PlayContext) (any, error) {
 	case map[string]any:
 		result := make(map[string]any)
 		for k, item := range val {
-			interpolated, err := e.interpolateValue(item, pctx)
+			interpolated, err := e.interpolateValue(ctx, item, pctx)
 			if err != nil {
 				return nil, err
 			}
@@ -58,7 +62,7 @@ func (e *Executor) interpolateValue(v any, pctx *PlayContext) (any, error) {
 }
 
 // interpolateString replaces {{ var }} patterns with their values.
-func (e *Executor) interpolateString(s string, pctx *PlayContext) (any, error) {
+func (e *Executor) interpolateString(ctx context.Context, s string, pctx *PlayContext) (any, error) {
 	// Check if the entire string is a single variable reference
 	// In this case, return the actual value (not stringified)
 	trimmed := strings.TrimSpace(s)
@@ -66,7 +70,7 @@ func (e *Executor) interpolateString(s string, pctx *PlayContext) (any, error) {
 		inner := strings.TrimSpace(trimmed[2 : len(trimmed)-2])
 		if !strings.Contains(inner, "{{") {
 			// Single variable reference - return actual value
-			val, err := e.resolveVariable(inner, pctx)
+			val, err := e.resolveVariable(ctx, inner, pctx)
 			if err != nil {
 				return nil, err
 			}
@@ -75,6 +79,7 @@ func (e *Executor) interpolateString(s string, pctx *PlayContext) (any, error) {
 	}
 
 	// Multiple variables or mixed content - stringify all values
+	var firstErr error
 	result := varPattern.ReplaceAllStringFunc(s, func(match string) string {
 		// Extract variable name
 		inner := varPattern.FindStringSubmatch(match)
@@ -83,20 +88,32 @@ func (e *Executor) interpolateString(s string, pctx *PlayContext) (any, error) {
 		}
 
 		varExpr := strings.TrimSpace(inner[1])
-		val, err := e.resolveVariable(varExpr, pctx)
+		val, err := e.resolveVariable(ctx, varExpr, pctx)
 		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
 			return match // Keep original on error
 		}
 
 		return fmt.Sprintf("%v", val)
 	})
 
+	if firstErr != nil {
+		return nil, firstErr
+	}
+
 	return result, nil
 }
 
 // resolveVariable resolves a variable expression.
-func (e *Executor) resolveVariable(expr string, pctx *PlayContext) (any, error) {
+func (e *Executor) resolveVariable(ctx context.Context, expr string, pctx *PlayContext) (any, error) {
 	expr = strings.TrimSpace(expr)
+
+	// Handle ssm_param() calls
+	if m := ssmParamPattern.FindStringSubmatch(expr); m != nil {
+		return e.resolveSSMParam(ctx, m[1], pctx)
+	}
 
 	// Handle filters (e.g., var | default('value'))
 	if idx := strings.Index(expr, "|"); idx > 0 {
@@ -107,6 +124,30 @@ func (e *Executor) resolveVariable(expr string, pctx *PlayContext) (any, error) 
 
 	// Simple variable or dotted path
 	return e.lookupVariable(expr, pctx), nil
+}
+
+// resolveSSMParam handles ssm_param('literal') and ssm_param(varname) calls.
+func (e *Executor) resolveSSMParam(ctx context.Context, arg string, pctx *PlayContext) (any, error) {
+	if pctx.SSMParams == nil {
+		return nil, fmt.Errorf("ssm_param() called but no SSM client available")
+	}
+
+	// Quoted argument = literal parameter path
+	arg = strings.TrimSpace(arg)
+	var paramPath string
+	if (strings.HasPrefix(arg, "'") && strings.HasSuffix(arg, "'")) ||
+		(strings.HasPrefix(arg, "\"") && strings.HasSuffix(arg, "\"")) {
+		paramPath = arg[1 : len(arg)-1]
+	} else {
+		// Unquoted = resolve as variable name
+		val := e.lookupVariable(arg, pctx)
+		if val == nil {
+			return nil, fmt.Errorf("ssm_param: variable %q not found", arg)
+		}
+		paramPath = fmt.Sprintf("%v", val)
+	}
+
+	return pctx.SSMParams.Get(ctx, paramPath)
 }
 
 // lookupVariable looks up a variable by name or dotted path.

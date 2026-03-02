@@ -21,6 +21,7 @@ import (
 	"github.com/eugenetaranov/bolt/internal/playbook"
 	"github.com/eugenetaranov/bolt/internal/source"
 	"github.com/eugenetaranov/bolt/pkg/facts"
+	"github.com/eugenetaranov/bolt/pkg/ssmparams"
 )
 
 // ConnOverrides holds CLI/env overrides for connection settings.
@@ -149,6 +150,9 @@ type PlayContext struct {
 
 	// Connector is the connection to the target.
 	Connector connector.Connector
+
+	// SSMParams is a lazy-init cached SSM Parameter Store client.
+	SSMParams *ssmparams.Client
 }
 
 // Run executes a playbook.
@@ -343,6 +347,16 @@ func (e *Executor) runPlayOnHost(ctx context.Context, play *playbook.Play, stats
 		e.Output.TaskResult("Gathering Facts", "ok", false, "")
 	}
 
+	// Create lazy SSM Parameter Store client.
+	// Region priority: bolt_ssm_region var > ec2_region fact > AWS SDK default.
+	ssmRegion := ""
+	if r, ok := play.Vars["bolt_ssm_region"].(string); ok && r != "" {
+		ssmRegion = r
+	} else if r, ok := pctx.Facts["ec2_region"].(string); ok && r != "" {
+		ssmRegion = r
+	}
+	pctx.SSMParams = ssmparams.New(ssmRegion)
+
 	// Expand role tasks and handlers
 	allTasks := playbook.ExpandRoleTasks(roles, play.Tasks)
 	allHandlers := playbook.ExpandRoleHandlers(roles, play.Handlers)
@@ -442,7 +456,7 @@ func (e *Executor) runTask(ctx context.Context, pctx *PlayContext, task *playboo
 
 	// Resolve loop expression (e.g. "{{ windmill_files }}") to a concrete list
 	if task.LoopExpr != "" && len(task.Loop) == 0 {
-		resolved, err := e.interpolateString(task.LoopExpr, pctx)
+		resolved, err := e.interpolateString(ctx, task.LoopExpr, pctx)
 		if err == nil {
 			if items, ok := resolved.([]any); ok {
 				task.Loop = items
@@ -485,7 +499,7 @@ func (e *Executor) runSingleTask(ctx context.Context, pctx *PlayContext, task *p
 	}
 
 	// Interpolate variables in params
-	params, err := e.interpolateParams(task.Params, pctx)
+	params, err := e.interpolateParams(ctx, task.Params, pctx)
 	if err != nil {
 		e.Output.TaskResult(taskName, "failed", false, err.Error())
 		return nil, fmt.Errorf("failed to interpolate parameters: %w", err)
@@ -496,9 +510,12 @@ func (e *Executor) runSingleTask(ctx context.Context, pctx *PlayContext, task *p
 		params["_role_path"] = task.RolePath
 	}
 
-	// Inject template variables for template module
+	// Inject template variables and SSM params client for template module
 	if task.Module == "template" {
 		params["_template_vars"] = pctx.Vars
+		if pctx.SSMParams != nil {
+			params["_ssm_params"] = pctx.SSMParams
+		}
 	}
 
 	// Handle dry run
@@ -642,7 +659,7 @@ func (e *Executor) runInclude(ctx context.Context, pctx *PlayContext, task *play
 	}
 
 	// Interpolate variables in the include path
-	includePath, err := e.interpolateString(task.Include, pctx)
+	includePath, err := e.interpolateString(ctx, task.Include, pctx)
 	if err != nil {
 		return fmt.Errorf("failed to interpolate include path: %w", err)
 	}
@@ -736,7 +753,7 @@ func (e *Executor) planTasks(ctx context.Context, pctx *PlayContext, tasks []*pl
 
 		// Resolve loop expression for plan display
 		if task.LoopExpr != "" && len(task.Loop) == 0 {
-			resolved, err := e.interpolateString(task.LoopExpr, pctx)
+			resolved, err := e.interpolateString(ctx, task.LoopExpr, pctx)
 			if err == nil {
 				if items, ok := resolved.([]any); ok {
 					task.Loop = items
@@ -777,7 +794,7 @@ func (e *Executor) planTasks(ctx context.Context, pctx *PlayContext, tasks []*pl
 		// Resolve params for plan display
 		taskCopy := *task
 		playbook.ExpandShorthand(&taskCopy)
-		resolved, resolveErr := e.interpolateParams(taskCopy.Params, pctx)
+		resolved, resolveErr := e.interpolateParams(ctx, taskCopy.Params, pctx)
 		if resolveErr == nil {
 			// Filter out internal params for display
 			displayParams := make(map[string]any, len(resolved))
@@ -811,6 +828,9 @@ func (e *Executor) planTasks(ctx context.Context, pctx *PlayContext, tasks []*pl
 				}
 				if task.Module == "template" {
 					checkParams["_template_vars"] = pctx.Vars
+					if pctx.SSMParams != nil {
+						checkParams["_ssm_params"] = pctx.SSMParams
+					}
 				}
 
 				cr, err := checker.Check(ctx, pctx.Connector, checkParams)

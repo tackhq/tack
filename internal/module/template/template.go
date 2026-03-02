@@ -13,6 +13,7 @@ import (
 
 	"github.com/eugenetaranov/bolt/internal/connector"
 	"github.com/eugenetaranov/bolt/internal/module"
+	"github.com/eugenetaranov/bolt/pkg/ssmparams"
 )
 
 func init() {
@@ -53,8 +54,9 @@ func (m *Module) Run(ctx context.Context, conn connector.Connector, params map[s
 	group := module.GetString(params, "group", "")
 	backup := module.GetBool(params, "backup", false)
 
-	// Get template variables (injected by executor)
+	// Get template variables and SSM params client (injected by executor)
 	templateVars := module.GetMap(params, "_template_vars")
+	ssmClient, _ := params["_ssm_params"].(*ssmparams.Client)
 
 	// Resolve template path - check if it's relative and we have a role path
 	templatePath := src
@@ -76,7 +78,7 @@ func (m *Module) Run(ctx context.Context, conn connector.Connector, params map[s
 	}
 
 	// Render template
-	renderedContent, err := renderTemplate(src, string(templateContent), templateVars)
+	renderedContent, err := renderTemplate(ctx, src, string(templateContent), templateVars, ssmClient)
 	if err != nil {
 		return nil, fmt.Errorf("failed to render template: %w", err)
 	}
@@ -139,7 +141,7 @@ func (m *Module) Run(ctx context.Context, conn connector.Connector, params map[s
 }
 
 // renderTemplate renders a Go template with the given variables.
-func renderTemplate(name, content string, vars map[string]any) ([]byte, error) {
+func renderTemplate(ctx context.Context, name, content string, vars map[string]any, ssmClient *ssmparams.Client) ([]byte, error) {
 	// Create template with useful functions
 	tmpl := template.New(name).Funcs(template.FuncMap{
 		"default": func(def, val any) any {
@@ -157,6 +159,12 @@ func renderTemplate(name, content string, vars map[string]any) ([]byte, error) {
 				strs[i] = fmt.Sprintf("%v", item)
 			}
 			return strings.Join(strs, sep)
+		},
+		"ssm_param": func(path string) (string, error) {
+			if ssmClient == nil {
+				return "", fmt.Errorf("ssm_param: no SSM client available")
+			}
+			return ssmClient.Get(ctx, path)
 		},
 	})
 
@@ -206,6 +214,7 @@ func (m *Module) Check(ctx context.Context, conn connector.Connector, params map
 	owner := module.GetString(params, "owner", "")
 	group := module.GetString(params, "group", "")
 	templateVars := module.GetMap(params, "_template_vars")
+	ssmClient, _ := params["_ssm_params"].(*ssmparams.Client)
 
 	templatePath := src
 	if !filepath.IsAbs(src) {
@@ -222,7 +231,7 @@ func (m *Module) Check(ctx context.Context, conn connector.Connector, params map
 		return nil, fmt.Errorf("failed to read template file '%s': %w", templatePath, err)
 	}
 
-	renderedContent, err := renderTemplate(src, string(templateContent), templateVars)
+	renderedContent, err := renderTemplate(ctx, src, string(templateContent), templateVars, ssmClient)
 	if err != nil {
 		return nil, fmt.Errorf("failed to render template: %w", err)
 	}
