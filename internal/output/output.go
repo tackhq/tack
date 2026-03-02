@@ -148,43 +148,6 @@ func (o *Output) TaskResult(name, status string, changed bool, message string) {
 	}
 }
 
-// TaskResultDetailed prints detailed task result (for debug mode).
-func (o *Output) TaskResultDetailed(name, module, host, status, message string, data map[string]any) {
-	sd := resolveStatus(status)
-
-	// Print compact line: [indicator] [module] name (host) - status
-	moduleStr := ""
-	if module != "" {
-		moduleStr = o.color(colorGray, fmt.Sprintf("[%s] ", module))
-	}
-	hostStr := o.color(colorGray, fmt.Sprintf("(%s)", host))
-
-	o.printf("  %s %s%s %s %s\n",
-		o.color(sd.color, sd.indicator),
-		moduleStr,
-		name,
-		hostStr,
-		o.color(sd.color, sd.text))
-
-	// In debug mode, print additional details
-	if o.debug {
-		if message != "" {
-			o.printf("      %s %s\n", o.color(colorGray, "msg:"), message)
-		}
-		for k, v := range data {
-			if k == "stdout" || k == "stderr" {
-				if s, ok := v.(string); ok && s != "" {
-					lines := strings.Split(strings.TrimSpace(s), "\n")
-					o.printf("      %s\n", o.color(colorGray, k+":"))
-					for _, line := range lines {
-						o.printf("        %s\n", line)
-					}
-				}
-			}
-		}
-	}
-}
-
 // Section prints a section header.
 func (o *Output) Section(name string) {
 	o.printf("\n%s\n", o.color(colorBold, name))

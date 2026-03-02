@@ -49,9 +49,9 @@ func (s *GitSource) Fetch(ctx context.Context) (string, func(), error) {
 	}
 
 	playbookPath := filepath.Join(tmpDir, s.Path)
-	if _, err := os.Stat(playbookPath); os.IsNotExist(err) {
+	if _, err := os.Stat(playbookPath); err != nil {
 		cleanup()
-		return "", nil, fmt.Errorf("playbook not found in repo: %s", s.Path)
+		return "", nil, fmt.Errorf("playbook not found in repo: %s: %w", s.Path, err)
 	}
 
 	return playbookPath, cleanup, nil

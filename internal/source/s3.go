@@ -45,9 +45,9 @@ func (s *S3Source) Fetch(ctx context.Context) (string, func(), error) {
 	}
 
 	playbookPath := filepath.Join(tmpDir, filepath.Base(s.Key))
-	if _, err := os.Stat(playbookPath); os.IsNotExist(err) {
+	if _, err := os.Stat(playbookPath); err != nil {
 		cleanup()
-		return "", nil, fmt.Errorf("playbook not found after download: %s", filepath.Base(s.Key))
+		return "", nil, fmt.Errorf("playbook not found after download: %s: %w", filepath.Base(s.Key), err)
 	}
 
 	return playbookPath, cleanup, nil

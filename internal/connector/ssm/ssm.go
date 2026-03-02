@@ -278,7 +278,7 @@ func (c *Connector) uploadViaS3(ctx context.Context, data []byte, dst, modeStr s
 
 	// Copy from S3 to destination on instance
 	cmd := fmt.Sprintf("aws s3 cp s3://%s/%s %s && chmod %s %s",
-		c.bucket, key, connector.ShellQuote(dst), modeStr, connector.ShellQuote(dst))
+		connector.ShellQuote(c.bucket), connector.ShellQuote(key), connector.ShellQuote(dst), modeStr, connector.ShellQuote(dst))
 	result, err := c.Execute(ctx, cmd)
 	if err != nil {
 		c.cleanupS3(ctx, key)
@@ -330,7 +330,7 @@ func (c *Connector) downloadViaS3(ctx context.Context, src string, dst io.Writer
 	key := s3KeyPrefix + c.instanceID + "/" + fmt.Sprintf("%d", time.Now().UnixNano())
 
 	// Copy from instance to S3
-	cmd := fmt.Sprintf("aws s3 cp %s s3://%s/%s", connector.ShellQuote(src), c.bucket, key)
+	cmd := fmt.Sprintf("aws s3 cp %s s3://%s/%s", connector.ShellQuote(src), connector.ShellQuote(c.bucket), connector.ShellQuote(key))
 	result, err := c.Execute(ctx, cmd)
 	if err != nil {
 		return fmt.Errorf("failed to copy %s to S3: %w", src, err)

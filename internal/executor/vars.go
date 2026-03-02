@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -246,8 +247,10 @@ func (e *Executor) applyFilter(varName, filter string, pctx *PlayContext) (any, 
 		case float64:
 			return int(v), nil
 		case string:
-			var i int
-			_, _ = fmt.Sscanf(v, "%d", &i)
+			i, err := strconv.Atoi(strings.TrimSpace(v))
+			if err != nil {
+				return val, nil
+			}
 			return i, nil
 		}
 		return 0, nil
