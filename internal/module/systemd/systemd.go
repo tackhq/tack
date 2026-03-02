@@ -286,22 +286,23 @@ func isActive(ctx context.Context, conn connector.Connector, unit string) (bool,
 	return strings.TrimSpace(result.Stdout) == "active", nil
 }
 
-func isEnabled(ctx context.Context, conn connector.Connector, unit string) (bool, error) {
+func unitEnabledStatus(ctx context.Context, conn connector.Connector, unit string) (string, error) {
 	cmd := fmt.Sprintf("systemctl is-enabled %s", connector.ShellQuote(unit))
 	result, err := conn.Execute(ctx, cmd)
 	if err != nil {
-		return false, err
+		return "", err
 	}
-	return strings.TrimSpace(result.Stdout) == "enabled", nil
+	return strings.TrimSpace(result.Stdout), nil
+}
+
+func isEnabled(ctx context.Context, conn connector.Connector, unit string) (bool, error) {
+	status, err := unitEnabledStatus(ctx, conn, unit)
+	return status == "enabled", err
 }
 
 func isMasked(ctx context.Context, conn connector.Connector, unit string) (bool, error) {
-	cmd := fmt.Sprintf("systemctl is-enabled %s", connector.ShellQuote(unit))
-	result, err := conn.Execute(ctx, cmd)
-	if err != nil {
-		return false, err
-	}
-	return strings.TrimSpace(result.Stdout) == "masked", nil
+	status, err := unitEnabledStatus(ctx, conn, unit)
+	return status == "masked", err
 }
 
 func ensureEnabled(ctx context.Context, conn connector.Connector, unit string, enabled bool) (bool, error) {

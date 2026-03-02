@@ -330,21 +330,22 @@ func ensureSymlink(ctx context.Context, conn connector.Connector, src, dst strin
 	return true, nil
 }
 
+// normalizeMode strips leading zeros from a mode string for comparison.
+func normalizeMode(mode string) string {
+	n := strings.TrimLeft(mode, "0")
+	if n == "" {
+		return "0"
+	}
+	return n
+}
+
 // ensureMode ensures a path has the correct mode.
 func ensureMode(ctx context.Context, conn connector.Connector, path, mode string, recurse bool) (bool, error) {
 	// Check current mode before changing
 	if !recurse {
 		info, err := getFileInfo(ctx, conn, path)
 		if err == nil && info.Exists {
-			normalizedUser := strings.TrimLeft(mode, "0")
-			if normalizedUser == "" {
-				normalizedUser = "0"
-			}
-			normalizedActual := strings.TrimLeft(info.OctalMode, "0")
-			if normalizedActual == "" {
-				normalizedActual = "0"
-			}
-			if normalizedUser == normalizedActual {
+			if normalizeMode(mode) == normalizeMode(info.OctalMode) {
 				return false, nil
 			}
 		}
@@ -477,17 +478,8 @@ func (m *Module) Check(ctx context.Context, conn connector.Connector, params map
 			return module.WouldChange("group differs"), nil
 		}
 		if mode != "" {
-			// Normalize: strip leading zeros from user mode for comparison
-			normalizedUser := strings.TrimLeft(mode, "0")
-			if normalizedUser == "" {
-				normalizedUser = "0"
-			}
-			normalizedActual := strings.TrimLeft(info.OctalMode, "0")
-			if normalizedActual == "" {
-				normalizedActual = "0"
-			}
-			if normalizedUser != normalizedActual {
-				return module.WouldChange(fmt.Sprintf("mode differs: %s → %s", info.OctalMode, strings.TrimLeft(mode, "0"))), nil
+			if normalizeMode(mode) != normalizeMode(info.OctalMode) {
+				return module.WouldChange(fmt.Sprintf("mode differs: %s → %s", info.OctalMode, normalizeMode(mode))), nil
 			}
 		}
 	}

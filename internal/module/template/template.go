@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"text/template"
 
@@ -57,18 +56,7 @@ func (m *Module) Run(ctx context.Context, conn connector.Connector, params map[s
 	templateVars := module.GetMap(params, "_template_vars")
 	ssmClient, _ := params["_ssm_params"].(*ssmparams.Client)
 
-	// Resolve template path - check if it's relative and we have a role path
-	templatePath := src
-	if !filepath.IsAbs(src) {
-		// Check for role path (injected by executor for role tasks)
-		if rolePath := module.GetString(params, "_role_path", ""); rolePath != "" {
-			// Look in role's templates directory
-			roleTemplatePath := filepath.Join(rolePath, "templates", src)
-			if _, err := os.Stat(roleTemplatePath); err == nil {
-				templatePath = roleTemplatePath
-			}
-		}
-	}
+	templatePath := module.ResolveRolePath(src, params, "templates")
 
 	// Read template file
 	templateContent, err := os.ReadFile(templatePath)
@@ -200,15 +188,7 @@ func (m *Module) Check(ctx context.Context, conn connector.Connector, params map
 	templateVars := module.GetMap(params, "_template_vars")
 	ssmClient, _ := params["_ssm_params"].(*ssmparams.Client)
 
-	templatePath := src
-	if !filepath.IsAbs(src) {
-		if rolePath := module.GetString(params, "_role_path", ""); rolePath != "" {
-			roleTemplatePath := filepath.Join(rolePath, "templates", src)
-			if _, err := os.Stat(roleTemplatePath); err == nil {
-				templatePath = roleTemplatePath
-			}
-		}
-	}
+	templatePath := module.ResolveRolePath(src, params, "templates")
 
 	templateContent, err := os.ReadFile(templatePath)
 	if err != nil {

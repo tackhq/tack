@@ -330,16 +330,18 @@ func (c *Connector) Download(ctx context.Context, src string, dst io.Writer) err
 
 // Close terminates the SFTP client and SSH connection.
 func (c *Connector) Close() error {
+	var sftpErr error
 	if c.sftpClient != nil {
-		c.sftpClient.Close()
+		sftpErr = c.sftpClient.Close()
 		c.sftpClient = nil
 	}
 	if c.client != nil {
-		err := c.client.Close()
+		if err := c.client.Close(); err != nil {
+			return err
+		}
 		c.client = nil
-		return err
 	}
-	return nil
+	return sftpErr
 }
 
 // String returns a human-readable description of the connection.
@@ -472,6 +474,7 @@ func (c *Connector) sshAgentAuth() ssh.AuthMethod {
 	agentClient := agent.NewClient(conn)
 	keys, err := agentClient.List()
 	if err != nil || len(keys) == 0 {
+		conn.Close()
 		c.authWarnings = append(c.authWarnings, "SSH agent has no identities (try ssh-add)")
 		return nil
 	}

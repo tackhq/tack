@@ -41,14 +41,14 @@ func Run(ctx context.Context, opts Options) error {
 
 	// Cleanup container only if --rm
 	defer func() {
-		if opts.Remove {
-			rmCmd := exec.Command("docker", "rm", "-f", name)
-			_ = rmCmd.Run()
+		if !opts.Remove {
+			fmt.Fprintf(os.Stderr, "Container kept: %s\n", name)
+			fmt.Fprintf(os.Stderr, "  docker exec -it %s /bin/bash\n", name)
+			fmt.Fprintf(os.Stderr, "  docker rm -f %s\n", name)
 			return
 		}
-		fmt.Fprintf(os.Stderr, "Container kept: %s\n", name)
-		fmt.Fprintf(os.Stderr, "  docker exec -it %s /bin/bash\n", name)
-		fmt.Fprintf(os.Stderr, "  docker rm -f %s\n", name)
+		rmCmd := exec.Command("docker", "rm", "-f", name)
+		_ = rmCmd.Run()
 	}()
 
 	// Determine playbook path

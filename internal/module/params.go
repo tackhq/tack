@@ -2,6 +2,8 @@ package module
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 )
 
 // GetString extracts a string parameter with a default value.
@@ -94,6 +96,22 @@ func GetStringSlice(params map[string]any, key string) []string {
 	}
 
 	return nil
+}
+
+// ResolveRolePath resolves a relative source path against a role's subdirectory.
+// If src is absolute, it is returned as-is. If a _role_path is set in params and the
+// candidate file exists under rolePath/subdir/src, that path is returned. Otherwise src is returned unchanged.
+func ResolveRolePath(src string, params map[string]any, subdir string) string {
+	if filepath.IsAbs(src) {
+		return src
+	}
+	if rolePath := GetString(params, "_role_path", ""); rolePath != "" {
+		candidate := filepath.Join(rolePath, subdir, src)
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
+	return src
 }
 
 // GetMap extracts a map parameter with a default empty map.
