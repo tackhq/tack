@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -230,9 +231,14 @@ func buildTaskNode(t TaskDef) *yaml.Node {
 // mapToNode converts a map[string]any to a yaml.Node (MappingNode).
 func mapToNode(m map[string]any) *yaml.Node {
 	node := &yaml.Node{Kind: yaml.MappingNode}
-	for k, v := range m {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
 		keyNode := &yaml.Node{Kind: yaml.ScalarNode, Value: k}
-		valNode := anyToNode(v)
+		valNode := anyToNode(m[k])
 		node.Content = append(node.Content, keyNode, valNode)
 	}
 	return node

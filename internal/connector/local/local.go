@@ -85,7 +85,9 @@ func (c *Connector) Execute(ctx context.Context, cmd string) (*connector.Result,
 	fullCmd := c.buildCommand(cmd)
 
 	// Create the exec.Cmd
-	args := append(c.shellArgs, fullCmd)
+	args := make([]string, len(c.shellArgs)+1)
+	copy(args, c.shellArgs)
+	args[len(c.shellArgs)] = fullCmd
 	execCmd := exec.CommandContext(ctx, c.shell, args...)
 
 	var stdout, stderr bytes.Buffer

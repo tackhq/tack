@@ -66,15 +66,12 @@ type Executor struct {
 	// when tasks require sudo but no password was provided.
 	PromptSudoPassword func() (string, error)
 
-	// connectors caches connectors by host.
-	connectors map[string]connector.Connector
 }
 
 // New creates a new executor.
 func New() *Executor {
 	return &Executor{
-		Output:     output.New(os.Stdout),
-		connectors: make(map[string]connector.Connector),
+		Output: output.New(os.Stdout),
 	}
 }
 
@@ -333,6 +330,7 @@ func (e *Executor) runPlayOnHost(ctx context.Context, play *playbook.Play, stats
 	if err := conn.Connect(ctx); err != nil {
 		return fmt.Errorf("failed to connect to %s: %w", host, err)
 	}
+	defer conn.Close()
 
 	// Gather facts if enabled
 	if play.ShouldGatherFacts() {
@@ -930,7 +928,7 @@ func (e *Executor) planHandlers(tasks []*playbook.Task, taskPlan []output.Planne
 // before any host output so the prompt appears before "PLAY <host>".
 func (e *Executor) needsSudoPassword(play *playbook.Play, tasks, handlers []*playbook.Task) error {
 	// Already have a sudo password
-	if _, ok := play.Vars["bolt_sudo_password"].(string); ok {
+	if p, ok := play.Vars["bolt_sudo_password"].(string); ok && p != "" {
 		return nil
 	}
 
@@ -1104,8 +1102,9 @@ func (e *Executor) resolveValue(s string, pctx *PlayContext) any {
 	s = strings.TrimSpace(s)
 
 	// String literal
-	if (strings.HasPrefix(s, "'") && strings.HasSuffix(s, "'")) ||
-		(strings.HasPrefix(s, "\"") && strings.HasSuffix(s, "\"")) {
+	if len(s) >= 2 &&
+		((strings.HasPrefix(s, "'") && strings.HasSuffix(s, "'")) ||
+			(strings.HasPrefix(s, "\"") && strings.HasSuffix(s, "\""))) {
 		return s[1 : len(s)-1]
 	}
 
@@ -1150,7 +1149,11 @@ func isTruthy(v any) bool {
 		return val
 	case string:
 		return val != "" && val != "false" && val != "False" && val != "no"
-	case int, int64, float64:
+	case int:
+		return val != 0
+	case int64:
+		return val != 0
+	case float64:
 		return val != 0
 	case []any:
 		return len(val) > 0

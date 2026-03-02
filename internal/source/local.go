@@ -12,8 +12,8 @@ type LocalSource struct {
 }
 
 func (s *LocalSource) Fetch(_ context.Context) (string, func(), error) {
-	if _, err := os.Stat(s.Path); os.IsNotExist(err) {
-		return "", nil, fmt.Errorf("playbook not found: %s", s.Path)
+	if _, err := os.Stat(s.Path); err != nil {
+		return "", nil, fmt.Errorf("playbook not found: %s: %w", s.Path, err)
 	}
 	return s.Path, noop, nil
 }

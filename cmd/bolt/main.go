@@ -54,17 +54,17 @@ func main() {
 // signalContext returns a context that is cancelled on the first SIGINT/SIGTERM
 // and exits the process on the second signal.
 func signalContext(parent context.Context) (context.Context, context.CancelFunc) {
-	ctx, cancel := context.WithCancel(parent)
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(parent, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
-		<-sigCh
+		<-ctx.Done()
 		fmt.Fprintln(os.Stderr, "\nInterrupted, cleaning up...")
-		cancel()
+		stop()
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 		<-sigCh
 		os.Exit(130)
 	}()
-	return ctx, cancel
+	return ctx, stop
 }
 
 // addConnectionFlags registers the common connection flags on a command.

@@ -227,7 +227,7 @@ func ensureContainer(ctx context.Context, name, image string, forceNew bool) err
 
 func createContainer(ctx context.Context, name, image string) error {
 	fmt.Fprintf(os.Stderr, "Creating container: %s\n", name)
-	runCmd := exec.CommandContext(ctx, "docker", "run", "-d", "--name", name, image, "sleep", "3600")
+	runCmd := exec.CommandContext(ctx, "docker", "run", "-d", "--name", name, image, "sleep", "900")
 	if out, err := runCmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("starting container: %s: %w", strings.TrimSpace(string(out)), err)
 	}

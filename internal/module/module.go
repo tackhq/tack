@@ -4,6 +4,7 @@ package module
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 
 	"github.com/eugenetaranov/bolt/internal/connector"
@@ -68,6 +69,7 @@ func List() []string {
 	for name := range registry {
 		names = append(names, name)
 	}
+	sort.Strings(names)
 	return names
 }
 
