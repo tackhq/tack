@@ -22,28 +22,6 @@ Download the latest release from the [releases page](https://github.com/eugeneta
 go install github.com/eugenetaranov/bolt/cmd/bolt@latest
 ```
 
-### Build from Source
-
-```bash
-git clone https://github.com/eugenetaranov/bolt.git
-cd bolt
-make build
-sudo make install
-```
-
-## Features
-
-- **Simple YAML playbooks** - Declarative configuration with familiar syntax
-- **Ansible-compatible roles** - Reusable role structure with tasks, handlers, vars
-- **Idempotent operations** - Safe to run multiple times
-- **Cross-platform** - Supports macOS and Linux
-- **Remote playbook sources** - Run playbooks directly from git repos, S3, or HTTP URLs
-- **Multiple connectors** - Local, Docker, SSH, AWS SSM (planned)
-- **Built-in modules** - Package management, file operations, commands
-- **Variable interpolation** - Dynamic configuration with `{{ variables }}`
-- **System facts** - Auto-detected OS, architecture, and environment info
-- **No dependencies** - Single static binary
-
 ## Quick Start
 
 **Try it now** (after cloning):
@@ -78,116 +56,43 @@ bolt run git@github.com:user/repo.git//path/to/playbook.yaml
 bolt run git@github.com:user/repo.git@main//path/to/playbook.yaml
 bolt run https://github.com/user/repo.git@v1.0//playbook.yaml
 
-# Run from an HTTP URL
+# Run from an HTTP URL or S3
 bolt run https://example.com/playbook.yaml
-
-# Run from S3
 bolt run s3://bucket/path/to/playbook.yaml
 ```
 
-**CLI usage:**
+## Features
 
-```bash
-# Run a playbook
-bolt run playbook.yaml
+- **Simple YAML playbooks** — Declarative configuration with familiar syntax
+- **Ansible-compatible roles** — Reusable role structure with tasks, handlers, vars, files, templates
+- **Idempotent operations** — Safe to run multiple times
+- **Cross-platform** — Supports macOS (brew) and Linux (apt, systemd)
+- **Multiple connectors** — Local, Docker, SSH, and AWS SSM with tag-based instance discovery
+- **Remote playbook sources** — Run playbooks directly from git repos, S3, or HTTP URLs
+- **SSM Parameter Store** — Fetch secrets at runtime with `ssm_param()` in vars and templates
+- **EC2 instance facts** — Auto-gathered instance ID, region, instance type, AMI, and tags
+- **Variable filters** — Transform values with `default`, `upper`, `lower`, `trim`, `join`, `first`, `last`, `length`, `int`, `bool`, `string`
+- **Conditional execution** — `when`, `changed_when`, `failed_when` on any task
+- **Task retries** — Automatic retries with configurable delay; `ignore_errors` to continue on failure
+- **Generate playbooks** — `bolt generate` captures live system state into a playbook
+- **Scaffold roles** — `bolt scaffold` creates a new role with sample files
+- **Test in Docker** — `bolt test` runs roles in containers with idempotency verification
+- **No dependencies** — Single static binary
 
-# Dry run (see what would happen)
-bolt run playbook.yaml --dry-run
+## Connectors
 
-# Validate syntax without running
-bolt validate playbook.yaml
+Bolt supports four connection backends:
 
-# List available modules
-bolt modules
+| Connector | Syntax | Description |
+|-----------|--------|-------------|
+| **Local** | `connection: local` | Run on the current machine |
+| **Docker** | `connection: docker` | Run inside a Docker container (set `hosts` to container name) |
+| **SSH** | `connection: ssh` or `-c ssh://user@host:port` | Connect via SSH; resolves `~/.ssh/config` automatically |
+| **SSM** | `connection: ssm` | Connect via AWS SSM; supports tag-based discovery with `ResolveInstancesByTags` and S3 file transfer |
 
-# Scaffold a new role with sample files
-bolt scaffold myrole
-bolt scaffold myrole --path ./my-roles
+SSH connection settings can be provided via playbook vars, CLI flags, or environment variables (`BOLT_SSH_USER`, `BOLT_SSH_PORT`, `BOLT_SSH_KEY`, `BOLT_SSH_PASSWORD`, `BOLT_SSH_INSECURE`). CLI flags take highest precedence, then environment variables, then playbook values.
 
-# Test a role in a Docker container
-bolt test myrole
-bolt test myrole --new       # force fresh container
-bolt test myrole --rm        # remove container after run
-```
-
-## Generating Playbooks from Live Systems
-
-`bolt generate` connects to a target system, reads the current state of specified resources, and outputs a ready-to-use playbook.
-
-```bash
-# Capture installed packages (auto-detects brew/apt/dnf)
-bolt generate --packages neovim,tmux,ripgrep
-
-# Capture files, services, and users from a remote host
-bolt generate -c ssh://root@web1 \
-  --packages nginx \
-  --files /etc/nginx/nginx.conf,/etc/systemd/system/myapp.service \
-  --services nginx,myapp \
-  --users deploy,app \
-  -o playbook.yaml
-
-# Use sudo for privileged queries
-bolt generate -c ssh://deploy@web1 --services nginx --sudo
-```
-
-Resource flags (use any combination):
-- `--packages` — installed packages (apt, brew, or dnf/yum based on target OS)
-- `--files` — file content/permissions, directory permissions, symlink targets
-- `--services` — systemd unit enabled/running state
-- `--users` — user existence, uid, groups, shell, home directory
-
-## Scaffolding Roles
-
-`bolt scaffold` creates a new role directory with sample files demonstrating all resource types.
-
-```bash
-# Create roles/myrole/ with sample tasks, handlers, vars, files, and templates
-bolt scaffold myrole
-
-# Create in a custom directory
-bolt scaffold myrole --path ./my-roles
-```
-
-Generated structure:
-
-```
-roles/myrole/
-├── tasks/main.yaml       # Sample tasks: packages, copy, file, systemd, template
-├── handlers/main.yaml    # Sample handler (restart service)
-├── defaults/main.yaml    # Default variables referenced by tasks
-├── vars/main.yaml        # Role variables (placeholder)
-├── files/config.txt      # Sample static file for copy module
-└── templates/app.conf.j2 # Sample Go template
-```
-
-## Testing Roles
-
-`bolt test` runs a role or playbook inside a Docker container. Containers are **reused by default** — the container name is derived from the target, so repeated runs hit the same container. This lets you verify idempotency: the first run applies changes, the second run should show no drift.
-
-```bash
-# Run a role — creates container "bolt-test-webserver", keeps it after
-bolt test myrole
-
-# Second run reuses the container — verify idempotency
-bolt test myrole
-
-# Force a fresh container (removes existing first)
-bolt test myrole --new
-
-# Remove container after the run
-bolt test myrole --rm
-
-# Fresh + disposable (one-shot, like the old default)
-bolt test myrole --new --rm
-
-# Use a different base image
-bolt test myrole --image debian:12
-
-# Test a playbook file directly
-bolt test setup.yaml
-```
-
-## Examples
+## Playbook Examples
 
 ### Local Machine Setup
 
@@ -213,40 +118,6 @@ tasks:
       mode: "0755"
 ```
 
-### Docker Container
-
-```yaml
-name: Configure Container
-hosts: my-container
-connection: docker
-
-tasks:
-  - name: Install packages
-    command:
-      cmd: apt-get update && apt-get install -y curl vim
-
-  - name: Create app directory
-    file:
-      path: /app
-      state: directory
-      mode: "0755"
-
-  - name: Copy config file
-    copy:
-      dest: /app/config.yaml
-      content: |
-        server:
-          port: 8080
-        logging:
-          level: info
-```
-
-```bash
-# Start container, run playbook
-docker run -d --name my-container ubuntu:22.04 sleep 600
-bolt run container-setup.yaml
-```
-
 ### Remote Host via SSH
 
 ```yaml
@@ -264,34 +135,117 @@ tasks:
       name: nginx
       state: present
 
-  - name: Copy site config
-    copy:
-      dest: /etc/nginx/sites-available/app.conf
-      content: |
-        server {
-          listen 80;
-          root /var/www/app;
-        }
+  - name: Enable nginx
+    systemd:
+      name: nginx
+      state: started
+      enabled: true
 ```
 
 ```bash
-# Run against a host defined in ~/.ssh/config
 bolt run server-setup.yaml
-
-# Override connection settings via CLI flags
 bolt run server-setup.yaml --ssh-user deploy --ssh-key ~/.ssh/deploy_key
-
-# Skip host key verification for new hosts
-bolt run server-setup.yaml --ssh-insecure
-
-# Use password authentication
-bolt run server-setup.yaml --ssh-user admin --ssh-password
-
-# Target multiple hosts
 bolt run server-setup.yaml --hosts web1,web2,web3
 ```
 
-SSH connection settings can be provided via playbook vars, CLI flags, or environment variables (`BOLT_SSH_USER`, `BOLT_SSH_PORT`, `BOLT_SSH_KEY`, `BOLT_SSH_PASSWORD`, `BOLT_SSH_INSECURE`). CLI flags take highest precedence, then environment variables, then playbook values. Host settings from `~/.ssh/config` (HostName, User, Port, IdentityFile) are resolved automatically.
+### Docker Container
+
+```yaml
+name: Configure Container
+hosts: my-container
+connection: docker
+
+tasks:
+  - name: Install packages
+    command:
+      cmd: apt-get update && apt-get install -y curl vim
+
+  - name: Copy config file
+    copy:
+      dest: /app/config.yaml
+      content: |
+        server:
+          port: 8080
+```
+
+## SSM Parameter Store
+
+Use `ssm_param()` in playbook vars or templates to fetch secrets from AWS SSM Parameter Store at runtime. SecureString parameters are automatically decrypted.
+
+```yaml
+vars:
+  db_password: "{{ ssm_param('/myapp/prod/db_password') }}"
+  api_key: "{{ ssm_param(api_key_path) }}"
+```
+
+## Generating Playbooks
+
+`bolt generate` connects to a target system, reads the current state of specified resources, and outputs a ready-to-use playbook.
+
+```bash
+# Capture installed packages (auto-detects brew/apt/dnf)
+bolt generate --packages neovim,tmux,ripgrep
+
+# Capture files, services, and users from a remote host
+bolt generate -c ssh://root@web1 \
+  --packages nginx \
+  --files /etc/nginx/nginx.conf,/etc/systemd/system/myapp.service \
+  --services nginx,myapp \
+  --users deploy,app \
+  -o playbook.yaml
+
+# Use sudo for privileged queries
+bolt generate -c ssh://deploy@web1 --services nginx --sudo
+```
+
+Resource flags: `--packages`, `--files`, `--services`, `--users` (use any combination).
+
+## Scaffolding Roles
+
+`bolt scaffold` creates a new role directory with sample files demonstrating all resource types.
+
+```bash
+bolt scaffold myrole
+bolt scaffold myrole --path ./my-roles
+```
+
+Generated structure:
+
+```
+roles/myrole/
+├── tasks/main.yaml       # Sample tasks: packages, copy, file, systemd, template
+├── handlers/main.yaml    # Sample handler (restart service)
+├── defaults/main.yaml    # Default variables referenced by tasks
+├── vars/main.yaml        # Role variables (placeholder)
+├── files/config.txt      # Sample static file for copy module
+└── templates/app.conf.j2 # Sample Go template
+```
+
+## Testing Roles
+
+`bolt test` runs a role or playbook inside a Docker container. Containers are **reused by default** so repeated runs verify idempotency: the first run applies changes, the second run should show no drift.
+
+```bash
+bolt test myrole                # creates container "bolt-test-myrole", keeps it
+bolt test myrole                # reuses container — verify idempotency
+bolt test myrole --new          # force fresh container
+bolt test myrole --rm           # remove container after run
+bolt test myrole --new --rm     # one-shot: fresh + disposable
+bolt test myrole --image debian:12  # custom base image
+bolt test setup.yaml            # test a playbook file directly
+```
+
+## Available Modules
+
+| Module | Description |
+|--------|-------------|
+| `apt` | Manage packages on Debian/Ubuntu |
+| `brew` | Manage Homebrew packages on macOS |
+| `command` | Execute shell commands |
+| `copy` | Copy files or write content |
+| `file` | Manage files, directories, and symlinks |
+| `systemd` | Manage systemd services (start, stop, enable, mask, daemon-reload) |
+| `template` | Render templates with variable substitution |
 
 ## Documentation
 
@@ -303,71 +257,7 @@ SSH connection settings can be provided via playbook vars, CLI flags, or environ
 | [Modules](docs/modules.md) | Available modules reference |
 | [Variables & Facts](docs/variables.md) | Variable interpolation and system facts |
 | [Connectors](docs/connectors.md) | Connection methods (local, Docker, SSH, SSM) |
-
-## Available Modules
-
-| Module | Description |
-|--------|-------------|
-| `apt` | Manage packages on Debian/Ubuntu |
-| `brew` | Manage Homebrew packages on macOS |
-| `command` | Execute shell commands |
-| `copy` | Copy files or write content |
-| `file` | Manage files, directories, and symlinks |
-| `template` | Render templates with variable substitution |
-
-## Project Structure
-
-```
-bolt/
-├── cmd/bolt/           # CLI entrypoint
-├── internal/
-│   ├── connector/      # Connection backends (local, docker, ssh, ssm)
-│   ├── executor/       # Playbook execution engine
-│   ├── module/         # Task modules (apt, brew, file, etc.)
-│   ├── output/         # Formatted terminal output
-│   ├── playbook/       # YAML parsing
-│   └── source/         # Remote playbook sources (git, s3, http)
-├── pkg/facts/          # System fact gathering
-├── tests/integration/  # Integration tests (testcontainers)
-├── docs/               # Documentation
-└── examples/           # Example playbooks
-```
-
-## Development
-
-```bash
-# Build for current platform
-make build
-
-# Build for all platforms (cross-compile)
-make build-all
-
-# Run unit tests
-make test
-
-# Run integration tests (requires Docker)
-make test-integration
-
-# Run linter
-make lint
-```
-
-### Integration Tests
-
-Integration tests use [testcontainers-go](https://golang.testcontainers.org/) to spin up a Docker container, run a playbook against it, and validate the results with Go assertions.
-
-```bash
-# Run integration tests
-go test -v ./tests/integration/...
-
-# Skip integration tests (short mode)
-go test -short ./...
-```
-
-## Requirements
-
-- **Running**: macOS or Linux
-- **Building**: Go 1.21+
+| [Development](docs/development.md) | Building, testing, and project structure |
 
 ## License
 
