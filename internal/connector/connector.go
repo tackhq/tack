@@ -39,6 +39,19 @@ type Connector interface {
 	String() string
 }
 
+// Run executes a command and returns an error if the command fails (non-zero exit code).
+// Returns the Result so callers needing stdout can use it.
+func Run(ctx context.Context, conn Connector, cmd string) (*Result, error) {
+	result, err := conn.Execute(ctx, cmd)
+	if err != nil {
+		return nil, err
+	}
+	if result.ExitCode != 0 {
+		return result, fmt.Errorf("%s", strings.TrimSpace(result.Stderr))
+	}
+	return result, nil
+}
+
 // ShellQuote wraps a string in single quotes for safe shell usage.
 func ShellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"

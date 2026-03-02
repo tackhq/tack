@@ -244,35 +244,23 @@ func normalizeUnit(name string) string {
 
 // checkSystemd verifies that systemctl is available.
 func checkSystemd(ctx context.Context, conn connector.Connector) error {
-	result, err := conn.Execute(ctx, "command -v systemctl")
-	if err != nil {
-		return fmt.Errorf("failed to check for systemctl: %w", err)
-	}
-	if result.ExitCode != 0 {
+	if _, err := connector.Run(ctx, conn, "command -v systemctl"); err != nil {
 		return fmt.Errorf("systemctl is not available (not a systemd system?)")
 	}
 	return nil
 }
 
 func runDaemonReload(ctx context.Context, conn connector.Connector) error {
-	result, err := conn.Execute(ctx, "systemctl daemon-reload")
-	if err != nil {
-		return fmt.Errorf("failed to daemon-reload: %w", err)
-	}
-	if result.ExitCode != 0 {
-		return fmt.Errorf("daemon-reload failed: %s", result.Stderr)
+	if _, err := connector.Run(ctx, conn, "systemctl daemon-reload"); err != nil {
+		return fmt.Errorf("daemon-reload failed: %w", err)
 	}
 	return nil
 }
 
 func runSystemctl(ctx context.Context, conn connector.Connector, action, unit string) error {
 	cmd := fmt.Sprintf("systemctl %s %s", action, connector.ShellQuote(unit))
-	result, err := conn.Execute(ctx, cmd)
-	if err != nil {
-		return fmt.Errorf("failed to %s %s: %w", action, unit, err)
-	}
-	if result.ExitCode != 0 {
-		return fmt.Errorf("systemctl %s %s failed: %s", action, unit, result.Stderr)
+	if _, err := connector.Run(ctx, conn, cmd); err != nil {
+		return fmt.Errorf("systemctl %s %s failed: %w", action, unit, err)
 	}
 	return nil
 }

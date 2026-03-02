@@ -1,6 +1,7 @@
 package module
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -66,12 +67,9 @@ func ParseMode(mode string) (uint32, error) {
 func GetFileAttributes(ctx context.Context, conn connector.Connector, path string) (mode, owner, group string, err error) {
 	cmd := fmt.Sprintf(`stat -c '%%a %%U %%G' %[1]s 2>/dev/null || stat -f '%%Lp %%Su %%Sg' %[1]s`, connector.ShellQuote(path))
 
-	result, err := conn.Execute(ctx, cmd)
+	result, err := connector.Run(ctx, conn, cmd)
 	if err != nil {
-		return "", "", "", err
-	}
-	if result.ExitCode != 0 {
-		return "", "", "", fmt.Errorf("stat failed: %s", result.Stderr)
+		return "", "", "", fmt.Errorf("stat failed: %w", err)
 	}
 
 	parts := strings.Fields(strings.TrimSpace(result.Stdout))
@@ -88,49 +86,64 @@ func GetFileAttributes(ctx context.Context, conn connector.Connector, path strin
 }
 
 // EnsureAttributes sets mode and ownership on a file, only if they differ from desired.
-func EnsureAttributes(ctx context.Context, conn connector.Connector, path, mode, owner, group string) (bool, error) {
+// When recurse is true, uses -R flags and always applies (skips per-file idempotency check).
+func EnsureAttributes(ctx context.Context, conn connector.Connector, path, mode, owner, group string, recurse bool) (bool, error) {
 	var changed bool
 
-	currentMode, currentOwner, currentGroup, err := GetFileAttributes(ctx, conn, path)
-	if err != nil {
-		return false, fmt.Errorf("failed to get file attributes: %w", err)
+	if !recurse {
+		currentMode, currentOwner, currentGroup, err := GetFileAttributes(ctx, conn, path)
+		if err != nil {
+			return false, fmt.Errorf("failed to get file attributes: %w", err)
+		}
+
+		if mode != "" && NormalizeMode(currentMode) != NormalizeMode(mode) {
+			if _, err := connector.Run(ctx, conn, fmt.Sprintf("chmod %s %s", connector.ShellQuote(mode), connector.ShellQuote(path))); err != nil {
+				return false, fmt.Errorf("failed to set mode: %w", err)
+			}
+			changed = true
+		}
+
+		needOwnerChange := owner != "" && currentOwner != owner
+		needGroupChange := group != "" && currentGroup != group
+
+		if needOwnerChange || needGroupChange {
+			ownership := buildOwnership(owner, group)
+			if _, err := connector.Run(ctx, conn, fmt.Sprintf("chown %s %s", connector.ShellQuote(ownership), connector.ShellQuote(path))); err != nil {
+				return false, fmt.Errorf("failed to set ownership: %w", err)
+			}
+			changed = true
+		}
+
+		return changed, nil
 	}
 
-	if mode != "" && NormalizeMode(currentMode) != NormalizeMode(mode) {
-		result, err := conn.Execute(ctx, fmt.Sprintf("chmod %s %s", connector.ShellQuote(mode), connector.ShellQuote(path)))
-		if err != nil {
+	// Recursive mode: always apply, skip idempotency check
+	if mode != "" {
+		if _, err := connector.Run(ctx, conn, fmt.Sprintf("chmod -R %s %s", connector.ShellQuote(mode), connector.ShellQuote(path))); err != nil {
 			return false, fmt.Errorf("failed to set mode: %w", err)
-		}
-		if result.ExitCode != 0 {
-			return false, fmt.Errorf("chmod failed: %s", result.Stderr)
 		}
 		changed = true
 	}
 
-	needOwnerChange := owner != "" && currentOwner != owner
-	needGroupChange := group != "" && currentGroup != group
-
-	if needOwnerChange || needGroupChange {
-		var ownership string
-		if owner != "" && group != "" {
-			ownership = fmt.Sprintf("%s:%s", owner, group)
-		} else if owner != "" {
-			ownership = owner
-		} else {
-			ownership = fmt.Sprintf(":%s", group)
-		}
-
-		result, err := conn.Execute(ctx, fmt.Sprintf("chown %s %s", connector.ShellQuote(ownership), connector.ShellQuote(path)))
-		if err != nil {
+	if owner != "" || group != "" {
+		ownership := buildOwnership(owner, group)
+		if _, err := connector.Run(ctx, conn, fmt.Sprintf("chown -R %s %s", connector.ShellQuote(ownership), connector.ShellQuote(path))); err != nil {
 			return false, fmt.Errorf("failed to set ownership: %w", err)
-		}
-		if result.ExitCode != 0 {
-			return false, fmt.Errorf("chown failed: %s", result.Stderr)
 		}
 		changed = true
 	}
 
 	return changed, nil
+}
+
+// buildOwnership formats an owner:group string for chown.
+func buildOwnership(owner, group string) string {
+	if owner != "" && group != "" {
+		return fmt.Sprintf("%s:%s", owner, group)
+	} else if owner != "" {
+		return owner
+	}
+	return fmt.Sprintf(":%s", group)
 }
 
 // CheckAttributes checks whether file attributes differ from desired values without modifying them.
@@ -157,12 +170,115 @@ func CreateBackup(ctx context.Context, conn connector.Connector, path string) er
 	timestamp := time.Now().Format("20060102150405")
 	backupPath := fmt.Sprintf("%s.%s.bak", path, timestamp)
 
-	result, err := conn.Execute(ctx, fmt.Sprintf("cp -p %s %s", connector.ShellQuote(path), connector.ShellQuote(backupPath)))
-	if err != nil {
-		return err
-	}
-	if result.ExitCode != 0 {
-		return fmt.Errorf("backup failed: %s", result.Stderr)
+	if _, err := connector.Run(ctx, conn, fmt.Sprintf("cp -p %s %s", connector.ShellQuote(path), connector.ShellQuote(backupPath))); err != nil {
+		return fmt.Errorf("backup failed: %w", err)
 	}
 	return nil
+}
+
+// DeployOpts configures a file deployment operation.
+type DeployOpts struct {
+	Content []byte
+	Dest    string
+	Mode    string
+	Owner   string
+	Group   string
+	Backup  bool
+	Label   string // "file" or "template" for messages
+}
+
+// DeployFile handles the common checksum-compare, backup, upload, ensure-attributes
+// logic shared by copy and template modules.
+func DeployFile(ctx context.Context, conn connector.Connector, opts DeployOpts) (*Result, error) {
+	srcChecksum := Checksum(opts.Content)
+
+	destExists, destChecksum, err := GetRemoteChecksum(ctx, conn, opts.Dest)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check destination: %w", err)
+	}
+
+	// If destination exists with same content, check if we need to update attributes
+	if destExists && srcChecksum == destChecksum {
+		attrChanged, err := EnsureAttributes(ctx, conn, opts.Dest, opts.Mode, opts.Owner, opts.Group, false)
+		if err != nil {
+			return nil, err
+		}
+		if attrChanged {
+			return Changed("attributes updated"), nil
+		}
+		return Unchanged(opts.Label + " already exists with correct content and attributes"), nil
+	}
+
+	// Create backup if needed
+	if destExists && opts.Backup {
+		if err := CreateBackup(ctx, conn, opts.Dest); err != nil {
+			return nil, fmt.Errorf("failed to create backup: %w", err)
+		}
+	}
+
+	// Upload the file
+	modeInt, err := ParseMode(opts.Mode)
+	if err != nil {
+		return nil, fmt.Errorf("invalid mode: %w", err)
+	}
+
+	if err := conn.Upload(ctx, bytes.NewReader(opts.Content), opts.Dest, modeInt); err != nil {
+		return nil, fmt.Errorf("failed to upload %s: %w", opts.Label, err)
+	}
+
+	// Set attributes
+	if _, err := EnsureAttributes(ctx, conn, opts.Dest, opts.Mode, opts.Owner, opts.Group, false); err != nil {
+		return nil, err
+	}
+
+	msg := opts.Label + " created"
+	if destExists {
+		msg = opts.Label + " updated"
+	}
+
+	return ChangedWithData(msg, map[string]any{
+		"dest":     opts.Dest,
+		"checksum": srcChecksum,
+	}), nil
+}
+
+// CheckDeployFile checks whether a file deployment would make changes without applying them.
+func CheckDeployFile(ctx context.Context, conn connector.Connector, content []byte, dest, mode, owner, group string) (*CheckResult, error) {
+	srcChecksum := Checksum(content)
+
+	destExists, destChecksum, err := GetRemoteChecksum(ctx, conn, dest)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check destination: %w", err)
+	}
+
+	if !destExists {
+		cr := WouldChange("file does not exist")
+		cr.NewChecksum = srcChecksum
+		cr.NewContent = string(content)
+		return cr, nil
+	}
+
+	if srcChecksum != destChecksum {
+		cr := WouldChange("content differs")
+		cr.OldChecksum = destChecksum
+		cr.NewChecksum = srcChecksum
+		cr.NewContent = string(content)
+		// Fetch old content for diff (best-effort)
+		result, err := conn.Execute(ctx, fmt.Sprintf("cat %s", connector.ShellQuote(dest)))
+		if err == nil && result.ExitCode == 0 {
+			cr.OldContent = result.Stdout
+		}
+		return cr, nil
+	}
+
+	// Content matches, check attributes
+	attrDiffer, err := CheckAttributes(ctx, conn, dest, mode, owner, group)
+	if err != nil {
+		return nil, err
+	}
+	if attrDiffer {
+		return WouldChange("attributes differ"), nil
+	}
+
+	return NoChange("file already exists with correct content and attributes"), nil
 }

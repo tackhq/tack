@@ -279,14 +279,9 @@ func (c *Connector) uploadViaS3(ctx context.Context, data []byte, dst, modeStr s
 	// Copy from S3 to destination on instance
 	cmd := fmt.Sprintf("aws s3 cp s3://%s/%s %s && chmod %s %s",
 		connector.ShellQuote(c.bucket), connector.ShellQuote(key), connector.ShellQuote(dst), modeStr, connector.ShellQuote(dst))
-	result, err := c.Execute(ctx, cmd)
-	if err != nil {
+	if _, err := connector.Run(ctx, c, cmd); err != nil {
 		c.cleanupS3(ctx, key)
 		return fmt.Errorf("failed to copy from S3 to %s: %w", dst, err)
-	}
-	if result.ExitCode != 0 {
-		c.cleanupS3(ctx, key)
-		return fmt.Errorf("failed to copy from S3 to %s: %s", dst, result.Stderr)
 	}
 
 	c.cleanupS3(ctx, key)
@@ -305,12 +300,8 @@ func (c *Connector) uploadViaBase64(ctx context.Context, data []byte, dst, modeS
 	// Ensure parent directory exists
 	cmd := fmt.Sprintf("mkdir -p %s && printf '%%s' '%s' | base64 -d > %s && chmod %s %s",
 		connector.ShellQuote(dirOf(dst)), b64, connector.ShellQuote(dst), modeStr, connector.ShellQuote(dst))
-	result, err := c.Execute(ctx, cmd)
-	if err != nil {
+	if _, err := connector.Run(ctx, c, cmd); err != nil {
 		return fmt.Errorf("failed to upload to %s: %w", dst, err)
-	}
-	if result.ExitCode != 0 {
-		return fmt.Errorf("failed to upload to %s: %s", dst, result.Stderr)
 	}
 
 	return nil
@@ -331,12 +322,8 @@ func (c *Connector) downloadViaS3(ctx context.Context, src string, dst io.Writer
 
 	// Copy from instance to S3
 	cmd := fmt.Sprintf("aws s3 cp %s s3://%s/%s", connector.ShellQuote(src), connector.ShellQuote(c.bucket), connector.ShellQuote(key))
-	result, err := c.Execute(ctx, cmd)
-	if err != nil {
+	if _, err := connector.Run(ctx, c, cmd); err != nil {
 		return fmt.Errorf("failed to copy %s to S3: %w", src, err)
-	}
-	if result.ExitCode != 0 {
-		return fmt.Errorf("failed to copy %s to S3: %s", src, result.Stderr)
 	}
 
 	// Get from S3
@@ -361,12 +348,9 @@ func (c *Connector) downloadViaS3(ctx context.Context, src string, dst io.Writer
 
 // downloadViaBase64 downloads data inline using base64 encoding.
 func (c *Connector) downloadViaBase64(ctx context.Context, src string, dst io.Writer) error {
-	result, err := c.Execute(ctx, fmt.Sprintf("base64 %s", connector.ShellQuote(src)))
+	result, err := connector.Run(ctx, c, fmt.Sprintf("base64 %s", connector.ShellQuote(src)))
 	if err != nil {
 		return fmt.Errorf("failed to read %s: %w", src, err)
-	}
-	if result.ExitCode != 0 {
-		return fmt.Errorf("failed to read %s: %s", src, result.Stderr)
 	}
 
 	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(result.Stdout))

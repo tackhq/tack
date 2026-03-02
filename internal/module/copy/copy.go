@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -78,19 +79,14 @@ func (m *Module) Run(ctx context.Context, conn connector.Connector, params map[s
 		srcContent = []byte(content)
 	}
 
-	// Calculate checksum of source
+	// Check if destination exists and whether we should skip
 	srcChecksum := module.Checksum(srcContent)
-
-	// Check if destination exists and compare checksums
 	destExists, destChecksum, err := module.GetRemoteChecksum(ctx, conn, dest)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check destination: %w", err)
 	}
-
-	// If destination exists with same content, check if we need to update mode/owner
 	if destExists && srcChecksum == destChecksum {
-		// File content matches, check attributes
-		attrChanged, err := module.EnsureAttributes(ctx, conn, dest, mode, owner, group)
+		attrChanged, err := module.EnsureAttributes(ctx, conn, dest, mode, owner, group, false)
 		if err != nil {
 			return nil, err
 		}
@@ -99,8 +95,6 @@ func (m *Module) Run(ctx context.Context, conn connector.Connector, params map[s
 		}
 		return module.Unchanged("file already exists with correct content and attributes"), nil
 	}
-
-	// If destination exists and force=false, skip
 	if destExists && !force {
 		return module.Unchanged("destination exists and force=false"), nil
 	}
@@ -112,20 +106,27 @@ func (m *Module) Run(ctx context.Context, conn connector.Connector, params map[s
 		}
 	}
 
-	// Create backup if needed
+	// Without validation, use the shared deploy helper
+	if validate == "" {
+		return module.DeployFile(ctx, conn, module.DeployOpts{
+			Content: srcContent,
+			Dest:    dest,
+			Mode:    mode,
+			Owner:   owner,
+			Group:   group,
+			Backup:  backup,
+			Label:   "file",
+		})
+	}
+
+	// Validation flow: upload to temp, validate, move into place
 	if destExists && backup {
 		if err := module.CreateBackup(ctx, conn, dest); err != nil {
 			return nil, fmt.Errorf("failed to create backup: %w", err)
 		}
 	}
 
-	// Upload to temp file first if validation is needed
-	targetPath := dest
-	if validate != "" {
-		targetPath = fmt.Sprintf("/tmp/bolt-copy-%d", time.Now().UnixNano())
-	}
-
-	// Upload the file
+	targetPath := fmt.Sprintf("/tmp/bolt-copy-%d", time.Now().UnixNano())
 	modeInt, err := module.ParseMode(mode)
 	if err != nil {
 		return nil, fmt.Errorf("invalid mode: %w", err)
@@ -135,43 +136,29 @@ func (m *Module) Run(ctx context.Context, conn connector.Connector, params map[s
 		return nil, fmt.Errorf("failed to upload file: %w", err)
 	}
 
-	// Run validation if specified
-	if validate != "" {
-		validateCmd := strings.ReplaceAll(validate, "%s", connector.ShellQuote(targetPath))
-		result, err := conn.Execute(ctx, validateCmd)
-		if err != nil {
-			// Clean up temp file (ignore error)
-			_, _ = conn.Execute(ctx, fmt.Sprintf("rm -f %s", connector.ShellQuote(targetPath)))
-			return nil, fmt.Errorf("validation command failed: %w", err)
-		}
-		if result.ExitCode != 0 {
-			// Clean up temp file (ignore error)
-			_, _ = conn.Execute(ctx, fmt.Sprintf("rm -f %s", connector.ShellQuote(targetPath)))
-			return nil, fmt.Errorf("validation failed: %s", result.Stderr)
-		}
-
-		// Move temp file to destination
-		result, err = conn.Execute(ctx, fmt.Sprintf("mv %s %s", connector.ShellQuote(targetPath), connector.ShellQuote(dest)))
-		if err != nil {
-			return nil, fmt.Errorf("failed to move validated file: %w", err)
-		}
-		if result.ExitCode != 0 {
-			return nil, fmt.Errorf("failed to move validated file: %s", result.Stderr)
-		}
+	validateCmd := strings.ReplaceAll(validate, "%s", connector.ShellQuote(targetPath))
+	result, err := conn.Execute(ctx, validateCmd)
+	if err != nil {
+		_, _ = conn.Execute(ctx, fmt.Sprintf("rm -f %s", connector.ShellQuote(targetPath)))
+		return nil, fmt.Errorf("validation command failed: %w", err)
+	}
+	if result.ExitCode != 0 {
+		_, _ = conn.Execute(ctx, fmt.Sprintf("rm -f %s", connector.ShellQuote(targetPath)))
+		return nil, fmt.Errorf("validation failed: %s", result.Stderr)
 	}
 
-	// Set attributes
-	if _, err := module.EnsureAttributes(ctx, conn, dest, mode, owner, group); err != nil {
+	if _, err := connector.Run(ctx, conn, fmt.Sprintf("mv %s %s", connector.ShellQuote(targetPath), connector.ShellQuote(dest))); err != nil {
+		return nil, fmt.Errorf("failed to move validated file: %w", err)
+	}
+
+	if _, err := module.EnsureAttributes(ctx, conn, dest, mode, owner, group, false); err != nil {
 		return nil, err
 	}
 
-	var msg string
+	msg := "file created"
 	if destExists {
 		msg = "file updated"
-	} else {
-		msg = "file created"
 	}
-
 	return module.ChangedWithData(msg, map[string]any{
 		"dest":     dest,
 		"checksum": srcChecksum,
@@ -180,14 +167,9 @@ func (m *Module) Run(ctx context.Context, conn connector.Connector, params map[s
 
 // createParentDirs creates parent directories for a path.
 func createParentDirs(ctx context.Context, conn connector.Connector, path string) error {
-	// Extract directory from path
-	cmd := fmt.Sprintf("mkdir -p \"$(dirname %s)\"", connector.ShellQuote(path))
-	result, err := conn.Execute(ctx, cmd)
-	if err != nil {
+	dir := filepath.Dir(path)
+	if _, err := connector.Run(ctx, conn, fmt.Sprintf("mkdir -p %s", connector.ShellQuote(dir))); err != nil {
 		return fmt.Errorf("failed to create parent directories: %w", err)
-	}
-	if result.ExitCode != 0 {
-		return fmt.Errorf("mkdir failed: %s", result.Stderr)
 	}
 	return nil
 }
@@ -225,47 +207,16 @@ func (m *Module) Check(ctx context.Context, conn connector.Connector, params map
 		srcContent = []byte(content)
 	}
 
-	srcChecksum := module.Checksum(srcContent)
-
-	destExists, destChecksum, err := module.GetRemoteChecksum(ctx, conn, dest)
+	// Check force before the shared deploy check
+	destExists, _, err := module.GetRemoteChecksum(ctx, conn, dest)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check destination: %w", err)
 	}
-
-	if !destExists {
-		cr := module.WouldChange("file does not exist")
-		cr.NewChecksum = srcChecksum
-		cr.NewContent = string(srcContent)
-		return cr, nil
-	}
-
 	if destExists && !force {
 		return module.NoChange("destination exists and force=false"), nil
 	}
 
-	if srcChecksum != destChecksum {
-		cr := module.WouldChange("content differs")
-		cr.OldChecksum = destChecksum
-		cr.NewChecksum = srcChecksum
-		cr.NewContent = string(srcContent)
-		// Fetch old content for diff
-		result, err := conn.Execute(ctx, fmt.Sprintf("cat %s", connector.ShellQuote(dest)))
-		if err == nil && result.ExitCode == 0 {
-			cr.OldContent = result.Stdout
-		}
-		return cr, nil
-	}
-
-	// Content matches, check attributes
-	attrDiffer, err := module.CheckAttributes(ctx, conn, dest, mode, owner, group)
-	if err != nil {
-		return nil, err
-	}
-	if attrDiffer {
-		return module.WouldChange("attributes differ"), nil
-	}
-
-	return module.NoChange("file already exists with correct content and attributes"), nil
+	return module.CheckDeployFile(ctx, conn, srcContent, dest, mode, owner, group)
 }
 
 // Ensure Module implements the module.Module interface.

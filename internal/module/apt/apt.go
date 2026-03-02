@@ -234,14 +234,7 @@ type packageState struct {
 
 // checkApt verifies that apt is available.
 func checkApt(ctx context.Context, conn connector.Connector) error {
-	result, err := conn.Execute(ctx, "command -v apt-get")
-	if err != nil {
-		return fmt.Errorf("failed to check for apt: %w", err)
-	}
-	if result.ExitCode != 0 {
-		if strings.TrimSpace(result.Stderr) != "" {
-			return fmt.Errorf("apt-get check failed: %s", strings.TrimSpace(result.Stderr))
-		}
+	if _, err := connector.Run(ctx, conn, "command -v apt-get"); err != nil {
 		return fmt.Errorf("apt-get is not available (not a Debian/Ubuntu system?)")
 	}
 	return nil
@@ -259,12 +252,8 @@ func runAptUpdate(ctx context.Context, conn connector.Connector, cacheValidTime 
 		}
 	}
 
-	result, err := conn.Execute(ctx, "DEBIAN_FRONTEND=noninteractive apt-get update -qq")
-	if err != nil {
-		return false, err
-	}
-	if result.ExitCode != 0 {
-		return false, fmt.Errorf("apt-get update failed: %s", result.Stderr)
+	if _, err := connector.Run(ctx, conn, "DEBIAN_FRONTEND=noninteractive apt-get update -qq"); err != nil {
+		return false, fmt.Errorf("apt-get update failed: %w", err)
 	}
 	return true, nil
 }
@@ -283,12 +272,9 @@ func runAptUpgrade(ctx context.Context, conn connector.Connector, mode string) (
 		return false, nil
 	}
 
-	result, err := conn.Execute(ctx, cmd)
+	result, err := connector.Run(ctx, conn, cmd)
 	if err != nil {
-		return false, err
-	}
-	if result.ExitCode != 0 {
-		return false, fmt.Errorf("apt-get upgrade failed: %s", result.Stderr)
+		return false, fmt.Errorf("apt-get upgrade failed: %w", err)
 	}
 
 	// Check if anything was upgraded
@@ -358,15 +344,15 @@ func installPackages(ctx context.Context, conn connector.Connector, names []stri
 		recommends = "--install-recommends"
 	}
 
-	cmd := fmt.Sprintf("DEBIAN_FRONTEND=noninteractive apt-get install -y -qq %s %s",
-		recommends, strings.Join(names, " "))
-
-	result, err := conn.Execute(ctx, cmd)
-	if err != nil {
-		return fmt.Errorf("failed to install packages: %w", err)
+	quoted := make([]string, len(names))
+	for i, name := range names {
+		quoted[i] = connector.ShellQuote(name)
 	}
-	if result.ExitCode != 0 {
-		return fmt.Errorf("apt-get install failed: %s", result.Stderr)
+	cmd := fmt.Sprintf("DEBIAN_FRONTEND=noninteractive apt-get install -y -qq %s %s",
+		recommends, strings.Join(quoted, " "))
+
+	if _, err := connector.Run(ctx, conn, cmd); err != nil {
+		return fmt.Errorf("apt-get install failed: %w", err)
 	}
 
 	return nil
@@ -379,15 +365,15 @@ func removePackages(ctx context.Context, conn connector.Connector, names []strin
 		action = "purge"
 	}
 
-	cmd := fmt.Sprintf("DEBIAN_FRONTEND=noninteractive apt-get %s -y -qq %s",
-		action, strings.Join(names, " "))
-
-	result, err := conn.Execute(ctx, cmd)
-	if err != nil {
-		return fmt.Errorf("failed to remove packages: %w", err)
+	quoted := make([]string, len(names))
+	for i, name := range names {
+		quoted[i] = connector.ShellQuote(name)
 	}
-	if result.ExitCode != 0 {
-		return fmt.Errorf("apt-get %s failed: %s", action, result.Stderr)
+	cmd := fmt.Sprintf("DEBIAN_FRONTEND=noninteractive apt-get %s -y -qq %s",
+		action, strings.Join(quoted, " "))
+
+	if _, err := connector.Run(ctx, conn, cmd); err != nil {
+		return fmt.Errorf("apt-get %s failed: %w", action, err)
 	}
 
 	return nil
@@ -400,24 +386,16 @@ func installDebFile(ctx context.Context, conn connector.Connector, path string) 
 	if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
 		localPath = "/tmp/bolt-pkg.deb"
 		cmd := fmt.Sprintf("curl -fsSL -o %s %s", connector.ShellQuote(localPath), connector.ShellQuote(path))
-		result, err := conn.Execute(ctx, cmd)
-		if err != nil {
+		if _, err := connector.Run(ctx, conn, cmd); err != nil {
 			return false, fmt.Errorf("failed to download deb file: %w", err)
-		}
-		if result.ExitCode != 0 {
-			return false, fmt.Errorf("failed to download deb file: %s", result.Stderr)
 		}
 	}
 
 	// Install the .deb file
 	cmd := fmt.Sprintf("DEBIAN_FRONTEND=noninteractive dpkg -i %s || apt-get install -f -y -qq",
 		connector.ShellQuote(localPath))
-	result, err := conn.Execute(ctx, cmd)
-	if err != nil {
-		return false, fmt.Errorf("failed to install deb file: %w", err)
-	}
-	if result.ExitCode != 0 {
-		return false, fmt.Errorf("dpkg install failed: %s", result.Stderr)
+	if _, err := connector.Run(ctx, conn, cmd); err != nil {
+		return false, fmt.Errorf("dpkg install failed: %w", err)
 	}
 
 	return true, nil
@@ -425,12 +403,9 @@ func installDebFile(ctx context.Context, conn connector.Connector, path string) 
 
 // runAutoremove removes unused dependency packages.
 func runAutoremove(ctx context.Context, conn connector.Connector) (bool, error) {
-	result, err := conn.Execute(ctx, "DEBIAN_FRONTEND=noninteractive apt-get autoremove -y -qq")
+	result, err := connector.Run(ctx, conn, "DEBIAN_FRONTEND=noninteractive apt-get autoremove -y -qq")
 	if err != nil {
-		return false, fmt.Errorf("failed to autoremove: %w", err)
-	}
-	if result.ExitCode != 0 {
-		return false, fmt.Errorf("apt-get autoremove failed: %s", result.Stderr)
+		return false, fmt.Errorf("apt-get autoremove failed: %w", err)
 	}
 
 	return strings.Contains(result.Stdout, "Removing") || strings.Contains(result.Stderr, "Removing"), nil

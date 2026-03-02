@@ -147,6 +147,7 @@ func (c *Connector) Connect(ctx context.Context) error {
 		hostKeyCallback, err = buildHostKeyCallback()
 		if err != nil {
 			// Fall back to insecure if known_hosts is unavailable
+			fmt.Fprintf(os.Stderr, "WARNING: could not parse known_hosts (%v); SSH host key verification is disabled\n", err)
 			hostKeyCallback = ssh.InsecureIgnoreHostKey()
 		}
 	}
@@ -282,15 +283,10 @@ func (c *Connector) Upload(ctx context.Context, src io.Reader, dst string, mode 
 	cmd := fmt.Sprintf("mv %s %s && chmod %s %s",
 		connector.ShellQuote(target), connector.ShellQuote(dst),
 		modeStr, connector.ShellQuote(dst))
-	result, err := c.Execute(ctx, cmd)
-	if err != nil {
+	if _, err := connector.Run(ctx, c, cmd); err != nil {
 		// Clean up temp file
 		_, _ = c.Execute(ctx, fmt.Sprintf("rm -f %s", connector.ShellQuote(target)))
 		return fmt.Errorf("failed to move uploaded file to %s: %w", dst, err)
-	}
-	if result.ExitCode != 0 {
-		_, _ = c.Execute(ctx, fmt.Sprintf("rm -f %s", connector.ShellQuote(target)))
-		return fmt.Errorf("failed to move uploaded file to %s: %s", dst, result.Stderr)
 	}
 
 	return nil
