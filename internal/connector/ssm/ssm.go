@@ -276,7 +276,7 @@ func (c *Connector) uploadViaS3(ctx context.Context, data []byte, dst, modeStr s
 
 	// Copy from S3 to destination on instance
 	cmd := fmt.Sprintf("aws s3 cp s3://%s/%s %s && chmod %s %s",
-		c.bucket, key, shellQuote(dst), modeStr, shellQuote(dst))
+		c.bucket, key, connector.ShellQuote(dst), modeStr, connector.ShellQuote(dst))
 	result, err := c.Execute(ctx, cmd)
 	if err != nil {
 		c.cleanupS3(ctx, key)
@@ -302,7 +302,7 @@ func (c *Connector) uploadViaBase64(ctx context.Context, data []byte, dst, modeS
 
 	// Ensure parent directory exists
 	cmd := fmt.Sprintf("mkdir -p %s && printf '%%s' '%s' | base64 -d > %s && chmod %s %s",
-		shellQuote(dirOf(dst)), b64, shellQuote(dst), modeStr, shellQuote(dst))
+		connector.ShellQuote(dirOf(dst)), b64, connector.ShellQuote(dst), modeStr, connector.ShellQuote(dst))
 	result, err := c.Execute(ctx, cmd)
 	if err != nil {
 		return fmt.Errorf("failed to upload to %s: %w", dst, err)
@@ -328,7 +328,7 @@ func (c *Connector) downloadViaS3(ctx context.Context, src string, dst io.Writer
 	key := s3KeyPrefix + c.instanceID + "/" + fmt.Sprintf("%d", time.Now().UnixNano())
 
 	// Copy from instance to S3
-	cmd := fmt.Sprintf("aws s3 cp %s s3://%s/%s", shellQuote(src), c.bucket, key)
+	cmd := fmt.Sprintf("aws s3 cp %s s3://%s/%s", connector.ShellQuote(src), c.bucket, key)
 	result, err := c.Execute(ctx, cmd)
 	if err != nil {
 		return fmt.Errorf("failed to copy %s to S3: %w", src, err)
@@ -359,7 +359,7 @@ func (c *Connector) downloadViaS3(ctx context.Context, src string, dst io.Writer
 
 // downloadViaBase64 downloads data inline using base64 encoding.
 func (c *Connector) downloadViaBase64(ctx context.Context, src string, dst io.Writer) error {
-	result, err := c.Execute(ctx, fmt.Sprintf("base64 %s", shellQuote(src)))
+	result, err := c.Execute(ctx, fmt.Sprintf("base64 %s", connector.ShellQuote(src)))
 	if err != nil {
 		return fmt.Errorf("failed to read %s: %w", src, err)
 	}
@@ -404,15 +404,7 @@ func (c *Connector) String() string {
 
 // buildCommand wraps the command with sudo if configured.
 func (c *Connector) buildCommand(cmd string) string {
-	if !c.sudo {
-		return cmd
-	}
-
-	escaped := strings.ReplaceAll(cmd, "'", "'\"'\"'")
-	if c.sudoPassword != "" {
-		return fmt.Sprintf("printf '%%s\\n' '%s' | sudo -S sh -c '%s'", c.sudoPassword, escaped)
-	}
-	return fmt.Sprintf("sudo sh -c '%s'", escaped)
+	return connector.BuildSudoCommand(cmd, c.sudo, c.sudoPassword, false)
 }
 
 // cleanupS3 removes a temporary S3 object (best-effort).
@@ -426,10 +418,6 @@ func (c *Connector) cleanupS3(ctx context.Context, key string) {
 	})
 }
 
-// shellQuote wraps a string in single quotes for safe shell usage.
-func shellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
-}
 
 // dirOf returns the directory component of a path.
 func dirOf(path string) string {

@@ -126,7 +126,7 @@ func (m *Module) Run(ctx context.Context, conn connector.Connector, params map[s
 
 	// Create backup if needed
 	if destExists && backup {
-		if err := createBackup(ctx, conn, dest); err != nil {
+		if err := module.CreateBackup(ctx, conn, dest); err != nil {
 			return nil, fmt.Errorf("failed to create backup: %w", err)
 		}
 	}
@@ -149,21 +149,21 @@ func (m *Module) Run(ctx context.Context, conn connector.Connector, params map[s
 
 	// Run validation if specified
 	if validate != "" {
-		validateCmd := strings.ReplaceAll(validate, "%s", module.ShellQuote(targetPath))
+		validateCmd := strings.ReplaceAll(validate, "%s", connector.ShellQuote(targetPath))
 		result, err := conn.Execute(ctx, validateCmd)
 		if err != nil {
 			// Clean up temp file (ignore error)
-			_, _ = conn.Execute(ctx, fmt.Sprintf("rm -f %s", module.ShellQuote(targetPath)))
+			_, _ = conn.Execute(ctx, fmt.Sprintf("rm -f %s", connector.ShellQuote(targetPath)))
 			return nil, fmt.Errorf("validation command failed: %w", err)
 		}
 		if result.ExitCode != 0 {
 			// Clean up temp file (ignore error)
-			_, _ = conn.Execute(ctx, fmt.Sprintf("rm -f %s", module.ShellQuote(targetPath)))
+			_, _ = conn.Execute(ctx, fmt.Sprintf("rm -f %s", connector.ShellQuote(targetPath)))
 			return nil, fmt.Errorf("validation failed: %s", result.Stderr)
 		}
 
 		// Move temp file to destination
-		result, err = conn.Execute(ctx, fmt.Sprintf("mv %s %s", module.ShellQuote(targetPath), module.ShellQuote(dest)))
+		result, err = conn.Execute(ctx, fmt.Sprintf("mv %s %s", connector.ShellQuote(targetPath), connector.ShellQuote(dest)))
 		if err != nil {
 			return nil, fmt.Errorf("failed to move validated file: %w", err)
 		}
@@ -193,28 +193,13 @@ func (m *Module) Run(ctx context.Context, conn connector.Connector, params map[s
 // createParentDirs creates parent directories for a path.
 func createParentDirs(ctx context.Context, conn connector.Connector, path string) error {
 	// Extract directory from path
-	cmd := fmt.Sprintf("mkdir -p \"$(dirname %s)\"", module.ShellQuote(path))
+	cmd := fmt.Sprintf("mkdir -p \"$(dirname %s)\"", connector.ShellQuote(path))
 	result, err := conn.Execute(ctx, cmd)
 	if err != nil {
 		return fmt.Errorf("failed to create parent directories: %w", err)
 	}
 	if result.ExitCode != 0 {
 		return fmt.Errorf("mkdir failed: %s", result.Stderr)
-	}
-	return nil
-}
-
-// createBackup creates a timestamped backup of a file.
-func createBackup(ctx context.Context, conn connector.Connector, path string) error {
-	timestamp := time.Now().Format("20060102150405")
-	backupPath := fmt.Sprintf("%s.%s.bak", path, timestamp)
-
-	result, err := conn.Execute(ctx, fmt.Sprintf("cp -p %s %s", module.ShellQuote(path), module.ShellQuote(backupPath)))
-	if err != nil {
-		return err
-	}
-	if result.ExitCode != 0 {
-		return fmt.Errorf("backup failed: %s", result.Stderr)
 	}
 	return nil
 }
@@ -284,7 +269,7 @@ func (m *Module) Check(ctx context.Context, conn connector.Connector, params map
 		cr.NewChecksum = srcChecksum
 		cr.NewContent = string(srcContent)
 		// Fetch old content for diff
-		result, err := conn.Execute(ctx, fmt.Sprintf("cat %s", module.ShellQuote(dest)))
+		result, err := conn.Execute(ctx, fmt.Sprintf("cat %s", connector.ShellQuote(dest)))
 		if err == nil && result.ExitCode == 0 {
 			cr.OldContent = result.Stdout
 		}

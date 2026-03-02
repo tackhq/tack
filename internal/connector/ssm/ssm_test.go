@@ -15,6 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	ssmtypes "github.com/aws/aws-sdk-go-v2/service/ssm/types"
+	"github.com/eugenetaranov/bolt/internal/connector"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -409,8 +410,8 @@ func TestBuildCommand(t *testing.T) {
 }
 
 func TestShellQuote(t *testing.T) {
-	assert.Equal(t, "'/tmp/test'", shellQuote("/tmp/test"))
-	assert.Equal(t, "'/tmp/it'\"'\"'s here'", shellQuote("/tmp/it's here"))
+	assert.Equal(t, "'/tmp/test'", connector.ShellQuote("/tmp/test"))
+	assert.Equal(t, "'/tmp/it'\"'\"'s here'", connector.ShellQuote("/tmp/it's here"))
 }
 
 func TestDirOf(t *testing.T) {

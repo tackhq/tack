@@ -66,7 +66,7 @@ func (m *Module) Run(ctx context.Context, conn connector.Connector, params map[s
 	// Build the command with chdir if specified
 	fullCmd := cmd
 	if chdir != "" {
-		fullCmd = fmt.Sprintf("cd %s && %s", module.ShellQuote(chdir), cmd)
+		fullCmd = fmt.Sprintf("cd %s && %s", connector.ShellQuote(chdir), cmd)
 	}
 
 	// Execute the command
@@ -111,7 +111,7 @@ func (e *CommandError) Error() string {
 
 // fileExists checks if a file or directory exists on the target.
 func fileExists(ctx context.Context, conn connector.Connector, path string) (bool, error) {
-	result, err := conn.Execute(ctx, fmt.Sprintf("test -e %s", module.ShellQuote(path)))
+	result, err := conn.Execute(ctx, fmt.Sprintf("test -e %s", connector.ShellQuote(path)))
 	if err != nil {
 		return false, err
 	}

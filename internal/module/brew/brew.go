@@ -86,7 +86,7 @@ func (m *Module) Run(ctx context.Context, conn connector.Connector, params map[s
 	}
 
 	// Get package names
-	names := getPackageNames(params)
+	names := module.GetStringSlice(params, "name")
 	if len(names) == 0 {
 		if !upgradeAll && !updateHomebrew {
 			return nil, fmt.Errorf("'name' parameter is required when not using upgrade_all or update_homebrew")
@@ -242,7 +242,7 @@ func installPackages(ctx context.Context, conn connector.Connector, names []stri
 	}
 
 	for _, name := range names {
-		cmd += " " + module.ShellQuote(name)
+		cmd += " " + connector.ShellQuote(name)
 	}
 
 	result, err := conn.Execute(ctx, cmd)
@@ -264,7 +264,7 @@ func removePackages(ctx context.Context, conn connector.Connector, names []strin
 	}
 
 	for _, name := range names {
-		cmd += " " + module.ShellQuote(name)
+		cmd += " " + connector.ShellQuote(name)
 	}
 
 	result, err := conn.Execute(ctx, cmd)
@@ -304,7 +304,7 @@ func upgradePackages(ctx context.Context, conn connector.Connector, names []stri
 	}
 
 	for _, name := range toUpgrade {
-		cmd += " " + module.ShellQuote(name)
+		cmd += " " + connector.ShellQuote(name)
 	}
 
 	result, err := conn.Execute(ctx, cmd)
@@ -341,41 +341,6 @@ func getOutdatedPackages(ctx context.Context, conn connector.Connector, cask boo
 	return outdated, nil
 }
 
-// getPackageNames extracts package names from params.
-// Supports both single string and string slice.
-func getPackageNames(params map[string]any) []string {
-	v, ok := params["name"]
-	if !ok {
-		return nil
-	}
-
-	// Single string
-	if s, ok := v.(string); ok {
-		if s == "" {
-			return nil
-		}
-		return []string{s}
-	}
-
-	// String slice
-	if slice, ok := v.([]any); ok {
-		var names []string
-		for _, item := range slice {
-			if s, ok := item.(string); ok && s != "" {
-				names = append(names, s)
-			}
-		}
-		return names
-	}
-
-	// Already a string slice
-	if slice, ok := v.([]string); ok {
-		return slice
-	}
-
-	return nil
-}
-
 // Check determines whether the brew module would make changes without applying them.
 func (m *Module) Check(ctx context.Context, conn connector.Connector, params map[string]any) (*module.CheckResult, error) {
 	if err := checkHomebrew(ctx, conn); err != nil {
@@ -395,7 +360,7 @@ func (m *Module) Check(ctx context.Context, conn connector.Connector, params map
 		return module.UncertainChange("upgrade_all always runs"), nil
 	}
 
-	names := getPackageNames(params)
+	names := module.GetStringSlice(params, "name")
 	if len(names) == 0 {
 		return module.NoChange("no packages specified"), nil
 	}

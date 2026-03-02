@@ -280,26 +280,22 @@ func (c *Connector) Upload(ctx context.Context, src io.Reader, dst string, mode 
 	// Sudo path: move temp file to destination and set permissions
 	modeStr := fmt.Sprintf("%04o", mode)
 	cmd := fmt.Sprintf("mv %s %s && chmod %s %s",
-		shellQuote(target), shellQuote(dst),
-		modeStr, shellQuote(dst))
+		connector.ShellQuote(target), connector.ShellQuote(dst),
+		modeStr, connector.ShellQuote(dst))
 	result, err := c.Execute(ctx, cmd)
 	if err != nil {
 		// Clean up temp file
-		_, _ = c.Execute(ctx, fmt.Sprintf("rm -f %s", shellQuote(target)))
+		_, _ = c.Execute(ctx, fmt.Sprintf("rm -f %s", connector.ShellQuote(target)))
 		return fmt.Errorf("failed to move uploaded file to %s: %w", dst, err)
 	}
 	if result.ExitCode != 0 {
-		_, _ = c.Execute(ctx, fmt.Sprintf("rm -f %s", shellQuote(target)))
+		_, _ = c.Execute(ctx, fmt.Sprintf("rm -f %s", connector.ShellQuote(target)))
 		return fmt.Errorf("failed to move uploaded file to %s: %s", dst, result.Stderr)
 	}
 
 	return nil
 }
 
-// shellQuote wraps a string in single quotes for safe shell usage.
-func shellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
-}
 
 // Download copies content from a remote file at src to dst using SFTP.
 func (c *Connector) Download(ctx context.Context, src string, dst io.Writer) error {
@@ -537,18 +533,8 @@ func loadKey(path string) (ssh.Signer, error) {
 }
 
 // buildCommand wraps the command with sudo if configured.
-// Commands are wrapped in sh -c so that shell builtins and env vars work.
-// Sudo is skipped when already connected as root.
 func (c *Connector) buildCommand(cmd string) string {
-	if !c.sudo || c.user == "root" {
-		return cmd
-	}
-
-	escaped := strings.ReplaceAll(cmd, "'", "'\"'\"'")
-	if c.sudoPassword != "" {
-		return fmt.Sprintf("printf '%%s\\n' '%s' | sudo -S sh -c '%s'", c.sudoPassword, escaped)
-	}
-	return fmt.Sprintf("sudo sh -c '%s'", escaped)
+	return connector.BuildSudoCommand(cmd, c.sudo, c.sudoPassword, c.user == "root")
 }
 
 // SetSudo enables or disables sudo for subsequent commands.

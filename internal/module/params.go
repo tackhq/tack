@@ -2,13 +2,7 @@ package module
 
 import (
 	"fmt"
-	"strings"
 )
-
-// ShellQuote quotes a string for safe use in shell commands.
-func ShellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
-}
 
 // GetString extracts a string parameter with a default value.
 func GetString(params map[string]any, key, defaultValue string) string {
@@ -70,16 +64,25 @@ func RequireString(params map[string]any, key string) (string, error) {
 }
 
 // GetStringSlice extracts a string slice parameter.
+// Handles single strings, []any, and []string values.
 func GetStringSlice(params map[string]any, key string) []string {
 	v, ok := params[key]
 	if !ok {
 		return nil
 	}
 
+	// Single string
+	if s, ok := v.(string); ok {
+		if s == "" {
+			return nil
+		}
+		return []string{s}
+	}
+
 	if slice, ok := v.([]any); ok {
 		var result []string
 		for _, item := range slice {
-			if s, ok := item.(string); ok {
+			if s, ok := item.(string); ok && s != "" {
 				result = append(result, s)
 			}
 		}

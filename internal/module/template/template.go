@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 	"text/template"
-	"time"
 
 	"github.com/eugenetaranov/bolt/internal/connector"
 	"github.com/eugenetaranov/bolt/internal/module"
@@ -107,7 +106,7 @@ func (m *Module) Run(ctx context.Context, conn connector.Connector, params map[s
 
 	// Create backup if needed
 	if destExists && backup {
-		if err := createBackup(ctx, conn, dest); err != nil {
+		if err := module.CreateBackup(ctx, conn, dest); err != nil {
 			return nil, fmt.Errorf("failed to create backup: %w", err)
 		}
 	}
@@ -183,21 +182,6 @@ func renderTemplate(ctx context.Context, name, content string, vars map[string]a
 	return buf.Bytes(), nil
 }
 
-// createBackup creates a timestamped backup of a file.
-func createBackup(ctx context.Context, conn connector.Connector, path string) error {
-	timestamp := time.Now().Format("20060102150405")
-	backupPath := fmt.Sprintf("%s.%s.bak", path, timestamp)
-
-	result, err := conn.Execute(ctx, fmt.Sprintf("cp -p %s %s", module.ShellQuote(path), module.ShellQuote(backupPath)))
-	if err != nil {
-		return err
-	}
-	if result.ExitCode != 0 {
-		return fmt.Errorf("backup failed: %s", result.Stderr)
-	}
-	return nil
-}
-
 // Check determines whether the template module would make changes without applying them.
 func (m *Module) Check(ctx context.Context, conn connector.Connector, params map[string]any) (*module.CheckResult, error) {
 	src, err := module.RequireString(params, "src")
@@ -256,7 +240,7 @@ func (m *Module) Check(ctx context.Context, conn connector.Connector, params map
 		cr.NewChecksum = srcChecksum
 		cr.NewContent = string(renderedContent)
 		// Fetch old content for diff
-		result, err := conn.Execute(ctx, fmt.Sprintf("cat %s", module.ShellQuote(dest)))
+		result, err := conn.Execute(ctx, fmt.Sprintf("cat %s", connector.ShellQuote(dest)))
 		if err == nil && result.ExitCode == 0 {
 			cr.OldContent = result.Stdout
 		}

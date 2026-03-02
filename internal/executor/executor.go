@@ -173,7 +173,7 @@ func (e *Executor) Run(ctx context.Context, pb *playbook.Playbook) (*RunResult, 
 	rolesDir := filepath.Join(filepath.Dir(pb.Path), "roles")
 
 	for _, play := range pb.Plays {
-		e.applyOverrides(play)
+		e.ApplyOverrides(play)
 		if err := e.runPlay(ctx, play, stats, rolesDir); err != nil {
 			if ctx.Err() != nil {
 				return result, nil
@@ -190,8 +190,8 @@ func (e *Executor) Run(ctx context.Context, pb *playbook.Playbook) (*RunResult, 
 	return result, nil
 }
 
-// applyOverrides applies CLI/env connection overrides to a play.
-func (e *Executor) applyOverrides(play *playbook.Play) {
+// ApplyOverrides applies CLI/env connection overrides to a play.
+func (e *Executor) ApplyOverrides(play *playbook.Play) {
 	if e.Overrides == nil {
 		return
 	}

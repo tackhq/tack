@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"os/user"
 	"runtime"
-	"strings"
 
 	"github.com/eugenetaranov/bolt/internal/connector"
 )
@@ -115,23 +114,12 @@ func (c *Connector) Execute(ctx context.Context, cmd string) (*connector.Result,
 }
 
 // buildCommand wraps the command with sudo if configured.
-// Commands are wrapped in sh -c so that shell builtins and env vars work.
-// Sudo is skipped when already running as root.
 func (c *Connector) buildCommand(cmd string) string {
-	if !c.sudo {
-		return cmd
-	}
-
-	// Skip sudo when already root
+	isRoot := false
 	if u, err := user.Current(); err == nil && u.Uid == "0" {
-		return cmd
+		isRoot = true
 	}
-
-	escaped := strings.ReplaceAll(cmd, "'", "'\"'\"'")
-	if c.sudoPassword != "" {
-		return fmt.Sprintf("printf '%%s\\n' '%s' | sudo -S sh -c '%s'", c.sudoPassword, escaped)
-	}
-	return fmt.Sprintf("sudo sh -c '%s'", escaped)
+	return connector.BuildSudoCommand(cmd, c.sudo, c.sudoPassword, isRoot)
 }
 
 // SetSudo enables or disables sudo for subsequent commands.
@@ -175,8 +163,8 @@ func (c *Connector) Upload(ctx context.Context, src io.Reader, dst string, mode 
 
 		modeStr := fmt.Sprintf("%04o", mode)
 		cmd := fmt.Sprintf("mv %s %s && chmod %s %s",
-			shellQuote(tmpPath), shellQuote(dst),
-			modeStr, shellQuote(dst))
+			connector.ShellQuote(tmpPath), connector.ShellQuote(dst),
+			modeStr, connector.ShellQuote(dst))
 		result, err := c.Execute(ctx, cmd)
 		if err != nil {
 			return fmt.Errorf("failed to move uploaded file to %s: %w", dst, err)
@@ -199,11 +187,6 @@ func (c *Connector) Upload(ctx context.Context, src io.Reader, dst string, mode 
 	}
 
 	return nil
-}
-
-// shellQuote wraps a string in single quotes for safe shell usage.
-func shellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
 }
 
 // Download reads content from a local file at src to dst.

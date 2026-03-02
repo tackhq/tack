@@ -2,10 +2,14 @@ name: CI
 
 on:
   push:
+    branches: [main]
     tags:
       - 'v*'
   pull_request:
     branches: [main]
+
+env:
+  GO_VERSION: '1.24'
 
 jobs:
   build:
@@ -16,7 +20,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: ${{ env.GO_VERSION }}
 
       - name: Build
         run: make build
@@ -32,7 +36,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: ${{ env.GO_VERSION }}
 
       - name: Run tests
         run: go test -v -short -race -coverprofile=coverage.out ./...
@@ -51,36 +55,38 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: ${{ env.GO_VERSION }}
 
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: latest
+          version: v1.64
           args: --timeout=3m
 
   validate:
     runs-on: ubuntu-latest
+    needs: build
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: ${{ env.GO_VERSION }}
 
       - name: Validate example playbooks
         run: make validate-examples
 
   integration:
     runs-on: ubuntu-latest
+    needs: build
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: ${{ env.GO_VERSION }}
 
       - name: Run integration tests
         run: make test-integration

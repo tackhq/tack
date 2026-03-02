@@ -3,7 +3,9 @@ package connector
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"strings"
 )
 
 // Result holds the output from command execution.
@@ -35,6 +37,24 @@ type Connector interface {
 
 	// String returns a human-readable description of the connection.
 	String() string
+}
+
+// ShellQuote wraps a string in single quotes for safe shell usage.
+func ShellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
+}
+
+// BuildSudoCommand wraps a command with sudo if enabled, skipping when already root.
+func BuildSudoCommand(cmd string, sudoEnabled bool, password string, isRoot bool) string {
+	if !sudoEnabled || isRoot {
+		return cmd
+	}
+
+	escaped := strings.ReplaceAll(cmd, "'", "'\"'\"'")
+	if password != "" {
+		return fmt.Sprintf("printf '%%s\\n' '%s' | sudo -S sh -c '%s'", password, escaped)
+	}
+	return fmt.Sprintf("sudo sh -c '%s'", escaped)
 }
 
 // Config holds common configuration for connectors.

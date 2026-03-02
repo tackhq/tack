@@ -51,6 +51,39 @@ func main() {
 	}
 }
 
+// signalContext returns a context that is cancelled on the first SIGINT/SIGTERM
+// and exits the process on the second signal.
+func signalContext(parent context.Context) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(parent)
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		fmt.Fprintln(os.Stderr, "\nInterrupted, cleaning up...")
+		cancel()
+		<-sigCh
+		os.Exit(130)
+	}()
+	return ctx, cancel
+}
+
+// addConnectionFlags registers the common connection flags on a command.
+func addConnectionFlags(cmd *cobra.Command) {
+	cmd.Flags().StringArrayP("connection", "c", nil, "Connection URI (e.g. ssh://user@host:port, docker://container, local://)")
+	cmd.Flags().String("hosts", "", "Comma-separated list of target hosts")
+	cmd.Flags().String("ssh-user", "", "SSH username")
+	cmd.Flags().Int("ssh-port", 0, "SSH port")
+	cmd.Flags().String("ssh-key", "", "Path to SSH private key")
+	sshPassFlag := cmd.Flags().String("ssh-password", "", "SSH password (prompted if flag present with no value)")
+	_ = sshPassFlag
+	cmd.Flags().Lookup("ssh-password").NoOptDefVal = ""
+	cmd.Flags().Bool("ssh-insecure", false, "Skip SSH host key verification")
+	cmd.Flags().BoolP("sudo", "s", false, "Enable sudo for all tasks")
+	sudoPassFlag := cmd.Flags().String("sudo-password", "", "Sudo password (prompted if flag present with no value)")
+	_ = sudoPassFlag
+	cmd.Flags().Lookup("sudo-password").NoOptDefVal = ""
+}
+
 var rootCmd = &cobra.Command{
 	Use:   "bolt",
 	Short: "Bolt - System bootstrapping and configuration management",
@@ -127,19 +160,7 @@ func init() {
 	runCmd.Flags().IntP("forks", "f", 1, "Number of parallel processes (not yet implemented)")
 
 	// Connection override flags
-	runCmd.Flags().StringArrayP("connection", "c", nil, "Connection URI (e.g. ssh://user@host:port, docker://container, local://)")
-	runCmd.Flags().String("hosts", "", "Comma-separated list of target hosts")
-	runCmd.Flags().String("ssh-user", "", "SSH username")
-	runCmd.Flags().Int("ssh-port", 0, "SSH port")
-	runCmd.Flags().String("ssh-key", "", "Path to SSH private key")
-	sshPassFlag := runCmd.Flags().String("ssh-password", "", "SSH password (prompted if flag present with no value)")
-	_ = sshPassFlag
-	runCmd.Flags().Lookup("ssh-password").NoOptDefVal = ""
-	runCmd.Flags().Bool("ssh-insecure", false, "Skip SSH host key verification")
-	runCmd.Flags().BoolP("sudo", "s", false, "Enable sudo for all tasks")
-	sudoPassFlag := runCmd.Flags().String("sudo-password", "", "Sudo password (prompted if flag present with no value)")
-	_ = sudoPassFlag
-	runCmd.Flags().Lookup("sudo-password").NoOptDefVal = ""
+	addConnectionFlags(runCmd)
 	runCmd.Flags().BoolVar(&autoApprove, "auto-approve", false, "Skip interactive approval prompt (for CI/scripting)")
 	runCmd.Flags().BoolVar(&dryRun, "check", false, "Show plan and exit without applying (alias for --dry-run)")
 
@@ -157,7 +178,7 @@ func runPlaybook(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid playbook source: %w", err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := signalContext(context.Background())
 	defer cancel()
 
 	playbookPath, cleanup, err := src.Fetch(ctx)
@@ -197,18 +218,6 @@ func runPlaybook(cmd *cobra.Command, args []string) error {
 	exec.Output.SetColor(!noColor)
 	exec.Output.SetDebug(debug)
 	exec.Output.SetVerbose(verbose)
-
-	// Handle interrupt signals
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		<-sigCh
-		fmt.Fprintln(os.Stderr, "\nInterrupted, cleaning up...")
-		cancel()
-		// Second signal exits immediately (e.g. stuck on password prompt)
-		<-sigCh
-		os.Exit(130)
-	}()
 
 	// Run playbook
 	result, err := exec.Run(ctx, pb)
@@ -356,19 +365,7 @@ func init() {
 	generateCmd.Flags().StringP("output", "o", "", "Output file (default: stdout)")
 
 	// Connection flags (same as run command)
-	generateCmd.Flags().StringArrayP("connection", "c", nil, "Connection URI (e.g. ssh://user@host:port, local://)")
-	generateCmd.Flags().String("hosts", "", "Comma-separated list of target hosts")
-	generateCmd.Flags().String("ssh-user", "", "SSH username")
-	generateCmd.Flags().Int("ssh-port", 0, "SSH port")
-	generateCmd.Flags().String("ssh-key", "", "Path to SSH private key")
-	sshPassFlag := generateCmd.Flags().String("ssh-password", "", "SSH password (prompted if flag present with no value)")
-	_ = sshPassFlag
-	generateCmd.Flags().Lookup("ssh-password").NoOptDefVal = ""
-	generateCmd.Flags().Bool("ssh-insecure", false, "Skip SSH host key verification")
-	generateCmd.Flags().BoolP("sudo", "s", false, "Enable sudo for queries")
-	sudoPassFlag := generateCmd.Flags().String("sudo-password", "", "Sudo password (prompted if flag present with no value)")
-	_ = sudoPassFlag
-	generateCmd.Flags().Lookup("sudo-password").NoOptDefVal = ""
+	addConnectionFlags(generateCmd)
 }
 
 func runGenerate(cmd *cobra.Command, _ []string) error {
@@ -390,39 +387,16 @@ func runGenerate(cmd *cobra.Command, _ []string) error {
 
 	// Build a minimal play to get a connector
 	play := &playbook.Play{
-		Connection: overrides.Connection,
-		Hosts:      overrides.Hosts,
-		Vars:       make(map[string]any),
+		Vars: make(map[string]any),
 	}
-	if play.Connection == "" {
-		play.Connection = "local"
+	if overrides.Connection == "" {
+		overrides.Connection = "local"
 	}
 
-	// Apply SSH vars
-	if overrides.SSHUser != "" {
-		play.Vars["bolt_ssh_user"] = overrides.SSHUser
-	}
-	if overrides.SSHPort != 0 {
-		play.Vars["bolt_ssh_port"] = overrides.SSHPort
-	}
-	if overrides.SSHKey != "" {
-		play.Vars["bolt_ssh_key"] = overrides.SSHKey
-	}
-	if overrides.HasSSHPass {
-		play.Vars["bolt_ssh_password"] = overrides.SSHPass
-	}
-	if overrides.SSHInsecure {
-		play.Vars["bolt_ssh_host_key_checking"] = false
-	}
-	if overrides.Sudo {
-		play.Sudo = true
-	}
-	if overrides.SudoPassword != "" {
-		play.Vars["bolt_sudo_password"] = overrides.SudoPassword
-	}
-
-	// Create connector
 	exec := executor.New()
+	exec.Overrides = overrides
+	exec.ApplyOverrides(play)
+
 	host := "localhost"
 	if len(play.Hosts) > 0 {
 		host = play.Hosts[0]
@@ -432,17 +406,8 @@ func runGenerate(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("failed to create connector: %w", err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := signalContext(context.Background())
 	defer cancel()
-
-	// Handle interrupt signals
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		<-sigCh
-		fmt.Fprintln(os.Stderr, "\nInterrupted, cleaning up...")
-		cancel()
-	}()
 
 	opts := generate.Options{
 		Packages:   packages,
@@ -512,19 +477,8 @@ Examples:
 		newFlag, _ := cmd.Flags().GetBool("new")
 		rmFlag, _ := cmd.Flags().GetBool("rm")
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := signalContext(context.Background())
 		defer cancel()
-
-		// Handle interrupt signals
-		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-		go func() {
-			<-sigCh
-			fmt.Fprintln(os.Stderr, "\nInterrupted, cleaning up...")
-			cancel()
-			<-sigCh
-			os.Exit(130)
-		}()
 
 		return testrun.Run(ctx, testrun.Options{
 			Target:  args[0],
