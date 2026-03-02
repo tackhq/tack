@@ -9,7 +9,58 @@ import (
 	"github.com/eugenetaranov/bolt/internal/connector"
 )
 
-// Gather collects system facts from the target.
+// factsScript is a single shell script that gathers all system facts in one
+// invocation. Each fact is emitted as a "KEY=VALUE" line delimited by a
+// well-known sentinel so the output can be parsed reliably. Using a single
+// command matters for high-latency connectors like SSM where each Execute()
+// round-trip takes several seconds.
+const factsScript = `
+exec 2>/dev/null
+echo "BOLT_FACT os_type=$(uname -s)"
+echo "BOLT_FACT architecture=$(uname -m)"
+echo "BOLT_FACT kernel=$(uname -r)"
+echo "BOLT_FACT hostname=$(hostname)"
+echo "BOLT_FACT user=$(whoami)"
+echo "BOLT_FACT home=$HOME"
+if [ "$(uname -s)" = "Darwin" ]; then
+  echo "BOLT_FACT os_version=$(sw_vers -productVersion)"
+  echo "BOLT_FACT os_name=$(sw_vers -productName)"
+fi
+if [ -f /etc/os-release ]; then
+  echo "BOLT_FACT os_release_start"
+  cat /etc/os-release
+  echo "BOLT_FACT os_release_end"
+fi
+for v in PATH SHELL LANG LC_ALL TERM EDITOR; do
+  eval val=\$$v
+  if [ -n "$val" ]; then
+    echo "BOLT_FACT env_${v}=${val}"
+  fi
+done
+# EC2 detection via IMDSv2
+TOKEN=$(curl -sf -X PUT "http://169.254.169.254/latest/api/token" \
+  -H "X-aws-ec2-metadata-token-ttl-seconds: 10" --connect-timeout 1 2>/dev/null)
+if [ -n "$TOKEN" ]; then
+  HDR="X-aws-ec2-metadata-token: $TOKEN"
+  echo "BOLT_FACT ec2_instance_id=$(curl -sf -H "$HDR" http://169.254.169.254/latest/meta-data/instance-id)"
+  echo "BOLT_FACT ec2_region=$(curl -sf -H "$HDR" http://169.254.169.254/latest/meta-data/placement/region)"
+  echo "BOLT_FACT ec2_az=$(curl -sf -H "$HDR" http://169.254.169.254/latest/meta-data/placement/availability-zone)"
+  echo "BOLT_FACT ec2_instance_type=$(curl -sf -H "$HDR" http://169.254.169.254/latest/meta-data/instance-type)"
+  echo "BOLT_FACT ec2_ami_id=$(curl -sf -H "$HDR" http://169.254.169.254/latest/meta-data/ami-id)"
+  # Try IMDS tags (requires "allow tags in instance metadata" enabled)
+  TAGS=$(curl -sf -H "$HDR" http://169.254.169.254/latest/meta-data/tags/instance/ 2>/dev/null)
+  if [ -n "$TAGS" ]; then
+    echo "BOLT_FACT ec2_tags_start"
+    for tag in $TAGS; do
+      val=$(curl -sf -H "$HDR" "http://169.254.169.254/latest/meta-data/tags/instance/${tag}")
+      echo "${tag}=${val}"
+    done
+    echo "BOLT_FACT ec2_tags_end"
+  fi
+fi
+`
+
+// Gather collects system facts from the target via a single command.
 func Gather(ctx context.Context, conn connector.Connector) (map[string]any, error) {
 	facts := make(map[string]any)
 
@@ -17,126 +68,173 @@ func Gather(ctx context.Context, conn connector.Connector) (map[string]any, erro
 	facts["go_os"] = runtime.GOOS
 	facts["go_arch"] = runtime.GOARCH
 
-	// Gather OS information
-	osInfo, err := gatherOSInfo(ctx, conn)
-	if err == nil {
-		for k, v := range osInfo {
-			facts[k] = v
+	result, err := conn.Execute(ctx, factsScript)
+	if err != nil {
+		return facts, err
+	}
+
+	env := make(map[string]string)
+	ec2Tags := make(map[string]string)
+	var inOSRelease bool
+	var osReleaseLines []string
+	var inEC2Tags bool
+	var gotIMDSTags bool
+
+	for _, line := range strings.Split(result.Stdout, "\n") {
+		line = strings.TrimSpace(line)
+
+		// Collect /etc/os-release block
+		if line == "BOLT_FACT os_release_start" {
+			inOSRelease = true
+			continue
+		}
+		if line == "BOLT_FACT os_release_end" {
+			inOSRelease = false
+			osRelease := parseOSRelease(strings.Join(osReleaseLines, "\n"))
+			applyOSRelease(facts, osRelease)
+			continue
+		}
+		if inOSRelease {
+			osReleaseLines = append(osReleaseLines, line)
+			continue
+		}
+
+		// Collect ec2_tags block
+		if line == "BOLT_FACT ec2_tags_start" {
+			inEC2Tags = true
+			gotIMDSTags = true
+			continue
+		}
+		if line == "BOLT_FACT ec2_tags_end" {
+			inEC2Tags = false
+			continue
+		}
+		if inEC2Tags {
+			if idx := strings.Index(line, "="); idx > 0 {
+				ec2Tags[line[:idx]] = line[idx+1:]
+			}
+			continue
+		}
+
+		// Parse BOLT_FACT lines
+		if !strings.HasPrefix(line, "BOLT_FACT ") {
+			continue
+		}
+		kv := strings.TrimPrefix(line, "BOLT_FACT ")
+		idx := strings.Index(kv, "=")
+		if idx < 0 {
+			continue
+		}
+		key := kv[:idx]
+		value := kv[idx+1:]
+
+		switch key {
+		case "os_type":
+			facts["os_type"] = value
+			applyOSType(facts, value)
+		case "architecture":
+			facts["architecture"] = value
+			facts["arch"] = normalizeArch(value)
+		case "kernel":
+			facts["kernel"] = value
+		case "hostname":
+			facts["hostname"] = value
+		case "user":
+			facts["user"] = value
+		case "home":
+			facts["home"] = value
+		case "os_version":
+			facts["os_version"] = value
+		case "os_name":
+			facts["os_name"] = value
+		case "ec2_instance_id", "ec2_region", "ec2_az", "ec2_instance_type", "ec2_ami_id":
+			if value != "" {
+				facts[key] = value
+			}
+		default:
+			if strings.HasPrefix(key, "env_") {
+				envName := strings.TrimPrefix(key, "env_")
+				if value != "" {
+					env[envName] = value
+				}
+			}
 		}
 	}
 
-	// Gather hostname
-	if hostname, err := gatherHostname(ctx, conn); err == nil {
-		facts["hostname"] = hostname
-	}
-
-	// Gather user info
-	if user, err := gatherUser(ctx, conn); err == nil {
-		facts["user"] = user
-	}
-
-	// Gather home directory
-	if home, err := gatherHome(ctx, conn); err == nil {
-		facts["home"] = home
-	}
-
-	// Gather environment
-	if env, err := gatherEnv(ctx, conn); err == nil {
+	if len(env) > 0 {
 		facts["env"] = env
+	}
+
+	// Set ec2_tags from IMDS or fall back to EC2 API
+	if gotIMDSTags {
+		facts["ec2_tags"] = ec2Tags
+	} else if instanceID, _ := facts["ec2_instance_id"].(string); instanceID != "" {
+		region, _ := facts["ec2_region"].(string)
+		if region != "" {
+			tags, err := gatherEC2Tags(ctx, instanceID, region)
+			if err == nil && len(tags) > 0 {
+				facts["ec2_tags"] = tags
+			}
+		}
 	}
 
 	return facts, nil
 }
 
-// gatherOSInfo gathers operating system information.
-func gatherOSInfo(ctx context.Context, conn connector.Connector) (map[string]any, error) {
-	info := make(map[string]any)
-
-	// Try to detect OS type
-	result, err := conn.Execute(ctx, "uname -s")
-	if err != nil {
-		return info, err
-	}
-
-	osType := strings.TrimSpace(result.Stdout)
-	info["os_type"] = osType
-
+// applyOSType sets os_family and pkg_manager for the top-level OS type.
+func applyOSType(facts map[string]any, osType string) {
 	switch osType {
 	case "Darwin":
-		info["os_family"] = "Darwin"
-		info["pkg_manager"] = "brew"
-
-		// Get macOS version
-		if result, err := conn.Execute(ctx, "sw_vers -productVersion"); err == nil {
-			info["os_version"] = strings.TrimSpace(result.Stdout)
-		}
-
-		// Get macOS name
-		if result, err := conn.Execute(ctx, "sw_vers -productName"); err == nil {
-			info["os_name"] = strings.TrimSpace(result.Stdout)
-		}
-
+		facts["os_family"] = "Darwin"
+		facts["pkg_manager"] = "brew"
 	case "Linux":
-		info["os_family"] = "Linux"
+		facts["os_family"] = "Linux"
+	}
+}
 
-		// Try to get distribution info from /etc/os-release
-		if result, err := conn.Execute(ctx, "cat /etc/os-release 2>/dev/null"); err == nil && result.ExitCode == 0 {
-			osRelease := parseOSRelease(result.Stdout)
-			if id, ok := osRelease["ID"]; ok {
-				info["distribution"] = id
-			}
-			if version, ok := osRelease["VERSION_ID"]; ok {
-				info["distribution_version"] = version
-			}
-			if name, ok := osRelease["PRETTY_NAME"]; ok {
-				info["os_name"] = name
-			}
-
-			// Set package manager based on distribution
-			switch info["distribution"] {
-			case "ubuntu", "debian", "linuxmint", "pop":
-				info["pkg_manager"] = "apt"
-				info["os_family"] = "Debian"
-			case "fedora", "rhel", "centos", "rocky", "almalinux":
-				info["pkg_manager"] = "dnf"
-				info["os_family"] = "RedHat"
-			case "arch", "manjaro":
-				info["pkg_manager"] = "pacman"
-				info["os_family"] = "Arch"
-			case "alpine":
-				info["pkg_manager"] = "apk"
-				info["os_family"] = "Alpine"
-			case "opensuse", "sles":
-				info["pkg_manager"] = "zypper"
-				info["os_family"] = "Suse"
-			}
-		}
+// applyOSRelease extracts distribution info and refines os_family/pkg_manager.
+func applyOSRelease(facts map[string]any, osRelease map[string]string) {
+	if id, ok := osRelease["ID"]; ok {
+		facts["distribution"] = id
+	}
+	if version, ok := osRelease["VERSION_ID"]; ok {
+		facts["distribution_version"] = version
+	}
+	if name, ok := osRelease["PRETTY_NAME"]; ok {
+		facts["os_name"] = name
 	}
 
-	// Get architecture
-	if result, err := conn.Execute(ctx, "uname -m"); err == nil {
-		arch := strings.TrimSpace(result.Stdout)
-		info["architecture"] = arch
-
-		// Normalize architecture names
-		switch arch {
-		case "x86_64", "amd64":
-			info["arch"] = "amd64"
-		case "aarch64", "arm64":
-			info["arch"] = "arm64"
-		case "armv7l":
-			info["arch"] = "arm"
-		default:
-			info["arch"] = arch
-		}
+	switch facts["distribution"] {
+	case "ubuntu", "debian", "linuxmint", "pop":
+		facts["pkg_manager"] = "apt"
+		facts["os_family"] = "Debian"
+	case "fedora", "rhel", "centos", "rocky", "almalinux":
+		facts["pkg_manager"] = "dnf"
+		facts["os_family"] = "RedHat"
+	case "arch", "manjaro":
+		facts["pkg_manager"] = "pacman"
+		facts["os_family"] = "Arch"
+	case "alpine":
+		facts["pkg_manager"] = "apk"
+		facts["os_family"] = "Alpine"
+	case "opensuse", "sles":
+		facts["pkg_manager"] = "zypper"
+		facts["os_family"] = "Suse"
 	}
+}
 
-	// Get kernel version
-	if result, err := conn.Execute(ctx, "uname -r"); err == nil {
-		info["kernel"] = strings.TrimSpace(result.Stdout)
+// normalizeArch maps raw architecture strings to canonical names.
+func normalizeArch(arch string) string {
+	switch arch {
+	case "x86_64", "amd64":
+		return "amd64"
+	case "aarch64", "arm64":
+		return "arm64"
+	case "armv7l":
+		return "arm"
+	default:
+		return arch
 	}
-
-	return info, nil
 }
 
 // parseOSRelease parses /etc/os-release format.
@@ -154,50 +252,4 @@ func parseOSRelease(content string) map[string]string {
 		}
 	}
 	return result
-}
-
-// gatherHostname gets the system hostname.
-func gatherHostname(ctx context.Context, conn connector.Connector) (string, error) {
-	result, err := conn.Execute(ctx, "hostname")
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(result.Stdout), nil
-}
-
-// gatherUser gets the current user.
-func gatherUser(ctx context.Context, conn connector.Connector) (string, error) {
-	result, err := conn.Execute(ctx, "whoami")
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(result.Stdout), nil
-}
-
-// gatherHome gets the home directory.
-func gatherHome(ctx context.Context, conn connector.Connector) (string, error) {
-	result, err := conn.Execute(ctx, "echo $HOME")
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(result.Stdout), nil
-}
-
-// gatherEnv gets select environment variables.
-func gatherEnv(ctx context.Context, conn connector.Connector) (map[string]string, error) {
-	env := make(map[string]string)
-
-	// Get common environment variables
-	vars := []string{"PATH", "SHELL", "LANG", "LC_ALL", "TERM", "EDITOR"}
-	for _, v := range vars {
-		result, err := conn.Execute(ctx, "echo $"+v)
-		if err == nil && result.ExitCode == 0 {
-			value := strings.TrimSpace(result.Stdout)
-			if value != "" {
-				env[v] = value
-			}
-		}
-	}
-
-	return env, nil
 }
