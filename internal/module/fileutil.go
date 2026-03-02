@@ -96,8 +96,8 @@ func EnsureAttributes(ctx context.Context, conn connector.Connector, path, mode,
 		return false, fmt.Errorf("failed to get file attributes: %w", err)
 	}
 
-	if mode != "" && currentMode != mode {
-		result, err := conn.Execute(ctx, fmt.Sprintf("chmod %s %s", mode, connector.ShellQuote(path)))
+	if mode != "" && NormalizeMode(currentMode) != NormalizeMode(mode) {
+		result, err := conn.Execute(ctx, fmt.Sprintf("chmod %s %s", connector.ShellQuote(mode), connector.ShellQuote(path)))
 		if err != nil {
 			return false, fmt.Errorf("failed to set mode: %w", err)
 		}
@@ -120,7 +120,7 @@ func EnsureAttributes(ctx context.Context, conn connector.Connector, path, mode,
 			ownership = fmt.Sprintf(":%s", group)
 		}
 
-		result, err := conn.Execute(ctx, fmt.Sprintf("chown %s %s", ownership, connector.ShellQuote(path)))
+		result, err := conn.Execute(ctx, fmt.Sprintf("chown %s %s", connector.ShellQuote(ownership), connector.ShellQuote(path)))
 		if err != nil {
 			return false, fmt.Errorf("failed to set ownership: %w", err)
 		}
@@ -140,7 +140,7 @@ func CheckAttributes(ctx context.Context, conn connector.Connector, path, mode, 
 		return false, fmt.Errorf("failed to get file attributes: %w", err)
 	}
 
-	if mode != "" && currentMode != mode {
+	if mode != "" && NormalizeMode(currentMode) != NormalizeMode(mode) {
 		return true, nil
 	}
 	if owner != "" && currentOwner != owner {

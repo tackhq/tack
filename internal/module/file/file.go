@@ -330,14 +330,8 @@ func ensureSymlink(ctx context.Context, conn connector.Connector, src, dst strin
 	return true, nil
 }
 
-// normalizeMode strips leading zeros from a mode string for comparison.
-func normalizeMode(mode string) string {
-	n := strings.TrimLeft(mode, "0")
-	if n == "" {
-		return "0"
-	}
-	return n
-}
+// normalizeMode is a local alias for the shared NormalizeMode helper.
+var normalizeMode = module.NormalizeMode
 
 // ensureMode ensures a path has the correct mode.
 func ensureMode(ctx context.Context, conn connector.Connector, path, mode string, recurse bool) (bool, error) {
@@ -351,9 +345,9 @@ func ensureMode(ctx context.Context, conn connector.Connector, path, mode string
 		}
 	}
 
-	cmd := fmt.Sprintf("chmod %s %s", mode, connector.ShellQuote(path))
+	cmd := fmt.Sprintf("chmod %s %s", connector.ShellQuote(mode), connector.ShellQuote(path))
 	if recurse {
-		cmd = fmt.Sprintf("chmod -R %s %s", mode, connector.ShellQuote(path))
+		cmd = fmt.Sprintf("chmod -R %s %s", connector.ShellQuote(mode), connector.ShellQuote(path))
 	}
 
 	result, err := conn.Execute(ctx, cmd)
@@ -392,9 +386,9 @@ func ensureOwnership(ctx context.Context, conn connector.Connector, path, owner,
 		}
 	}
 
-	cmd := fmt.Sprintf("chown %s %s", ownership, connector.ShellQuote(path))
+	cmd := fmt.Sprintf("chown %s %s", connector.ShellQuote(ownership), connector.ShellQuote(path))
 	if recurse {
-		cmd = fmt.Sprintf("chown -R %s %s", ownership, connector.ShellQuote(path))
+		cmd = fmt.Sprintf("chown -R %s %s", connector.ShellQuote(ownership), connector.ShellQuote(path))
 	}
 
 	result, err := conn.Execute(ctx, cmd)

@@ -786,7 +786,7 @@ func (e *Executor) planTasks(ctx context.Context, pctx *PlayContext, tasks []*pl
 		if len(task.Loop) > 0 {
 			loopVar := task.GetLoopVar()
 			pctx.Vars[loopVar] = task.Loop[0]
-			// Clean up after this iteration (deferred cleanup at end of loop body)
+			// Clean up after param interpolation below
 		}
 
 		// Resolve params for plan display

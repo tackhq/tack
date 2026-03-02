@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // GetString extracts a string parameter with a default value.
@@ -112,6 +113,16 @@ func ResolveRolePath(src string, params map[string]any, subdir string) string {
 		}
 	}
 	return src
+}
+
+// NormalizeMode strips leading zeros from a mode string for comparison.
+// For example, "0644" and "644" both normalize to "644".
+func NormalizeMode(mode string) string {
+	n := strings.TrimLeft(mode, "0")
+	if n == "" {
+		return "0"
+	}
+	return n
 }
 
 // GetMap extracts a map parameter with a default empty map.
