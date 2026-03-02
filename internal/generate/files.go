@@ -58,7 +58,7 @@ func (c *FileCollector) Collect(ctx context.Context, conn connector.Connector, p
 				Name:   fmt.Sprintf("Symlink %s", path),
 				Module: "file",
 				Params: map[string]any{
-					"dest":  path,
+					"path":  path,
 					"src":   target,
 					"state": "link",
 				},
@@ -71,7 +71,7 @@ func (c *FileCollector) Collect(ctx context.Context, conn connector.Connector, p
 				Name:   fmt.Sprintf("Ensure directory %s", path),
 				Module: "file",
 				Params: map[string]any{
-					"dest":  path,
+					"path":  path,
 					"state": "directory",
 					"mode":  fmt.Sprintf("0%s", mode),
 					"owner": owner,

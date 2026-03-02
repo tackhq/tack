@@ -192,8 +192,10 @@ func (c *Connector) Execute(ctx context.Context, cmd string) (*connector.Result,
 	for {
 		select {
 		case <-ctx.Done():
-			// Best-effort cancel
-			_, _ = c.ssmClient.CancelCommand(ctx, &ssm.CancelCommandInput{
+			// Best-effort cancel with a fresh context
+			cancelCtx, cancelFn := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancelFn()
+			_, _ = c.ssmClient.CancelCommand(cancelCtx, &ssm.CancelCommandInput{
 				CommandId: aws.String(commandID),
 			})
 			return nil, ctx.Err()

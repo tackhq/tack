@@ -66,11 +66,14 @@ func (m *Module) Run(ctx context.Context, conn connector.Connector, params map[s
 
 	// Update Homebrew if requested
 	if updateHomebrew {
-		if err := runBrewUpdate(ctx, conn); err != nil {
+		updated, err := runBrewUpdate(ctx, conn)
+		if err != nil {
 			return nil, fmt.Errorf("failed to update homebrew: %w", err)
 		}
-		messages = append(messages, "homebrew updated")
-		changed = true
+		if updated {
+			messages = append(messages, "homebrew updated")
+			changed = true
+		}
 	}
 
 	// Upgrade all packages if requested
@@ -176,16 +179,21 @@ func checkHomebrew(ctx context.Context, conn connector.Connector) error {
 	return nil
 }
 
-// runBrewUpdate runs brew update.
-func runBrewUpdate(ctx context.Context, conn connector.Connector) error {
+// runBrewUpdate runs brew update and reports whether anything changed.
+func runBrewUpdate(ctx context.Context, conn connector.Connector) (bool, error) {
 	result, err := conn.Execute(ctx, "brew update")
 	if err != nil {
-		return err
+		return false, err
 	}
 	if result.ExitCode != 0 {
-		return fmt.Errorf("brew update failed: %s", result.Stderr)
+		return false, fmt.Errorf("brew update failed: %s", result.Stderr)
 	}
-	return nil
+	// brew prints "Already up-to-date." when nothing changed
+	output := strings.TrimSpace(result.Stdout)
+	if output == "Already up-to-date." || output == "" {
+		return false, nil
+	}
+	return true, nil
 }
 
 // runBrewUpgradeAll upgrades all installed packages.

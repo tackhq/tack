@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -381,12 +382,16 @@ func formatTaskParams(module string, params map[string]any) []string {
 			}
 		}
 	} else {
-		// Generic fallback: show all params except internal ones
-		for k, v := range params {
-			if strings.HasPrefix(k, "_") {
-				continue
+		// Generic fallback: show all params except internal ones (sorted for determinism)
+		paramKeys := make([]string, 0, len(params))
+		for k := range params {
+			if !strings.HasPrefix(k, "_") {
+				paramKeys = append(paramKeys, k)
 			}
-			lines = append(lines, fmt.Sprintf("%s: %s", k, truncateParamValue(v)))
+		}
+		sort.Strings(paramKeys)
+		for _, k := range paramKeys {
+			lines = append(lines, fmt.Sprintf("%s: %s", k, truncateParamValue(params[k])))
 		}
 	}
 

@@ -3,6 +3,7 @@ package playbook
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -220,8 +221,15 @@ func summarizeParams(params map[string]any) string {
 		return "{}"
 	}
 
+	keys := make([]string, 0, len(params))
+	for k := range params {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
 	var parts []string
-	for k, v := range params {
+	for _, k := range keys {
+		v := params[k]
 		switch val := v.(type) {
 		case string:
 			if len(val) > 30 {

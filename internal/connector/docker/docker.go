@@ -162,8 +162,12 @@ func (c *Connector) Upload(ctx context.Context, src io.Reader, dst string, mode 
 
 	// Set permissions inside container
 	chmodCmd := fmt.Sprintf("chmod %o %s", mode, dst)
-	if _, err := c.Execute(ctx, chmodCmd); err != nil {
+	chmodResult, err := c.Execute(ctx, chmodCmd)
+	if err != nil {
 		return fmt.Errorf("failed to set file permissions in container: %w", err)
+	}
+	if chmodResult.ExitCode != 0 {
+		return fmt.Errorf("failed to set file permissions in container: %s", chmodResult.Stderr)
 	}
 
 	return nil
