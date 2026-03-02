@@ -226,6 +226,9 @@ func getInstalledPackages(ctx context.Context, conn connector.Connector, cask bo
 	if err != nil {
 		return nil, err
 	}
+	if result.ExitCode != 0 {
+		return nil, fmt.Errorf("brew list failed: %s", result.Stderr)
+	}
 
 	installed := make(map[string]bool)
 	for _, line := range strings.Split(result.Stdout, "\n") {
@@ -336,6 +339,9 @@ func getOutdatedPackages(ctx context.Context, conn connector.Connector, cask boo
 	result, err := conn.Execute(ctx, cmd)
 	if err != nil {
 		return nil, err
+	}
+	if result.ExitCode != 0 {
+		return nil, fmt.Errorf("brew outdated failed: %s", result.Stderr)
 	}
 
 	outdated := make(map[string]bool)

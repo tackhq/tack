@@ -336,7 +336,7 @@ func getPackageStates(ctx context.Context, conn connector.Connector, names []str
 
 	// Check for upgradable packages
 	result, err = conn.Execute(ctx, "apt list --upgradable 2>/dev/null | tail -n +2")
-	if err == nil {
+	if err == nil && result.ExitCode == 0 {
 		for _, line := range strings.Split(result.Stdout, "\n") {
 			// Format: package/source version [upgradable from: version]
 			if idx := strings.Index(line, "/"); idx > 0 {

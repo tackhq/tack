@@ -298,11 +298,9 @@ func (o *Output) DisplayPlan(tasks []PlannedTask, dryRun bool) {
 	if noChange > 0 {
 		summaryParts = append(summaryParts, fmt.Sprintf("%d ok", noChange))
 	}
-	if alwaysRuns > 0 {
-		summaryParts = append(summaryParts, fmt.Sprintf("%d to run", alwaysRuns))
-	}
-	if willRun > 0 {
-		summaryParts = append(summaryParts, fmt.Sprintf("%d to run", willRun))
+	toRun := alwaysRuns + willRun
+	if toRun > 0 {
+		summaryParts = append(summaryParts, fmt.Sprintf("%d to run", toRun))
 	}
 	if conditional > 0 {
 		summaryParts = append(summaryParts, fmt.Sprintf("%d conditional", conditional))

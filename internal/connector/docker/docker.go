@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 
 	"github.com/eugenetaranov/bolt/internal/connector"
@@ -121,9 +122,14 @@ func (c *Connector) buildExecArgs(cmd string) []string {
 		args = append(args, "-w", c.workdir)
 	}
 
-	// Add environment variables
-	for k, v := range c.env {
-		args = append(args, "-e", fmt.Sprintf("%s=%s", k, v))
+	// Add environment variables (sorted for deterministic output)
+	envKeys := make([]string, 0, len(c.env))
+	for k := range c.env {
+		envKeys = append(envKeys, k)
+	}
+	sort.Strings(envKeys)
+	for _, k := range envKeys {
+		args = append(args, "-e", fmt.Sprintf("%s=%s", k, c.env[k]))
 	}
 
 	// Add container and command
@@ -161,7 +167,7 @@ func (c *Connector) Upload(ctx context.Context, src io.Reader, dst string, mode 
 	}
 
 	// Set permissions inside container
-	chmodCmd := fmt.Sprintf("chmod %o %s", mode, dst)
+	chmodCmd := fmt.Sprintf("chmod %o %s", mode, connector.ShellQuote(dst))
 	chmodResult, err := c.Execute(ctx, chmodCmd)
 	if err != nil {
 		return fmt.Errorf("failed to set file permissions in container: %w", err)
