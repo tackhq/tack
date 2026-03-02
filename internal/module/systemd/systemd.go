@@ -266,7 +266,7 @@ func runDaemonReload(ctx context.Context, conn connector.Connector) error {
 }
 
 func runSystemctl(ctx context.Context, conn connector.Connector, action, unit string) error {
-	cmd := fmt.Sprintf("systemctl %s %s", action, module.ShellQuote(unit))
+	cmd := fmt.Sprintf("systemctl %s %s", action, connector.ShellQuote(unit))
 	result, err := conn.Execute(ctx, cmd)
 	if err != nil {
 		return fmt.Errorf("failed to %s %s: %w", action, unit, err)
@@ -278,7 +278,7 @@ func runSystemctl(ctx context.Context, conn connector.Connector, action, unit st
 }
 
 func isActive(ctx context.Context, conn connector.Connector, unit string) (bool, error) {
-	cmd := fmt.Sprintf("systemctl is-active %s", module.ShellQuote(unit))
+	cmd := fmt.Sprintf("systemctl is-active %s", connector.ShellQuote(unit))
 	result, err := conn.Execute(ctx, cmd)
 	if err != nil {
 		return false, err
@@ -287,7 +287,7 @@ func isActive(ctx context.Context, conn connector.Connector, unit string) (bool,
 }
 
 func isEnabled(ctx context.Context, conn connector.Connector, unit string) (bool, error) {
-	cmd := fmt.Sprintf("systemctl is-enabled %s", module.ShellQuote(unit))
+	cmd := fmt.Sprintf("systemctl is-enabled %s", connector.ShellQuote(unit))
 	result, err := conn.Execute(ctx, cmd)
 	if err != nil {
 		return false, err
@@ -296,7 +296,7 @@ func isEnabled(ctx context.Context, conn connector.Connector, unit string) (bool
 }
 
 func isMasked(ctx context.Context, conn connector.Connector, unit string) (bool, error) {
-	cmd := fmt.Sprintf("systemctl is-enabled %s", module.ShellQuote(unit))
+	cmd := fmt.Sprintf("systemctl is-enabled %s", connector.ShellQuote(unit))
 	result, err := conn.Execute(ctx, cmd)
 	if err != nil {
 		return false, err

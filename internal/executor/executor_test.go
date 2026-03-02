@@ -209,7 +209,7 @@ func TestApplyOverrides_SSMRegionAndBucket(t *testing.T) {
 	}
 	play := &playbook.Play{Vars: make(map[string]any)}
 
-	exec.applyOverrides(play)
+	exec.ApplyOverrides(play)
 
 	if got, ok := play.Vars["bolt_ssm_region"].(string); !ok || got != "us-west-2" {
 		t.Errorf("bolt_ssm_region = %v, want us-west-2", play.Vars["bolt_ssm_region"])
@@ -230,7 +230,7 @@ func TestApplyOverrides_SSMInstances(t *testing.T) {
 		Vars:       make(map[string]any),
 	}
 
-	exec.applyOverrides(play)
+	exec.ApplyOverrides(play)
 
 	if len(play.Hosts) != 2 || play.Hosts[0] != "i-aaa" || play.Hosts[1] != "i-bbb" {
 		t.Errorf("Hosts = %v, want [i-aaa i-bbb]", play.Hosts)
@@ -248,7 +248,7 @@ func TestApplyOverrides_SSMTags(t *testing.T) {
 		Vars:       make(map[string]any),
 	}
 
-	exec.applyOverrides(play)
+	exec.ApplyOverrides(play)
 
 	tags, ok := play.Vars["bolt_ssm_tags"].(map[string]string)
 	if !ok {
@@ -271,7 +271,7 @@ func TestApplyOverrides_SSMInstancesPreferredOverTags(t *testing.T) {
 		Vars:       make(map[string]any),
 	}
 
-	exec.applyOverrides(play)
+	exec.ApplyOverrides(play)
 
 	// Instances should be set, tags should NOT be (instances take priority)
 	if len(play.Hosts) != 1 || play.Hosts[0] != "i-explicit" {
@@ -294,7 +294,7 @@ func TestApplyOverrides_SSMSkippedForNonSSM(t *testing.T) {
 		Vars:       make(map[string]any),
 	}
 
-	exec.applyOverrides(play)
+	exec.ApplyOverrides(play)
 
 	// SSM instances/tags should not populate hosts for non-SSM connections
 	if len(play.Hosts) != 0 {
@@ -314,7 +314,7 @@ func TestApplyOverrides_SSMDoesNotOverrideExistingHosts(t *testing.T) {
 		Vars:       make(map[string]any),
 	}
 
-	exec.applyOverrides(play)
+	exec.ApplyOverrides(play)
 
 	// Hosts from --hosts override should be used, SSMInstances should not override
 	if len(play.Hosts) != 1 || play.Hosts[0] != "i-from-hosts" {

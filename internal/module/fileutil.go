@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/eugenetaranov/bolt/internal/connector"
 )
@@ -28,7 +29,7 @@ func GetRemoteChecksum(ctx context.Context, conn connector.Connector, path strin
 		fi
 	else
 		echo "NO_FILE"
-	fi`, ShellQuote(path))
+	fi`, connector.ShellQuote(path))
 
 	result, err := conn.Execute(ctx, cmd)
 	if err != nil {
@@ -63,7 +64,7 @@ func ParseMode(mode string) (uint32, error) {
 
 // GetFileAttributes returns the mode, owner, and group of a file.
 func GetFileAttributes(ctx context.Context, conn connector.Connector, path string) (mode, owner, group string, err error) {
-	cmd := fmt.Sprintf(`stat -c '%%a %%U %%G' %[1]s 2>/dev/null || stat -f '%%Lp %%Su %%Sg' %[1]s`, ShellQuote(path))
+	cmd := fmt.Sprintf(`stat -c '%%a %%U %%G' %[1]s 2>/dev/null || stat -f '%%Lp %%Su %%Sg' %[1]s`, connector.ShellQuote(path))
 
 	result, err := conn.Execute(ctx, cmd)
 	if err != nil {
@@ -96,7 +97,7 @@ func EnsureAttributes(ctx context.Context, conn connector.Connector, path, mode,
 	}
 
 	if mode != "" && currentMode != mode {
-		result, err := conn.Execute(ctx, fmt.Sprintf("chmod %s %s", mode, ShellQuote(path)))
+		result, err := conn.Execute(ctx, fmt.Sprintf("chmod %s %s", mode, connector.ShellQuote(path)))
 		if err != nil {
 			return false, fmt.Errorf("failed to set mode: %w", err)
 		}
@@ -119,7 +120,7 @@ func EnsureAttributes(ctx context.Context, conn connector.Connector, path, mode,
 			ownership = fmt.Sprintf(":%s", group)
 		}
 
-		result, err := conn.Execute(ctx, fmt.Sprintf("chown %s %s", ownership, ShellQuote(path)))
+		result, err := conn.Execute(ctx, fmt.Sprintf("chown %s %s", ownership, connector.ShellQuote(path)))
 		if err != nil {
 			return false, fmt.Errorf("failed to set ownership: %w", err)
 		}
@@ -149,4 +150,19 @@ func CheckAttributes(ctx context.Context, conn connector.Connector, path, mode, 
 		return true, nil
 	}
 	return false, nil
+}
+
+// CreateBackup creates a timestamped backup of a file.
+func CreateBackup(ctx context.Context, conn connector.Connector, path string) error {
+	timestamp := time.Now().Format("20060102150405")
+	backupPath := fmt.Sprintf("%s.%s.bak", path, timestamp)
+
+	result, err := conn.Execute(ctx, fmt.Sprintf("cp -p %s %s", connector.ShellQuote(path), connector.ShellQuote(backupPath)))
+	if err != nil {
+		return err
+	}
+	if result.ExitCode != 0 {
+		return fmt.Errorf("backup failed: %s", result.Stderr)
+	}
+	return nil
 }

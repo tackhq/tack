@@ -79,7 +79,7 @@ func (m *Module) Run(ctx context.Context, conn connector.Connector, params map[s
 
 	// Update cache if requested (don't count as a change when packages are
 	// the main operation — cache update is just a prerequisite step).
-	names := getPackageNames(params)
+	names := module.GetStringSlice(params, "name")
 	if updateCache {
 		updated, err := runAptUpdate(ctx, conn, cacheValidTime)
 		if err != nil {
@@ -399,7 +399,7 @@ func installDebFile(ctx context.Context, conn connector.Connector, path string) 
 	localPath := path
 	if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
 		localPath = "/tmp/bolt-pkg.deb"
-		cmd := fmt.Sprintf("curl -fsSL -o %s %s", module.ShellQuote(localPath), module.ShellQuote(path))
+		cmd := fmt.Sprintf("curl -fsSL -o %s %s", connector.ShellQuote(localPath), connector.ShellQuote(path))
 		result, err := conn.Execute(ctx, cmd)
 		if err != nil {
 			return false, fmt.Errorf("failed to download deb file: %w", err)
@@ -411,7 +411,7 @@ func installDebFile(ctx context.Context, conn connector.Connector, path string) 
 
 	// Install the .deb file
 	cmd := fmt.Sprintf("DEBIAN_FRONTEND=noninteractive dpkg -i %s || apt-get install -f -y -qq",
-		module.ShellQuote(localPath))
+		connector.ShellQuote(localPath))
 	result, err := conn.Execute(ctx, cmd)
 	if err != nil {
 		return false, fmt.Errorf("failed to install deb file: %w", err)
@@ -436,40 +436,6 @@ func runAutoremove(ctx context.Context, conn connector.Connector) (bool, error) 
 	return strings.Contains(result.Stdout, "Removing") || strings.Contains(result.Stderr, "Removing"), nil
 }
 
-// getPackageNames extracts package names from params.
-func getPackageNames(params map[string]any) []string {
-	v, ok := params["name"]
-	if !ok {
-		return nil
-	}
-
-	// Single string
-	if s, ok := v.(string); ok {
-		if s == "" {
-			return nil
-		}
-		return []string{s}
-	}
-
-	// Slice of any
-	if slice, ok := v.([]any); ok {
-		var names []string
-		for _, item := range slice {
-			if s, ok := item.(string); ok && s != "" {
-				names = append(names, s)
-			}
-		}
-		return names
-	}
-
-	// String slice
-	if slice, ok := v.([]string); ok {
-		return slice
-	}
-
-	return nil
-}
-
 // Check determines whether the apt module would make changes without applying them.
 func (m *Module) Check(ctx context.Context, conn connector.Connector, params map[string]any) (*module.CheckResult, error) {
 	if err := checkApt(ctx, conn); err != nil {
@@ -486,7 +452,7 @@ func (m *Module) Check(ctx context.Context, conn connector.Connector, params map
 		return module.UncertainChange("upgrade always runs"), nil
 	}
 
-	names := getPackageNames(params)
+	names := module.GetStringSlice(params, "name")
 	if len(names) == 0 {
 		if updateCache {
 			return module.UncertainChange("update_cache always runs"), nil

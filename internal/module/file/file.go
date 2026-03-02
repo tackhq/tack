@@ -204,7 +204,7 @@ func getFileInfo(ctx context.Context, conn connector.Connector, path string) (*f
 		echo "$type:$linktarget"
 	else
 		echo "NOTEXIST"
-	fi`, module.ShellQuote(path))
+	fi`, connector.ShellQuote(path))
 
 	result, err := conn.Execute(ctx, cmd)
 	if err != nil {
@@ -255,9 +255,9 @@ func getFileInfo(ctx context.Context, conn connector.Connector, path string) (*f
 
 // createDirectory creates a directory with optional mode.
 func createDirectory(ctx context.Context, conn connector.Connector, path, mode string) error {
-	cmd := fmt.Sprintf("mkdir -p %s", module.ShellQuote(path))
+	cmd := fmt.Sprintf("mkdir -p %s", connector.ShellQuote(path))
 	if mode != "" {
-		cmd = fmt.Sprintf("mkdir -p -m %s %s", mode, module.ShellQuote(path))
+		cmd = fmt.Sprintf("mkdir -p -m %s %s", mode, connector.ShellQuote(path))
 	}
 
 	result, err := conn.Execute(ctx, cmd)
@@ -272,7 +272,7 @@ func createDirectory(ctx context.Context, conn connector.Connector, path, mode s
 
 // touchFile creates an empty file or updates its timestamp.
 func touchFile(ctx context.Context, conn connector.Connector, path string) error {
-	result, err := conn.Execute(ctx, fmt.Sprintf("touch %s", module.ShellQuote(path)))
+	result, err := conn.Execute(ctx, fmt.Sprintf("touch %s", connector.ShellQuote(path)))
 	if err != nil {
 		return fmt.Errorf("failed to touch file: %w", err)
 	}
@@ -284,9 +284,9 @@ func touchFile(ctx context.Context, conn connector.Connector, path string) error
 
 // removePath removes a file or directory.
 func removePath(ctx context.Context, conn connector.Connector, path string, isDir bool) error {
-	cmd := fmt.Sprintf("rm -f %s", module.ShellQuote(path))
+	cmd := fmt.Sprintf("rm -f %s", connector.ShellQuote(path))
 	if isDir {
-		cmd = fmt.Sprintf("rm -rf %s", module.ShellQuote(path))
+		cmd = fmt.Sprintf("rm -rf %s", connector.ShellQuote(path))
 	}
 
 	result, err := conn.Execute(ctx, cmd)
@@ -319,7 +319,7 @@ func ensureSymlink(ctx context.Context, conn connector.Connector, src, dst strin
 	}
 
 	// Create symlink
-	result, err := conn.Execute(ctx, fmt.Sprintf("ln -s %s %s", module.ShellQuote(src), module.ShellQuote(dst)))
+	result, err := conn.Execute(ctx, fmt.Sprintf("ln -s %s %s", connector.ShellQuote(src), connector.ShellQuote(dst)))
 	if err != nil {
 		return false, fmt.Errorf("failed to create symlink: %w", err)
 	}
@@ -350,9 +350,9 @@ func ensureMode(ctx context.Context, conn connector.Connector, path, mode string
 		}
 	}
 
-	cmd := fmt.Sprintf("chmod %s %s", mode, module.ShellQuote(path))
+	cmd := fmt.Sprintf("chmod %s %s", mode, connector.ShellQuote(path))
 	if recurse {
-		cmd = fmt.Sprintf("chmod -R %s %s", mode, module.ShellQuote(path))
+		cmd = fmt.Sprintf("chmod -R %s %s", mode, connector.ShellQuote(path))
 	}
 
 	result, err := conn.Execute(ctx, cmd)
@@ -391,9 +391,9 @@ func ensureOwnership(ctx context.Context, conn connector.Connector, path, owner,
 		}
 	}
 
-	cmd := fmt.Sprintf("chown %s %s", ownership, module.ShellQuote(path))
+	cmd := fmt.Sprintf("chown %s %s", ownership, connector.ShellQuote(path))
 	if recurse {
-		cmd = fmt.Sprintf("chown -R %s %s", ownership, module.ShellQuote(path))
+		cmd = fmt.Sprintf("chown -R %s %s", ownership, connector.ShellQuote(path))
 	}
 
 	result, err := conn.Execute(ctx, cmd)
