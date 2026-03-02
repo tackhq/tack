@@ -70,61 +70,15 @@ func (m *Module) Run(ctx context.Context, conn connector.Connector, params map[s
 		return nil, fmt.Errorf("failed to render template: %w", err)
 	}
 
-	// Calculate checksum of rendered content
-	srcChecksum := module.Checksum(renderedContent)
-
-	// Check if destination exists and compare checksums
-	destExists, destChecksum, err := module.GetRemoteChecksum(ctx, conn, dest)
-	if err != nil {
-		return nil, fmt.Errorf("failed to check destination: %w", err)
-	}
-
-	// If destination exists with same content, check if we need to update mode/owner
-	if destExists && srcChecksum == destChecksum {
-		// File content matches, check attributes
-		attrChanged, err := module.EnsureAttributes(ctx, conn, dest, mode, owner, group)
-		if err != nil {
-			return nil, err
-		}
-		if attrChanged {
-			return module.Changed("attributes updated"), nil
-		}
-		return module.Unchanged("template already rendered with correct content and attributes"), nil
-	}
-
-	// Create backup if needed
-	if destExists && backup {
-		if err := module.CreateBackup(ctx, conn, dest); err != nil {
-			return nil, fmt.Errorf("failed to create backup: %w", err)
-		}
-	}
-
-	// Upload the rendered content
-	modeInt, err := module.ParseMode(mode)
-	if err != nil {
-		return nil, fmt.Errorf("invalid mode: %w", err)
-	}
-
-	if err := conn.Upload(ctx, bytes.NewReader(renderedContent), dest, modeInt); err != nil {
-		return nil, fmt.Errorf("failed to upload rendered template: %w", err)
-	}
-
-	// Set attributes
-	if _, err := module.EnsureAttributes(ctx, conn, dest, mode, owner, group); err != nil {
-		return nil, err
-	}
-
-	var msg string
-	if destExists {
-		msg = "template updated"
-	} else {
-		msg = "template rendered"
-	}
-
-	return module.ChangedWithData(msg, map[string]any{
-		"dest":     dest,
-		"checksum": srcChecksum,
-	}), nil
+	return module.DeployFile(ctx, conn, module.DeployOpts{
+		Content: renderedContent,
+		Dest:    dest,
+		Mode:    mode,
+		Owner:   owner,
+		Group:   group,
+		Backup:  backup,
+		Label:   "template",
+	})
 }
 
 // renderTemplate renders a Go template with the given variables.
@@ -200,42 +154,7 @@ func (m *Module) Check(ctx context.Context, conn connector.Connector, params map
 		return nil, fmt.Errorf("failed to render template: %w", err)
 	}
 
-	srcChecksum := module.Checksum(renderedContent)
-
-	destExists, destChecksum, err := module.GetRemoteChecksum(ctx, conn, dest)
-	if err != nil {
-		return nil, fmt.Errorf("failed to check destination: %w", err)
-	}
-
-	if !destExists {
-		cr := module.WouldChange("file does not exist")
-		cr.NewChecksum = srcChecksum
-		cr.NewContent = string(renderedContent)
-		return cr, nil
-	}
-
-	if srcChecksum != destChecksum {
-		cr := module.WouldChange("content differs")
-		cr.OldChecksum = destChecksum
-		cr.NewChecksum = srcChecksum
-		cr.NewContent = string(renderedContent)
-		// Fetch old content for diff
-		result, err := conn.Execute(ctx, fmt.Sprintf("cat %s", connector.ShellQuote(dest)))
-		if err == nil && result.ExitCode == 0 {
-			cr.OldContent = result.Stdout
-		}
-		return cr, nil
-	}
-
-	attrDiffer, err := module.CheckAttributes(ctx, conn, dest, mode, owner, group)
-	if err != nil {
-		return nil, err
-	}
-	if attrDiffer {
-		return module.WouldChange("attributes differ"), nil
-	}
-
-	return module.NoChange("template already rendered with correct content and attributes"), nil
+	return module.CheckDeployFile(ctx, conn, renderedContent, dest, mode, owner, group)
 }
 
 // Ensure Module implements the module.Module interface.

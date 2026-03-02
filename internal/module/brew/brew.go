@@ -169,11 +169,7 @@ func (m *Module) Run(ctx context.Context, conn connector.Connector, params map[s
 
 // checkHomebrew verifies that Homebrew is installed.
 func checkHomebrew(ctx context.Context, conn connector.Connector) error {
-	result, err := conn.Execute(ctx, "command -v brew")
-	if err != nil {
-		return fmt.Errorf("failed to check for homebrew: %w", err)
-	}
-	if result.ExitCode != 0 {
+	if _, err := connector.Run(ctx, conn, "command -v brew"); err != nil {
 		return fmt.Errorf("homebrew is not installed")
 	}
 	return nil
@@ -181,12 +177,9 @@ func checkHomebrew(ctx context.Context, conn connector.Connector) error {
 
 // runBrewUpdate runs brew update and reports whether anything changed.
 func runBrewUpdate(ctx context.Context, conn connector.Connector) (bool, error) {
-	result, err := conn.Execute(ctx, "brew update")
+	result, err := connector.Run(ctx, conn, "brew update")
 	if err != nil {
-		return false, err
-	}
-	if result.ExitCode != 0 {
-		return false, fmt.Errorf("brew update failed: %s", result.Stderr)
+		return false, fmt.Errorf("brew update failed: %w", err)
 	}
 	// brew prints "Already up-to-date." when nothing changed
 	output := strings.TrimSpace(result.Stdout)
@@ -203,12 +196,9 @@ func runBrewUpgradeAll(ctx context.Context, conn connector.Connector, cask bool)
 		cmd = "brew upgrade --cask"
 	}
 
-	result, err := conn.Execute(ctx, cmd)
+	result, err := connector.Run(ctx, conn, cmd)
 	if err != nil {
-		return false, err
-	}
-	if result.ExitCode != 0 {
-		return false, fmt.Errorf("brew upgrade failed: %s", result.Stderr)
+		return false, fmt.Errorf("brew upgrade failed: %w", err)
 	}
 
 	// Check if anything was upgraded (output contains package names)
@@ -222,12 +212,9 @@ func getInstalledPackages(ctx context.Context, conn connector.Connector, cask bo
 		cmd = "brew list --cask -1"
 	}
 
-	result, err := conn.Execute(ctx, cmd)
+	result, err := connector.Run(ctx, conn, cmd)
 	if err != nil {
-		return nil, err
-	}
-	if result.ExitCode != 0 {
-		return nil, fmt.Errorf("brew list failed: %s", result.Stderr)
+		return nil, fmt.Errorf("brew list failed: %w", err)
 	}
 
 	installed := make(map[string]bool)
@@ -256,12 +243,8 @@ func installPackages(ctx context.Context, conn connector.Connector, names []stri
 		cmd += " " + connector.ShellQuote(name)
 	}
 
-	result, err := conn.Execute(ctx, cmd)
-	if err != nil {
-		return fmt.Errorf("failed to install packages: %w", err)
-	}
-	if result.ExitCode != 0 {
-		return fmt.Errorf("brew install failed: %s", result.Stderr)
+	if _, err := connector.Run(ctx, conn, cmd); err != nil {
+		return fmt.Errorf("brew install failed: %w", err)
 	}
 
 	return nil
@@ -278,12 +261,8 @@ func removePackages(ctx context.Context, conn connector.Connector, names []strin
 		cmd += " " + connector.ShellQuote(name)
 	}
 
-	result, err := conn.Execute(ctx, cmd)
-	if err != nil {
-		return fmt.Errorf("failed to remove packages: %w", err)
-	}
-	if result.ExitCode != 0 {
-		return fmt.Errorf("brew uninstall failed: %s", result.Stderr)
+	if _, err := connector.Run(ctx, conn, cmd); err != nil {
+		return fmt.Errorf("brew uninstall failed: %w", err)
 	}
 
 	return nil
@@ -318,12 +297,8 @@ func upgradePackages(ctx context.Context, conn connector.Connector, names []stri
 		cmd += " " + connector.ShellQuote(name)
 	}
 
-	result, err := conn.Execute(ctx, cmd)
-	if err != nil {
-		return nil, fmt.Errorf("failed to upgrade packages: %w", err)
-	}
-	if result.ExitCode != 0 {
-		return nil, fmt.Errorf("brew upgrade failed: %s", result.Stderr)
+	if _, err := connector.Run(ctx, conn, cmd); err != nil {
+		return nil, fmt.Errorf("brew upgrade failed: %w", err)
 	}
 
 	return toUpgrade, nil
@@ -336,12 +311,9 @@ func getOutdatedPackages(ctx context.Context, conn connector.Connector, cask boo
 		cmd = "brew outdated --cask -q"
 	}
 
-	result, err := conn.Execute(ctx, cmd)
+	result, err := connector.Run(ctx, conn, cmd)
 	if err != nil {
-		return nil, err
-	}
-	if result.ExitCode != 0 {
-		return nil, fmt.Errorf("brew outdated failed: %s", result.Stderr)
+		return nil, fmt.Errorf("brew outdated failed: %w", err)
 	}
 
 	outdated := make(map[string]bool)

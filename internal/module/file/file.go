@@ -141,27 +141,15 @@ func (m *Module) Run(ctx context.Context, conn connector.Connector, params map[s
 		}
 	}
 
-	// Apply mode if specified (and not absent)
-	if state != StateAbsent && mode != "" {
-		modeChanged, err := ensureMode(ctx, conn, path, mode, recurse && state == StateDirectory)
+	// Apply attributes if specified (and not absent)
+	if state != StateAbsent && (mode != "" || owner != "" || group != "") {
+		attrChanged, err := module.EnsureAttributes(ctx, conn, path, mode, owner, group, recurse && state == StateDirectory)
 		if err != nil {
 			return nil, err
 		}
-		if modeChanged {
+		if attrChanged {
 			changed = true
-			messages = append(messages, "mode changed")
-		}
-	}
-
-	// Apply ownership if specified (and not absent)
-	if state != StateAbsent && (owner != "" || group != "") {
-		ownerChanged, err := ensureOwnership(ctx, conn, path, owner, group, recurse && state == StateDirectory)
-		if err != nil {
-			return nil, err
-		}
-		if ownerChanged {
-			changed = true
-			messages = append(messages, "ownership changed")
+			messages = append(messages, "attributes changed")
 		}
 	}
 
@@ -260,24 +248,16 @@ func createDirectory(ctx context.Context, conn connector.Connector, path, mode s
 		cmd = fmt.Sprintf("mkdir -p -m %s %s", mode, connector.ShellQuote(path))
 	}
 
-	result, err := conn.Execute(ctx, cmd)
-	if err != nil {
+	if _, err := connector.Run(ctx, conn, cmd); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
-	}
-	if result.ExitCode != 0 {
-		return fmt.Errorf("failed to create directory: %s", result.Stderr)
 	}
 	return nil
 }
 
 // touchFile creates an empty file or updates its timestamp.
 func touchFile(ctx context.Context, conn connector.Connector, path string) error {
-	result, err := conn.Execute(ctx, fmt.Sprintf("touch %s", connector.ShellQuote(path)))
-	if err != nil {
+	if _, err := connector.Run(ctx, conn, fmt.Sprintf("touch %s", connector.ShellQuote(path))); err != nil {
 		return fmt.Errorf("failed to touch file: %w", err)
-	}
-	if result.ExitCode != 0 {
-		return fmt.Errorf("failed to touch file: %s", result.Stderr)
 	}
 	return nil
 }
@@ -289,12 +269,8 @@ func removePath(ctx context.Context, conn connector.Connector, path string, isDi
 		cmd = fmt.Sprintf("rm -rf %s", connector.ShellQuote(path))
 	}
 
-	result, err := conn.Execute(ctx, cmd)
-	if err != nil {
+	if _, err := connector.Run(ctx, conn, cmd); err != nil {
 		return fmt.Errorf("failed to remove path: %w", err)
-	}
-	if result.ExitCode != 0 {
-		return fmt.Errorf("failed to remove path: %s", result.Stderr)
 	}
 	return nil
 }
@@ -319,84 +295,8 @@ func ensureSymlink(ctx context.Context, conn connector.Connector, src, dst strin
 	}
 
 	// Create symlink
-	result, err := conn.Execute(ctx, fmt.Sprintf("ln -s %s %s", connector.ShellQuote(src), connector.ShellQuote(dst)))
-	if err != nil {
+	if _, err := connector.Run(ctx, conn, fmt.Sprintf("ln -s %s %s", connector.ShellQuote(src), connector.ShellQuote(dst))); err != nil {
 		return false, fmt.Errorf("failed to create symlink: %w", err)
-	}
-	if result.ExitCode != 0 {
-		return false, fmt.Errorf("failed to create symlink: %s", result.Stderr)
-	}
-
-	return true, nil
-}
-
-// normalizeMode is a local alias for the shared NormalizeMode helper.
-var normalizeMode = module.NormalizeMode
-
-// ensureMode ensures a path has the correct mode.
-func ensureMode(ctx context.Context, conn connector.Connector, path, mode string, recurse bool) (bool, error) {
-	// Check current mode before changing
-	if !recurse {
-		info, err := getFileInfo(ctx, conn, path)
-		if err == nil && info.Exists {
-			if normalizeMode(mode) == normalizeMode(info.OctalMode) {
-				return false, nil
-			}
-		}
-	}
-
-	cmd := fmt.Sprintf("chmod %s %s", connector.ShellQuote(mode), connector.ShellQuote(path))
-	if recurse {
-		cmd = fmt.Sprintf("chmod -R %s %s", connector.ShellQuote(mode), connector.ShellQuote(path))
-	}
-
-	result, err := conn.Execute(ctx, cmd)
-	if err != nil {
-		return false, fmt.Errorf("failed to set mode: %w", err)
-	}
-	if result.ExitCode != 0 {
-		return false, fmt.Errorf("failed to set mode: %s", result.Stderr)
-	}
-
-	return true, nil
-}
-
-// ensureOwnership ensures a path has the correct owner and group.
-func ensureOwnership(ctx context.Context, conn connector.Connector, path, owner, group string, recurse bool) (bool, error) {
-	var ownership string
-	if owner != "" && group != "" {
-		ownership = fmt.Sprintf("%s:%s", owner, group)
-	} else if owner != "" {
-		ownership = owner
-	} else if group != "" {
-		ownership = fmt.Sprintf(":%s", group)
-	} else {
-		return false, nil
-	}
-
-	// Check current ownership before changing
-	if !recurse {
-		info, err := getFileInfo(ctx, conn, path)
-		if err == nil && info.Exists {
-			ownerMatch := owner == "" || info.Owner == owner
-			groupMatch := group == "" || info.Group == group
-			if ownerMatch && groupMatch {
-				return false, nil
-			}
-		}
-	}
-
-	cmd := fmt.Sprintf("chown %s %s", connector.ShellQuote(ownership), connector.ShellQuote(path))
-	if recurse {
-		cmd = fmt.Sprintf("chown -R %s %s", connector.ShellQuote(ownership), connector.ShellQuote(path))
-	}
-
-	result, err := conn.Execute(ctx, cmd)
-	if err != nil {
-		return false, fmt.Errorf("failed to set ownership: %w", err)
-	}
-	if result.ExitCode != 0 {
-		return false, fmt.Errorf("failed to set ownership: %s", result.Stderr)
 	}
 
 	return true, nil
@@ -465,16 +365,12 @@ func (m *Module) Check(ctx context.Context, conn connector.Connector, params map
 
 	// Check mode/owner attributes for states that support them
 	if state != StateAbsent && (mode != "" || owner != "" || group != "") {
-		if owner != "" && info.Owner != owner {
-			return module.WouldChange("ownership differs"), nil
+		attrDiffer, err := module.CheckAttributes(ctx, conn, path, mode, owner, group)
+		if err != nil {
+			return nil, err
 		}
-		if group != "" && info.Group != group {
-			return module.WouldChange("group differs"), nil
-		}
-		if mode != "" {
-			if normalizeMode(mode) != normalizeMode(info.OctalMode) {
-				return module.WouldChange(fmt.Sprintf("mode differs: %s → %s", info.OctalMode, normalizeMode(mode))), nil
-			}
+		if attrDiffer {
+			return module.WouldChange("attributes differ"), nil
 		}
 	}
 
