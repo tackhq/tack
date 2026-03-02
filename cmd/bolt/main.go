@@ -142,6 +142,12 @@ func init() {
 	runCmd.Flags().Lookup("sudo-password").NoOptDefVal = ""
 	runCmd.Flags().BoolVar(&autoApprove, "auto-approve", false, "Skip interactive approval prompt (for CI/scripting)")
 	runCmd.Flags().BoolVar(&dryRun, "check", false, "Show plan and exit without applying (alias for --dry-run)")
+
+	// SSM flags
+	runCmd.Flags().StringSlice("ssm-instances", nil, "Instance IDs for SSM (comma-separated)")
+	runCmd.Flags().StringToString("ssm-tags", nil, "EC2 tags for SSM instance discovery (key=value,...)")
+	runCmd.Flags().String("ssm-region", "", "AWS region for SSM")
+	runCmd.Flags().String("ssm-bucket", "", "S3 bucket for SSM file transfer")
 }
 
 func runPlaybook(cmd *cobra.Command, args []string) error {
@@ -652,6 +658,45 @@ func buildConnOverrides(cmd *cobra.Command) (*executor.ConnOverrides, error) {
 		}
 	} else if envPass := os.Getenv("BOLT_SUDO_PASSWORD"); envPass != "" {
 		o.SudoPassword = envPass
+	}
+
+	// SSM: instances
+	if cmd.Flags().Changed("ssm-instances") {
+		o.SSMInstances, _ = cmd.Flags().GetStringSlice("ssm-instances")
+	} else if envInst := os.Getenv("BOLT_SSM_INSTANCES"); envInst != "" {
+		for _, id := range strings.Split(envInst, ",") {
+			id = strings.TrimSpace(id)
+			if id != "" {
+				o.SSMInstances = append(o.SSMInstances, id)
+			}
+		}
+	}
+
+	// SSM: tags
+	if cmd.Flags().Changed("ssm-tags") {
+		o.SSMTags, _ = cmd.Flags().GetStringToString("ssm-tags")
+	} else if envTags := os.Getenv("BOLT_SSM_TAGS"); envTags != "" {
+		o.SSMTags = make(map[string]string)
+		for _, kv := range strings.Split(envTags, ",") {
+			parts := strings.SplitN(kv, "=", 2)
+			if len(parts) == 2 {
+				o.SSMTags[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
+			}
+		}
+	}
+
+	// SSM: region
+	if cmd.Flags().Changed("ssm-region") {
+		o.SSMRegion, _ = cmd.Flags().GetString("ssm-region")
+	} else if envRegion := os.Getenv("BOLT_SSM_REGION"); envRegion != "" {
+		o.SSMRegion = envRegion
+	}
+
+	// SSM: bucket
+	if cmd.Flags().Changed("ssm-bucket") {
+		o.SSMBucket, _ = cmd.Flags().GetString("ssm-bucket")
+	} else if envBucket := os.Getenv("BOLT_SSM_BUCKET"); envBucket != "" {
+		o.SSMBucket = envBucket
 	}
 
 	return o, nil

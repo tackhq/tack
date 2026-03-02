@@ -15,6 +15,7 @@ import (
 	"github.com/eugenetaranov/bolt/internal/connector/docker"
 	"github.com/eugenetaranov/bolt/internal/connector/local"
 	sshconn "github.com/eugenetaranov/bolt/internal/connector/ssh"
+	ssmconn "github.com/eugenetaranov/bolt/internal/connector/ssm"
 	"github.com/eugenetaranov/bolt/internal/module"
 	"github.com/eugenetaranov/bolt/internal/output"
 	"github.com/eugenetaranov/bolt/internal/playbook"
@@ -34,6 +35,10 @@ type ConnOverrides struct {
 	SSHInsecure  bool
 	Sudo         bool
 	SudoPassword string
+	SSMInstances []string
+	SSMTags      map[string]string
+	SSMRegion    string
+	SSMBucket    string
 }
 
 // Executor runs playbooks.
@@ -219,10 +224,40 @@ func (e *Executor) applyOverrides(play *playbook.Play) {
 	if o.SudoPassword != "" {
 		play.Vars["bolt_sudo_password"] = o.SudoPassword
 	}
+
+	// SSM overrides
+	if o.SSMRegion != "" {
+		play.Vars["bolt_ssm_region"] = o.SSMRegion
+	}
+	if o.SSMBucket != "" {
+		play.Vars["bolt_ssm_bucket"] = o.SSMBucket
+	}
+	if play.Connection == "ssm" && len(play.Hosts) == 0 {
+		if len(o.SSMInstances) > 0 {
+			play.Hosts = o.SSMInstances
+		} else if len(o.SSMTags) > 0 {
+			play.Vars["bolt_ssm_tags"] = o.SSMTags
+		}
+	}
 }
 
 // runPlay executes a single play.
 func (e *Executor) runPlay(ctx context.Context, play *playbook.Play, stats *Stats, rolesDir string) error {
+	// SSM tag resolution: if connection is SSM, hosts are empty, and tags are set, resolve now
+	if play.GetConnection() == "ssm" && len(play.Hosts) == 0 {
+		if tagsRaw, ok := play.Vars["bolt_ssm_tags"]; ok {
+			tags, _ := toStringMap(tagsRaw)
+			if len(tags) > 0 {
+				region, _ := play.Vars["bolt_ssm_region"].(string)
+				ids, err := ssmconn.ResolveInstancesByTags(ctx, tags, region)
+				if err != nil {
+					return fmt.Errorf("failed to resolve SSM instances by tags: %w", err)
+				}
+				play.Hosts = ids
+			}
+		}
+	}
+
 	// Validate hosts after overrides have been applied (non-local connections need hosts)
 	if play.GetConnection() != "local" && len(play.Hosts) == 0 {
 		return fmt.Errorf("play is missing 'hosts' (provide via playbook or -c flag)")
@@ -969,7 +1004,20 @@ func (e *Executor) GetConnector(play *playbook.Play, host string) (connector.Con
 		return sshconn.New(sshHost, sshOpts...), nil
 
 	case "ssm":
-		return nil, fmt.Errorf("SSM connector not yet implemented")
+		var ssmOpts []ssmconn.Option
+		if play.Sudo {
+			ssmOpts = append(ssmOpts, ssmconn.WithSudo())
+			if sudoPass != "" {
+				ssmOpts = append(ssmOpts, ssmconn.WithSudoPassword(sudoPass))
+			}
+		}
+		if region, ok := play.Vars["bolt_ssm_region"].(string); ok && region != "" {
+			ssmOpts = append(ssmOpts, ssmconn.WithRegion(region))
+		}
+		if bucket, ok := play.Vars["bolt_ssm_bucket"].(string); ok && bucket != "" {
+			ssmOpts = append(ssmOpts, ssmconn.WithBucket(bucket))
+		}
+		return ssmconn.New(host, ssmOpts...), nil
 
 	default:
 		return nil, fmt.Errorf("unknown connection type: %s", connType)
@@ -1112,4 +1160,21 @@ func allNoChange(tasks []output.PlannedTask) bool {
 		}
 	}
 	return true
+}
+
+// toStringMap converts a value to map[string]string. Supports map[string]string
+// directly or map[string]any with string values (from YAML parsing).
+func toStringMap(v any) (map[string]string, bool) {
+	switch m := v.(type) {
+	case map[string]string:
+		return m, true
+	case map[string]any:
+		result := make(map[string]string, len(m))
+		for k, val := range m {
+			result[k] = fmt.Sprintf("%v", val)
+		}
+		return result, true
+	default:
+		return nil, false
+	}
 }

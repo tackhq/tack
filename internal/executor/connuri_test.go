@@ -78,6 +78,19 @@ func TestParseConnectionURI(t *testing.T) {
 			want:  &ConnOverrides{Connection: "local"},
 		},
 
+		// SSM URIs — SSM targets come from --ssm-instances/--ssm-tags, not the URI path
+		{name: "plain ssm", input: "ssm", want: nil},
+		{
+			name:  "ssm URI bare",
+			input: "ssm://",
+			want:  &ConnOverrides{Connection: "ssm"},
+		},
+		{
+			name:  "ssm URI with path ignored",
+			input: "ssm://i-0abc123",
+			want:  &ConnOverrides{Connection: "ssm"},
+		},
+
 		// Error cases
 		{name: "unsupported scheme", input: "ftp://host", wantErr: "unsupported connection scheme"},
 		{name: "ssh missing host", input: "ssh://", wantErr: "requires a host"},
@@ -184,6 +197,16 @@ func TestMergeConnectionURIs(t *testing.T) {
 			want: &ConnOverrides{
 				Connection: "ssh", Hosts: []string{"web1"},
 			},
+		},
+		{
+			name:  "plain ssm",
+			input: []string{"ssm"},
+			want:  &ConnOverrides{Connection: "ssm"},
+		},
+		{
+			name:    "mixed ssh and ssm error",
+			input:   []string{"ssh://web1", "ssm://"},
+			wantErr: "mixed connection schemes",
 		},
 		{
 			name:    "mixed schemes error",
