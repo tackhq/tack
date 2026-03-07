@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -111,9 +112,12 @@ func init() {
 
 // runCmd executes a playbook
 var runCmd = &cobra.Command{
-	Use:   "run <playbook.yaml>",
-	Short: "Run a playbook",
-	Long: `Execute a playbook against the specified hosts.
+	Use:   "run <playbook.yaml | role-dir>",
+	Short: "Run a playbook or role",
+	Long: `Execute a playbook or role directory against the specified hosts.
+
+If the argument is a directory, it is treated as a role and wrapped in
+a temporary playbook. Connection and host settings come from CLI flags.
 
 Connection flags override playbook values. Environment variables
 (BOLT_CONNECTION, BOLT_HOSTS, BOLT_SSH_USER, BOLT_SSH_PORT,
@@ -185,10 +189,29 @@ func runPlaybook(cmd *cobra.Command, args []string) error {
 	}
 	defer cleanup()
 
-	// Parse playbook
-	pb, err := playbook.ParseFileRaw(playbookPath)
-	if err != nil {
-		return fmt.Errorf("failed to parse playbook: %w", err)
+	// If the path is a directory, treat it as a role
+	var pb *playbook.Playbook
+	if info, statErr := os.Stat(playbookPath); statErr == nil && info.IsDir() {
+		absRole, err := filepath.Abs(playbookPath)
+		if err != nil {
+			return fmt.Errorf("failed to resolve role path: %w", err)
+		}
+		pb = &playbook.Playbook{
+			Path: absRole,
+			Plays: []*playbook.Play{{
+				Name:       fmt.Sprintf("Run role: %s", filepath.Base(absRole)),
+				Hosts:      []string{"localhost"},
+				Connection: "local",
+				Roles:      []string{absRole},
+				Vars:       make(map[string]any),
+			}},
+		}
+	} else {
+		var err error
+		pb, err = playbook.ParseFileRaw(playbookPath)
+		if err != nil {
+			return fmt.Errorf("failed to parse playbook: %w", err)
+		}
 	}
 
 	// Build connection overrides from CLI flags and env vars
