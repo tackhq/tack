@@ -144,6 +144,87 @@ func TestResolve_GitSSH_MissingSeparator(t *testing.T) {
 	}
 }
 
+func TestResolve_GitHubBrowseURL(t *testing.T) {
+	src, err := Resolve("https://github.com/user/repo/tree/main/path/to/role")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gs, ok := src.(*GitSource)
+	if !ok {
+		t.Fatalf("expected GitSource, got %T", src)
+	}
+	if gs.RepoURL != "https://github.com/user/repo.git" {
+		t.Errorf("RepoURL = %q", gs.RepoURL)
+	}
+	if gs.Ref != "main" {
+		t.Errorf("Ref = %q, want main", gs.Ref)
+	}
+	if gs.Path != "path/to/role" {
+		t.Errorf("Path = %q, want path/to/role", gs.Path)
+	}
+}
+
+func TestResolve_GitHubBrowseURL_RepoRoot(t *testing.T) {
+	src, err := Resolve("https://github.com/user/repo/tree/main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gs := src.(*GitSource)
+	if gs.Ref != "main" {
+		t.Errorf("Ref = %q, want main", gs.Ref)
+	}
+	if gs.Path != "." {
+		t.Errorf("Path = %q, want .", gs.Path)
+	}
+}
+
+func TestResolve_GitHubBrowseURL_Blob(t *testing.T) {
+	src, err := Resolve("https://github.com/user/repo/blob/v1.0/playbook.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gs := src.(*GitSource)
+	if gs.RepoURL != "https://github.com/user/repo.git" {
+		t.Errorf("RepoURL = %q", gs.RepoURL)
+	}
+	if gs.Ref != "v1.0" {
+		t.Errorf("Ref = %q, want v1.0", gs.Ref)
+	}
+	if gs.Path != "playbook.yaml" {
+		t.Errorf("Path = %q, want playbook.yaml", gs.Path)
+	}
+}
+
+func TestResolve_GitLabBrowseURL(t *testing.T) {
+	src, err := Resolve("https://gitlab.com/user/repo/tree/develop/roles/web")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gs, ok := src.(*GitSource)
+	if !ok {
+		t.Fatalf("expected GitSource, got %T", src)
+	}
+	if gs.RepoURL != "https://gitlab.com/user/repo.git" {
+		t.Errorf("RepoURL = %q", gs.RepoURL)
+	}
+	if gs.Ref != "develop" {
+		t.Errorf("Ref = %q, want develop", gs.Ref)
+	}
+	if gs.Path != "roles/web" {
+		t.Errorf("Path = %q, want roles/web", gs.Path)
+	}
+}
+
+func TestResolve_NonGitHubHTTPS_StillHTTPSource(t *testing.T) {
+	src, err := Resolve("https://example.com/some/path/tree/main/foo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := src.(*HTTPSource); !ok {
+		t.Fatalf("expected HTTPSource, got %T", src)
+	}
+}
+
 func TestResolve_S3_MissingKey(t *testing.T) {
 	_, err := Resolve("s3://bucket")
 	if err == nil {
