@@ -92,6 +92,8 @@ Bolt supports four connection backends:
 
 SSH connection settings can be provided via playbook vars, CLI flags, or environment variables (`BOLT_SSH_USER`, `BOLT_SSH_PORT`, `BOLT_SSH_KEY`, `BOLT_SSH_PASSWORD`, `BOLT_SSH_INSECURE`). CLI flags take highest precedence, then environment variables, then playbook values.
 
+The connection type is auto-detected when not explicitly set: SSH flags (`--ssh-user`, `--ssh-key`, etc.) or remote `--hosts` values infer `ssh`; SSM flags (`--ssm-instances`, `--ssm-tags`) infer `ssm`. SSH config aliases work directly — `bolt run --hosts myserver role/` resolves `myserver` via `~/.ssh/config`.
+
 ## Playbook Examples
 
 ### Local Machine Setup
@@ -145,7 +147,8 @@ tasks:
 ```bash
 bolt run server-setup.yaml
 bolt run server-setup.yaml --ssh-user deploy --ssh-key ~/.ssh/deploy_key
-bolt run server-setup.yaml --hosts web1,web2,web3
+bolt run server-setup.yaml --hosts web1,web2,web3  # connection: ssh is auto-detected
+bolt run --hosts web1 --ssh-user deploy role/       # run a role directory over SSH
 ```
 
 ### Docker Container
