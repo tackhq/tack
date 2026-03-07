@@ -56,6 +56,9 @@ bolt run git@github.com:user/repo.git//path/to/playbook.yaml
 bolt run git@github.com:user/repo.git@main//path/to/playbook.yaml
 bolt run https://github.com/user/repo.git@v1.0//playbook.yaml
 
+# Paste a GitHub/GitLab browse URL directly
+bolt run https://github.com/user/repo/tree/main/path/to/role
+
 # Run from an HTTP URL or S3
 bolt run https://example.com/playbook.yaml
 bolt run s3://bucket/path/to/playbook.yaml
