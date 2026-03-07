@@ -674,5 +674,14 @@ func buildConnOverrides(cmd *cobra.Command) (*executor.ConnOverrides, error) {
 		o.SSMBucket = envBucket
 	}
 
+	// Infer connection type from protocol-specific flags
+	if o.Connection == "" {
+		if o.SSHUser != "" || o.SSHKey != "" || o.SSHPort != 0 || o.HasSSHPass {
+			o.Connection = "ssh"
+		} else if len(o.SSMInstances) > 0 || len(o.SSMTags) > 0 {
+			o.Connection = "ssm"
+		}
+	}
+
 	return o, nil
 }

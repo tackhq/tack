@@ -431,21 +431,33 @@ func (c *Connector) applyDefaults() {
 }
 
 // buildAuthMethods constructs SSH authentication methods in priority order.
+// When an explicit key file is set, only that key (and password if set) are
+// used — the SSH agent and default key files are skipped so that unrelated
+// agent keys don't consume the server's MaxAuthTries budget.
 func (c *Connector) buildAuthMethods() []ssh.AuthMethod {
 	var methods []ssh.AuthMethod
 	c.authWarnings = nil
 
-	// 1. SSH Agent
-	if agentAuth := c.sshAgentAuth(); agentAuth != nil {
-		methods = append(methods, agentAuth)
+	if c.keyFile != "" {
+		// Explicit key — use only this key, skip agent and defaults.
+		path := expandPath(c.keyFile)
+		signer, err := loadKey(path)
+		if err != nil {
+			c.authWarnings = append(c.authWarnings, fmt.Sprintf("key %s: %v", path, err))
+		} else if signer != nil {
+			methods = append(methods, ssh.PublicKeys(signer))
+		}
+	} else {
+		// No explicit key — try agent, then default key files.
+		if agentAuth := c.sshAgentAuth(); agentAuth != nil {
+			methods = append(methods, agentAuth)
+		}
+		if keyAuth := c.keyFileAuth(); keyAuth != nil {
+			methods = append(methods, keyAuth)
+		}
 	}
 
-	// 2. Key files
-	if keyAuth := c.keyFileAuth(); keyAuth != nil {
-		methods = append(methods, keyAuth)
-	}
-
-	// 3. Password
+	// Password auth (always available if set)
 	if c.password != "" {
 		methods = append(methods, ssh.Password(c.password))
 	}
@@ -478,22 +490,10 @@ func (c *Connector) sshAgentAuth() ssh.AuthMethod {
 	return ssh.PublicKeysCallback(agentClient.Signers)
 }
 
-// keyFileAuth returns a public key auth method from key files.
+// keyFileAuth returns a public key auth method from default key files.
 func (c *Connector) keyFileAuth() ssh.AuthMethod {
 	var signers []ssh.Signer
 
-	// Try explicit key file first
-	if c.keyFile != "" {
-		path := expandPath(c.keyFile)
-		signer, err := loadKey(path)
-		if err != nil {
-			c.authWarnings = append(c.authWarnings, fmt.Sprintf("key %s: %v", path, err))
-		} else if signer != nil {
-			signers = append(signers, signer)
-		}
-	}
-
-	// Try default key files
 	sshDir := filepath.Join(homeDir(), ".ssh")
 	for _, name := range defaultKeyFiles {
 		path := filepath.Join(sshDir, name)
