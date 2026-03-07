@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -680,8 +681,26 @@ func buildConnOverrides(cmd *cobra.Command) (*executor.ConnOverrides, error) {
 			o.Connection = "ssh"
 		} else if len(o.SSMInstances) > 0 || len(o.SSMTags) > 0 {
 			o.Connection = "ssm"
+		} else if len(o.Hosts) > 0 && !isLocalHost(o.Hosts) {
+			o.Connection = "ssh"
 		}
 	}
 
 	return o, nil
+}
+
+// isLocalHost returns true when every entry in hosts resolves to localhost.
+func isLocalHost(hosts []string) bool {
+	for _, h := range hosts {
+		// Strip port if present
+		if host, _, err := net.SplitHostPort(h); err == nil {
+			h = host
+		}
+		switch strings.ToLower(h) {
+		case "localhost", "127.0.0.1", "::1":
+		default:
+			return false
+		}
+	}
+	return true
 }
