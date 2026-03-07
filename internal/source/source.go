@@ -5,6 +5,7 @@ package source
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"strings"
 )
 
@@ -24,6 +25,8 @@ func Resolve(ref string) (Source, error) {
 		return parseS3Source(ref)
 	case (strings.HasPrefix(ref, "https://") || strings.HasPrefix(ref, "http://")) && strings.Contains(ref, ".git"):
 		return parseGitSource(ref)
+	case isGitHubURL(ref):
+		return parseGitHubURL(ref)
 	case strings.HasPrefix(ref, "https://") || strings.HasPrefix(ref, "http://"):
 		return parseHTTPSource(ref)
 	default:
@@ -86,4 +89,41 @@ func splitRepoRef(repo string) (string, string) {
 		return repo[:gitIdx+4], rest[1:]
 	}
 	return repo, ""
+}
+
+// isGitHubURL checks if the URL is a GitHub or GitLab browse URL
+// matching the pattern: https://<host>/<owner>/<repo>/(tree|blob)/<ref>/...
+func isGitHubURL(ref string) bool {
+	u, err := url.Parse(ref)
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") {
+		return false
+	}
+	host := u.Hostname()
+	if host != "github.com" && host != "gitlab.com" {
+		return false
+	}
+	segments := strings.Split(strings.TrimPrefix(u.Path, "/"), "/")
+	// Need at least: owner, repo, tree|blob, ref
+	return len(segments) >= 4 && (segments[2] == "tree" || segments[2] == "blob")
+}
+
+func parseGitHubURL(ref string) (*GitSource, error) {
+	u, err := url.Parse(ref)
+	if err != nil {
+		return nil, fmt.Errorf("invalid GitHub URL: %s", ref)
+	}
+	segments := strings.Split(strings.TrimPrefix(u.Path, "/"), "/")
+	owner := segments[0]
+	repo := segments[1]
+	gitRef := segments[3]
+	path := "."
+	if len(segments) > 4 {
+		path = strings.Join(segments[4:], "/")
+	}
+	repoURL := fmt.Sprintf("%s://%s/%s/%s.git", u.Scheme, u.Host, owner, repo)
+	return &GitSource{
+		RepoURL: repoURL,
+		Ref:     gitRef,
+		Path:    path,
+	}, nil
 }
