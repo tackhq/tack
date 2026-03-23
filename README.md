@@ -174,6 +174,42 @@ tasks:
           port: 8080
 ```
 
+### AWS SSM with Tag-Based Discovery
+
+```yaml
+name: Patch App Servers
+connection: ssm
+
+vars:
+  bolt_ssm_tags:
+    env: production
+    role: app-server
+  bolt_ssm_region: us-east-1
+  bolt_ssm_bucket: my-ssm-transfer-bucket   # required for file upload/download
+
+tasks:
+  - name: Install security updates
+    apt:
+      name: "*"
+      state: latest
+
+  - name: Restart app service
+    systemd:
+      name: myapp
+      state: restarted
+```
+
+```bash
+# Tags in the playbook — just run it
+bolt run patch-app-servers.yaml
+
+# Or pass tags on the CLI (no hosts needed, SSM is auto-detected)
+bolt run patch-app-servers.yaml --ssm-tags env=production,role=app-server --ssm-region us-east-1
+
+# Target specific instances directly
+bolt run patch-app-servers.yaml --ssm-instances i-0abc123,i-0def456
+```
+
 ## SSM Parameter Store
 
 Use `ssm_param()` in playbook vars or templates to fetch secrets from AWS SSM Parameter Store at runtime. SecureString parameters are automatically decrypted.
