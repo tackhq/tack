@@ -248,14 +248,24 @@ groups:
     vars:
       app_port: 8080
 
+  # explicit instance IDs (ssm.instances or hosts: both work)
   prod-app:
     connection: ssm
     ssm:
       region: us-east-1
       bucket: my-ssm-transfer-bucket
-    hosts: [i-0abc1234, i-0def5678]
+      instances: [i-0abc1234, i-0def5678]
     vars:
       env: production
+
+  # tag-based discovery — instances resolved at runtime
+  prod-workers:
+    connection: ssm
+    ssm:
+      region: us-east-1
+      tags:
+        env: production
+        role: worker
 ```
 
 Reference a group name in `hosts:`:

@@ -280,6 +280,7 @@ func (e *Executor) runPlay(ctx context.Context, play *playbook.Play, stats *Stat
 					play.SSM = &playbook.SSMConfig{
 						Region: group.SSM.Region,
 						Bucket: group.SSM.Bucket,
+						Tags:   group.SSM.Tags,
 					}
 				}
 			}
