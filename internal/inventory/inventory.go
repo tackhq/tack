@@ -20,10 +20,16 @@ type HostEntry struct {
 }
 
 // GroupSSMConfig holds SSM settings for a group.
-// Instances and tag-based discovery live in the playbook ssm: block, not here.
 type GroupSSMConfig struct {
 	Region string `yaml:"region"`
 	Bucket string `yaml:"bucket"`
+
+	// Instances lists EC2 instance IDs to target.
+	// Convenience alias: these are merged with the group's hosts list.
+	Instances []string `yaml:"instances"`
+
+	// Tags selects EC2 instances by tag at runtime (mutually exclusive with Instances).
+	Tags map[string]string `yaml:"tags"`
 }
 
 // GroupEntry defines a named group of hosts.
@@ -79,7 +85,12 @@ func (inv *Inventory) ExpandGroup(name string) ([]string, *GroupEntry, bool) {
 		return nil, nil, false
 	}
 	if g, ok := inv.Groups[name]; ok {
-		return g.Hosts, g, true
+		// Merge hosts list with ssm.instances (both are valid ways to list targets).
+		hosts := append([]string{}, g.Hosts...)
+		if g.SSM != nil {
+			hosts = append(hosts, g.SSM.Instances...)
+		}
+		return hosts, g, true
 	}
 	if _, ok := inv.Hosts[name]; ok {
 		return []string{name}, nil, true

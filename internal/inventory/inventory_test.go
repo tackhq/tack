@@ -45,14 +45,31 @@ hosts:
       env: production
 
 groups:
+  # instances listed under ssm.instances
   prod-app:
     connection: ssm
     ssm:
       region: us-east-1
       bucket: my-s3-bucket
-    hosts: [i-0abc1234, i-0def5678]
+      instances: [i-0abc1234, i-0def5678]
     vars:
       env: production
+
+  # instances listed under hosts (both styles work)
+  prod-app-alt:
+    connection: ssm
+    ssm:
+      region: us-east-1
+    hosts: [i-0abc1234, i-0def5678]
+
+  # tag-based discovery
+  prod-workers:
+    connection: ssm
+    ssm:
+      region: us-west-2
+      tags:
+        env: production
+        role: worker
 `
 
 func writeTemp(t *testing.T, content string) string {
@@ -142,6 +159,7 @@ func TestLoad_SSM(t *testing.T) {
 		t.Fatalf("Load() error: %v", err)
 	}
 
+	// Group using ssm.instances
 	g := inv.Groups["prod-app"]
 	if g == nil {
 		t.Fatal("prod-app group not found")
@@ -158,8 +176,44 @@ func TestLoad_SSM(t *testing.T) {
 	if g.SSM.Bucket != "my-s3-bucket" {
 		t.Errorf("SSM.Bucket = %q, want my-s3-bucket", g.SSM.Bucket)
 	}
-	if len(g.Hosts) != 2 {
-		t.Errorf("prod-app.Hosts len = %d, want 2", len(g.Hosts))
+	if len(g.SSM.Instances) != 2 {
+		t.Errorf("SSM.Instances len = %d, want 2", len(g.SSM.Instances))
+	}
+
+	// ExpandGroup merges ssm.instances into the returned host list
+	hosts, _, ok := inv.ExpandGroup("prod-app")
+	if !ok {
+		t.Fatal("prod-app: ExpandGroup ok=false")
+	}
+	if len(hosts) != 2 {
+		t.Errorf("prod-app expanded hosts len = %d, want 2", len(hosts))
+	}
+
+	// Group using hosts: list directly
+	gAlt := inv.Groups["prod-app-alt"]
+	if gAlt == nil {
+		t.Fatal("prod-app-alt group not found")
+	}
+	hostsAlt, _, _ := inv.ExpandGroup("prod-app-alt")
+	if len(hostsAlt) != 2 {
+		t.Errorf("prod-app-alt expanded hosts len = %d, want 2", len(hostsAlt))
+	}
+
+	// Group using tag-based discovery
+	gW := inv.Groups["prod-workers"]
+	if gW == nil {
+		t.Fatal("prod-workers group not found")
+	}
+	if gW.SSM == nil || gW.SSM.Region != "us-west-2" {
+		t.Errorf("prod-workers SSM.Region = %v, want us-west-2", gW.SSM)
+	}
+	if gW.SSM.Tags["env"] != "production" || gW.SSM.Tags["role"] != "worker" {
+		t.Errorf("prod-workers SSM.Tags = %v, want {env:production role:worker}", gW.SSM.Tags)
+	}
+	// Tag-only group has no hosts until runtime resolution
+	hostsW, _, _ := inv.ExpandGroup("prod-workers")
+	if len(hostsW) != 0 {
+		t.Errorf("prod-workers expanded hosts len = %d, want 0 (resolved at runtime)", len(hostsW))
 	}
 }
 
