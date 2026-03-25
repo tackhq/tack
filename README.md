@@ -130,9 +130,9 @@ name: Configure Web Server
 hosts: web1
 connection: ssh
 
-vars:
-  bolt_ssh_user: deploy
-  bolt_ssh_key: ~/.ssh/deploy_key
+ssh:
+  user: deploy
+  key: ~/.ssh/deploy_key
 
 tasks:
   - name: Install nginx
@@ -180,12 +180,12 @@ tasks:
 name: Patch App Servers
 connection: ssm
 
-vars:
-  bolt_ssm_tags:
+ssm:
+  region: us-east-1
+  bucket: my-ssm-transfer-bucket   # required for file upload/download
+  tags:
     env: production
     role: app-server
-  bolt_ssm_region: us-east-1
-  bolt_ssm_bucket: my-ssm-transfer-bucket   # required for file upload/download
 
 tasks:
   - name: Install security updates

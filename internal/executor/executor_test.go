@@ -207,15 +207,18 @@ func TestApplyOverrides_SSMRegionAndBucket(t *testing.T) {
 		SSMRegion: "us-west-2",
 		SSMBucket: "my-bucket",
 	}
-	play := &playbook.Play{Vars: make(map[string]any)}
+	play := &playbook.Play{}
 
 	exec.ApplyOverrides(play)
 
-	if got, ok := play.Vars["bolt_ssm_region"].(string); !ok || got != "us-west-2" {
-		t.Errorf("bolt_ssm_region = %v, want us-west-2", play.Vars["bolt_ssm_region"])
+	if play.SSM == nil {
+		t.Fatal("play.SSM should not be nil")
 	}
-	if got, ok := play.Vars["bolt_ssm_bucket"].(string); !ok || got != "my-bucket" {
-		t.Errorf("bolt_ssm_bucket = %v, want my-bucket", play.Vars["bolt_ssm_bucket"])
+	if play.SSM.Region != "us-west-2" {
+		t.Errorf("SSM.Region = %v, want us-west-2", play.SSM.Region)
+	}
+	if play.SSM.Bucket != "my-bucket" {
+		t.Errorf("SSM.Bucket = %v, want my-bucket", play.SSM.Bucket)
 	}
 }
 
@@ -227,7 +230,6 @@ func TestApplyOverrides_SSMInstances(t *testing.T) {
 	}
 	play := &playbook.Play{
 		Connection: "ssm",
-		Vars:       make(map[string]any),
 	}
 
 	exec.ApplyOverrides(play)
@@ -245,17 +247,15 @@ func TestApplyOverrides_SSMTags(t *testing.T) {
 	}
 	play := &playbook.Play{
 		Connection: "ssm",
-		Vars:       make(map[string]any),
 	}
 
 	exec.ApplyOverrides(play)
 
-	tags, ok := play.Vars["bolt_ssm_tags"].(map[string]string)
-	if !ok {
-		t.Fatalf("bolt_ssm_tags not set or wrong type: %T", play.Vars["bolt_ssm_tags"])
+	if play.SSM == nil {
+		t.Fatal("play.SSM should not be nil")
 	}
-	if tags["Env"] != "prod" || tags["Role"] != "web" {
-		t.Errorf("bolt_ssm_tags = %v, want {Env:prod Role:web}", tags)
+	if play.SSM.Tags["Env"] != "prod" || play.SSM.Tags["Role"] != "web" {
+		t.Errorf("SSM.Tags = %v, want {Env:prod Role:web}", play.SSM.Tags)
 	}
 }
 
@@ -268,17 +268,16 @@ func TestApplyOverrides_SSMInstancesPreferredOverTags(t *testing.T) {
 	}
 	play := &playbook.Play{
 		Connection: "ssm",
-		Vars:       make(map[string]any),
 	}
 
 	exec.ApplyOverrides(play)
 
-	// Instances should be set, tags should NOT be (instances take priority)
+	// Instances should be set as hosts; tags should NOT populate SSM.Tags (instances take priority)
 	if len(play.Hosts) != 1 || play.Hosts[0] != "i-explicit" {
 		t.Errorf("Hosts = %v, want [i-explicit]", play.Hosts)
 	}
-	if _, ok := play.Vars["bolt_ssm_tags"]; ok {
-		t.Error("bolt_ssm_tags should not be set when instances are provided")
+	if play.SSM != nil && len(play.SSM.Tags) > 0 {
+		t.Error("SSM.Tags should not be set when instances are provided")
 	}
 }
 
@@ -291,7 +290,6 @@ func TestApplyOverrides_SSMSkippedForNonSSM(t *testing.T) {
 	}
 	play := &playbook.Play{
 		Connection: "ssh",
-		Vars:       make(map[string]any),
 	}
 
 	exec.ApplyOverrides(play)
@@ -311,7 +309,6 @@ func TestApplyOverrides_SSMDoesNotOverrideExistingHosts(t *testing.T) {
 	}
 	play := &playbook.Play{
 		Connection: "ssm",
-		Vars:       make(map[string]any),
 	}
 
 	exec.ApplyOverrides(play)
@@ -326,9 +323,9 @@ func TestGetConnector_SSM(t *testing.T) {
 	exec := New()
 	play := &playbook.Play{
 		Connection: "ssm",
-		Vars: map[string]any{
-			"bolt_ssm_region": "eu-west-1",
-			"bolt_ssm_bucket": "transfer-bucket",
+		SSM: &playbook.SSMConfig{
+			Region: "eu-west-1",
+			Bucket: "transfer-bucket",
 		},
 	}
 
@@ -348,7 +345,6 @@ func TestGetConnector_SSMWithSudo(t *testing.T) {
 	play := &playbook.Play{
 		Connection: "ssm",
 		Sudo:       true,
-		Vars:       map[string]any{},
 	}
 
 	conn, err := exec.GetConnector(play, "i-test123")
@@ -366,7 +362,6 @@ func TestGetConnector_SSMMinimal(t *testing.T) {
 	exec := New()
 	play := &playbook.Play{
 		Connection: "ssm",
-		Vars:       map[string]any{},
 	}
 
 	conn, err := exec.GetConnector(play, "i-abc")

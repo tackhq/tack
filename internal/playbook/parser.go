@@ -124,6 +124,21 @@ func parseRawPlay(raw map[string]any) (*Play, error) {
 		play.Vars = vars
 	}
 
+	// Parse sudo_password
+	if v, ok := raw["sudo_password"].(string); ok {
+		play.SudoPassword = v
+	}
+
+	// Parse ssh config block
+	if sshRaw, ok := raw["ssh"].(map[string]any); ok {
+		play.SSH = parseSSHConfig(sshRaw)
+	}
+
+	// Parse ssm config block
+	if ssmRaw, ok := raw["ssm"].(map[string]any); ok {
+		play.SSM = parseSSMConfig(ssmRaw)
+	}
+
 	// Parse roles
 	if roles, ok := raw["roles"].([]any); ok {
 		for _, role := range roles {
@@ -289,6 +304,54 @@ func parseRawTask(raw map[string]any) (*Task, error) {
 	}
 
 	return task, nil
+}
+
+// parseSSHConfig parses a raw SSH config block from a play.
+func parseSSHConfig(raw map[string]any) *SSHConfig {
+	cfg := &SSHConfig{}
+	if v, ok := raw["user"].(string); ok {
+		cfg.User = v
+	}
+	if v, ok := raw["port"].(int); ok {
+		cfg.Port = v
+	}
+	if v, ok := raw["key"].(string); ok {
+		cfg.Key = v
+	}
+	if v, ok := raw["password"].(string); ok {
+		cfg.Password = v
+	}
+	if v, ok := asBool(raw["host_key_checking"]); ok {
+		cfg.HostKeyChecking = &v
+	}
+	return cfg
+}
+
+// parseSSMConfig parses a raw SSM config block from a play.
+func parseSSMConfig(raw map[string]any) *SSMConfig {
+	cfg := &SSMConfig{}
+	if v, ok := raw["region"].(string); ok {
+		cfg.Region = v
+	}
+	if v, ok := raw["bucket"].(string); ok {
+		cfg.Bucket = v
+	}
+	if instances, ok := raw["instances"].([]any); ok {
+		for _, item := range instances {
+			if s, ok := item.(string); ok {
+				cfg.Instances = append(cfg.Instances, s)
+			}
+		}
+	}
+	if tags, ok := raw["tags"].(map[string]any); ok {
+		cfg.Tags = make(map[string]string, len(tags))
+		for k, v := range tags {
+			if s, ok := v.(string); ok {
+				cfg.Tags[k] = s
+			}
+		}
+	}
+	return cfg
 }
 
 // ExpandShorthand expands shorthand module syntax.

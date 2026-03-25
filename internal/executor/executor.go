@@ -200,62 +200,70 @@ func (e *Executor) ApplyOverrides(play *playbook.Play) {
 	if len(o.Hosts) > 0 {
 		play.Hosts = o.Hosts
 	}
-
-	if play.Vars == nil {
-		play.Vars = make(map[string]any)
-	}
-	if o.SSHUser != "" {
-		play.Vars["bolt_ssh_user"] = o.SSHUser
-	}
-	if o.SSHPort != 0 {
-		play.Vars["bolt_ssh_port"] = o.SSHPort
-	}
-	if o.SSHKey != "" {
-		play.Vars["bolt_ssh_key"] = o.SSHKey
-	}
-	if o.HasSSHPass {
-		play.Vars["bolt_ssh_password"] = o.SSHPass
-	}
-	if o.SSHInsecure {
-		play.Vars["bolt_ssh_host_key_checking"] = false
-	}
 	if o.Sudo {
 		play.Sudo = true
 	}
 	if o.SudoPassword != "" {
-		play.Vars["bolt_sudo_password"] = o.SudoPassword
+		play.SudoPassword = o.SudoPassword
+	}
+
+	// SSH overrides
+	if o.SSHUser != "" || o.SSHPort != 0 || o.SSHKey != "" || o.HasSSHPass || o.SSHInsecure {
+		if play.SSH == nil {
+			play.SSH = &playbook.SSHConfig{}
+		}
+		if o.SSHUser != "" {
+			play.SSH.User = o.SSHUser
+		}
+		if o.SSHPort != 0 {
+			play.SSH.Port = o.SSHPort
+		}
+		if o.SSHKey != "" {
+			play.SSH.Key = o.SSHKey
+		}
+		if o.HasSSHPass {
+			play.SSH.Password = o.SSHPass
+		}
+		if o.SSHInsecure {
+			f := false
+			play.SSH.HostKeyChecking = &f
+		}
 	}
 
 	// SSM overrides
-	if o.SSMRegion != "" {
-		play.Vars["bolt_ssm_region"] = o.SSMRegion
-	}
-	if o.SSMBucket != "" {
-		play.Vars["bolt_ssm_bucket"] = o.SSMBucket
-	}
-	if play.Connection == "ssm" && len(play.Hosts) == 0 {
-		if len(o.SSMInstances) > 0 {
-			play.Hosts = o.SSMInstances
-		} else if len(o.SSMTags) > 0 {
-			play.Vars["bolt_ssm_tags"] = o.SSMTags
+	if o.SSMRegion != "" || o.SSMBucket != "" || len(o.SSMInstances) > 0 || len(o.SSMTags) > 0 {
+		if play.SSM == nil {
+			play.SSM = &playbook.SSMConfig{}
+		}
+		if o.SSMRegion != "" {
+			play.SSM.Region = o.SSMRegion
+		}
+		if o.SSMBucket != "" {
+			play.SSM.Bucket = o.SSMBucket
+		}
+		if play.Connection == "ssm" && len(play.Hosts) == 0 {
+			if len(o.SSMInstances) > 0 {
+				play.Hosts = o.SSMInstances
+			} else if len(o.SSMTags) > 0 {
+				play.SSM.Tags = o.SSMTags
+			}
 		}
 	}
 }
 
 // runPlay executes a single play.
 func (e *Executor) runPlay(ctx context.Context, play *playbook.Play, stats *Stats, rolesDir string) error {
-	// SSM tag resolution: if connection is SSM, hosts are empty, and tags are set, resolve now
-	if play.GetConnection() == "ssm" && len(play.Hosts) == 0 {
-		if tagsRaw, ok := play.Vars["bolt_ssm_tags"]; ok {
-			tags, _ := toStringMap(tagsRaw)
-			if len(tags) > 0 {
-				region, _ := play.Vars["bolt_ssm_region"].(string)
-				ids, err := ssmconn.ResolveInstancesByTags(ctx, tags, region)
-				if err != nil {
-					return fmt.Errorf("failed to resolve SSM instances by tags: %w", err)
-				}
-				play.Hosts = ids
+	if play.GetConnection() == "ssm" && play.SSM != nil && len(play.Hosts) == 0 {
+		// ssm.instances is a convenience alias for hosts when connection is ssm
+		if len(play.SSM.Instances) > 0 {
+			play.Hosts = play.SSM.Instances
+		} else if len(play.SSM.Tags) > 0 {
+			// SSM tag resolution: discover instance IDs at runtime
+			ids, err := ssmconn.ResolveInstancesByTags(ctx, play.SSM.Tags, play.SSM.Region)
+			if err != nil {
+				return fmt.Errorf("failed to resolve SSM instances by tags: %w", err)
 			}
+			play.Hosts = ids
 		}
 	}
 
@@ -346,10 +354,10 @@ func (e *Executor) runPlayOnHost(ctx context.Context, play *playbook.Play, stats
 	}
 
 	// Create lazy SSM Parameter Store client.
-	// Region priority: bolt_ssm_region var > ec2_region fact > AWS SDK default.
+	// Region priority: play.SSM.Region > ec2_region fact > AWS SDK default.
 	ssmRegion := ""
-	if r, ok := play.Vars["bolt_ssm_region"].(string); ok && r != "" {
-		ssmRegion = r
+	if play.SSM != nil && play.SSM.Region != "" {
+		ssmRegion = play.SSM.Region
 	} else if r, ok := pctx.Facts["ec2_region"].(string); ok && r != "" {
 		ssmRegion = r
 	}
@@ -480,9 +488,8 @@ func (e *Executor) runSingleTask(ctx context.Context, pctx *PlayContext, task *p
 	playSudo := pctx.Play.Sudo
 	taskSudo := task.ShouldSudo(playSudo)
 	if taskSudo != playSudo {
-		sudoPass, _ := pctx.Play.Vars["bolt_sudo_password"].(string)
-		pctx.Connector.SetSudo(taskSudo, sudoPass)
-		defer pctx.Connector.SetSudo(playSudo, sudoPass)
+		pctx.Connector.SetSudo(taskSudo, pctx.Play.SudoPassword)
+		defer pctx.Connector.SetSudo(playSudo, pctx.Play.SudoPassword)
 	}
 
 	// Expand shorthand syntax
@@ -811,9 +818,8 @@ func (e *Executor) planTasks(ctx context.Context, pctx *PlayContext, tasks []*pl
 				// Apply task-level sudo for the check
 				playSudo := pctx.Play.Sudo
 				taskSudo := task.ShouldSudo(playSudo)
-				sudoPass, _ := pctx.Play.Vars["bolt_sudo_password"].(string)
 				if taskSudo != playSudo {
-					pctx.Connector.SetSudo(taskSudo, sudoPass)
+					pctx.Connector.SetSudo(taskSudo, pctx.Play.SudoPassword)
 				}
 
 				// Inject internal params needed by template/copy
@@ -852,7 +858,7 @@ func (e *Executor) planTasks(ctx context.Context, pctx *PlayContext, tasks []*pl
 
 				// Restore play-level sudo
 				if taskSudo != playSudo {
-					pctx.Connector.SetSudo(playSudo, sudoPass)
+					pctx.Connector.SetSudo(playSudo, pctx.Play.SudoPassword)
 				}
 			}
 		}
@@ -928,7 +934,7 @@ func (e *Executor) planHandlers(tasks []*playbook.Task, taskPlan []output.Planne
 // before any host output so the prompt appears before "PLAY <host>".
 func (e *Executor) needsSudoPassword(play *playbook.Play, tasks, handlers []*playbook.Task) error {
 	// Already have a sudo password
-	if p, ok := play.Vars["bolt_sudo_password"].(string); ok && p != "" {
+	if play.SudoPassword != "" {
 		return nil
 	}
 
@@ -964,7 +970,7 @@ func (e *Executor) needsSudoPassword(play *playbook.Play, tasks, handlers []*pla
 		return fmt.Errorf("failed to read sudo password: %w", err)
 	}
 
-	play.Vars["bolt_sudo_password"] = pass
+	play.SudoPassword = pass
 	return nil
 }
 
@@ -972,15 +978,13 @@ func (e *Executor) needsSudoPassword(play *playbook.Play, tasks, handlers []*pla
 func (e *Executor) GetConnector(play *playbook.Play, host string) (connector.Connector, error) {
 	connType := play.GetConnection()
 
-	sudoPass, _ := play.Vars["bolt_sudo_password"].(string)
-
 	switch connType {
 	case "local":
 		var opts []local.Option
 		if play.Sudo {
 			opts = append(opts, local.WithSudo())
-			if sudoPass != "" {
-				opts = append(opts, local.WithSudoPassword(sudoPass))
+			if play.SudoPassword != "" {
+				opts = append(opts, local.WithSudoPassword(play.SudoPassword))
 			}
 		}
 		return local.New(opts...), nil
@@ -992,32 +996,34 @@ func (e *Executor) GetConnector(play *playbook.Play, host string) (connector.Con
 		var sshOpts []sshconn.Option
 		if play.Sudo {
 			sshOpts = append(sshOpts, sshconn.WithSudo())
-			if sudoPass != "" {
-				sshOpts = append(sshOpts, sshconn.WithSudoPassword(sudoPass))
+			if play.SudoPassword != "" {
+				sshOpts = append(sshOpts, sshconn.WithSudoPassword(play.SudoPassword))
 			}
 		}
-		if u, ok := play.Vars["bolt_ssh_user"].(string); ok {
-			sshOpts = append(sshOpts, sshconn.WithUser(u))
+		if play.SSH != nil && play.SSH.User != "" {
+			sshOpts = append(sshOpts, sshconn.WithUser(play.SSH.User))
 		}
 		// Check if the host string embeds a port (e.g. "host:2222" from a URI).
-		// Per-host port takes priority over the global bolt_ssh_port.
+		// Per-host port takes priority over the play-level SSH port.
 		sshHost := host
 		if h, p, err := net.SplitHostPort(host); err == nil {
 			sshHost = h
 			if pn, err := strconv.Atoi(p); err == nil {
 				sshOpts = append(sshOpts, sshconn.WithPort(pn))
 			}
-		} else if port, ok := play.Vars["bolt_ssh_port"].(int); ok {
-			sshOpts = append(sshOpts, sshconn.WithPort(port))
+		} else if play.SSH != nil && play.SSH.Port != 0 {
+			sshOpts = append(sshOpts, sshconn.WithPort(play.SSH.Port))
 		}
-		if keyFile, ok := play.Vars["bolt_ssh_key"].(string); ok {
-			sshOpts = append(sshOpts, sshconn.WithKeyFile(keyFile))
-		}
-		if pass, ok := play.Vars["bolt_ssh_password"].(string); ok {
-			sshOpts = append(sshOpts, sshconn.WithPassword(pass))
-		}
-		if hostKeyChecking, ok := play.Vars["bolt_ssh_host_key_checking"].(bool); ok && !hostKeyChecking {
-			sshOpts = append(sshOpts, sshconn.WithInsecureHostKey())
+		if play.SSH != nil {
+			if play.SSH.Key != "" {
+				sshOpts = append(sshOpts, sshconn.WithKeyFile(play.SSH.Key))
+			}
+			if play.SSH.Password != "" {
+				sshOpts = append(sshOpts, sshconn.WithPassword(play.SSH.Password))
+			}
+			if play.SSH.HostKeyChecking != nil && !*play.SSH.HostKeyChecking {
+				sshOpts = append(sshOpts, sshconn.WithInsecureHostKey())
+			}
 		}
 		return sshconn.New(sshHost, sshOpts...), nil
 
@@ -1025,15 +1031,17 @@ func (e *Executor) GetConnector(play *playbook.Play, host string) (connector.Con
 		var ssmOpts []ssmconn.Option
 		if play.Sudo {
 			ssmOpts = append(ssmOpts, ssmconn.WithSudo())
-			if sudoPass != "" {
-				ssmOpts = append(ssmOpts, ssmconn.WithSudoPassword(sudoPass))
+			if play.SudoPassword != "" {
+				ssmOpts = append(ssmOpts, ssmconn.WithSudoPassword(play.SudoPassword))
 			}
 		}
-		if region, ok := play.Vars["bolt_ssm_region"].(string); ok && region != "" {
-			ssmOpts = append(ssmOpts, ssmconn.WithRegion(region))
-		}
-		if bucket, ok := play.Vars["bolt_ssm_bucket"].(string); ok && bucket != "" {
-			ssmOpts = append(ssmOpts, ssmconn.WithBucket(bucket))
+		if play.SSM != nil {
+			if play.SSM.Region != "" {
+				ssmOpts = append(ssmOpts, ssmconn.WithRegion(play.SSM.Region))
+			}
+			if play.SSM.Bucket != "" {
+				ssmOpts = append(ssmOpts, ssmconn.WithBucket(play.SSM.Bucket))
+			}
 		}
 		return ssmconn.New(host, ssmOpts...), nil
 
