@@ -1,0 +1,61 @@
+# Sample inventory file
+#
+# Run with: bolt run playbook.yaml -i examples/inventory.yaml --hosts webservers
+
+hosts:
+  web1:
+    ssh:
+      user: deploy
+      port: 22
+      key: ~/.ssh/id_deploy
+    vars:
+      region: us-east-1
+      datacenter: nyc
+
+  web2:
+    ssh:
+      user: deploy
+    vars:
+      region: us-west-2
+      datacenter: sfo
+
+  db1:
+    ssh:
+      user: postgres
+      host_key_checking: false
+    vars:
+      role: database
+
+  # SSM-managed instance (no SSH config needed)
+  i-0abc1234567890001:
+    vars:
+      env: production
+      app: api
+
+groups:
+  # SSH group — playbook can reference "webservers" in hosts:
+  webservers:
+    hosts: [web1, web2]
+    ssh:
+      user: deploy          # group-level default (overridden by per-host ssh config)
+    vars:
+      app_port: 8080
+      nginx_worker_processes: auto
+
+  databases:
+    hosts: [db1]
+    vars:
+      backup_enabled: true
+
+  # SSM group — connection type and region defined here
+  prod-app:
+    connection: ssm
+    ssm:
+      region: us-east-1
+      bucket: my-ssm-transfer-bucket
+    hosts:
+      - i-0abc1234567890001
+      - i-0def5678901234567
+    vars:
+      env: production
+      app: api
