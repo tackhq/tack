@@ -16,6 +16,41 @@ type Playbook struct {
 	Plays []*Play
 }
 
+// SSHConfig holds SSH connection parameters for a play.
+type SSHConfig struct {
+	// User is the SSH username.
+	User string `yaml:"user"`
+
+	// Port is the SSH port (default: 22).
+	Port int `yaml:"port"`
+
+	// Key is the path to the SSH private key file.
+	Key string `yaml:"key"`
+
+	// Password is the SSH password (if not using key auth).
+	Password string `yaml:"password"`
+
+	// HostKeyChecking controls whether the host key is verified.
+	// nil means use the default (true / strict). Set to false to disable.
+	HostKeyChecking *bool `yaml:"host_key_checking"`
+}
+
+// SSMConfig holds AWS Systems Manager connection parameters for a play.
+type SSMConfig struct {
+	// Region is the AWS region for SSM (e.g. "us-east-1").
+	Region string `yaml:"region"`
+
+	// Bucket is the S3 bucket used for large file transfers (optional).
+	Bucket string `yaml:"bucket"`
+
+	// Instances is a list of EC2 instance IDs to target.
+	// Convenience alias for the play-level hosts field when connection is ssm.
+	Instances []string `yaml:"instances"`
+
+	// Tags selects EC2 instances by tag at runtime (mutually exclusive with Instances).
+	Tags map[string]string `yaml:"tags"`
+}
+
 // Play represents a single play targeting a set of hosts.
 type Play struct {
 	// Name is an optional description of the play.
@@ -44,6 +79,15 @@ type Play struct {
 
 	// GatherFacts controls whether to gather system facts (default: true).
 	GatherFacts *bool `yaml:"gather_facts"`
+
+	// SSH holds SSH connection configuration (used when connection: ssh).
+	SSH *SSHConfig `yaml:"ssh"`
+
+	// SSM holds AWS SSM connection configuration (used when connection: ssm).
+	SSM *SSMConfig `yaml:"ssm"`
+
+	// SudoPassword is the password for privilege escalation.
+	SudoPassword string `yaml:"sudo_password"`
 }
 
 // Task represents a single task in a play.
