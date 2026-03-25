@@ -71,6 +71,7 @@ bolt run s3://bucket/path/to/playbook.yaml
 - **Idempotent operations** — Safe to run multiple times
 - **Cross-platform** — Supports macOS (brew) and Linux (apt, systemd)
 - **Multiple connectors** — Local, Docker, SSH, and AWS SSM with tag-based instance discovery
+- **Inventory files** — Define hosts, groups, per-host SSH config, and variables in a reusable YAML file
 - **Remote playbook sources** — Run playbooks directly from git repos, S3, or HTTP URLs
 - **SSM Parameter Store** — Fetch secrets at runtime with `ssm_param()` in vars and templates
 - **EC2 instance facts** — Auto-gathered instance ID, region, instance type, AMI, and tags
@@ -93,7 +94,7 @@ Bolt supports four connection backends:
 | **SSH** | `connection: ssh` or `-c ssh://user@host:port` | Connect via SSH; resolves `~/.ssh/config` automatically |
 | **SSM** | `connection: ssm` | Connect via AWS SSM; supports tag-based discovery with `ResolveInstancesByTags` and S3 file transfer |
 
-SSH connection settings can be provided via playbook vars, CLI flags, or environment variables (`BOLT_SSH_USER`, `BOLT_SSH_PORT`, `BOLT_SSH_KEY`, `BOLT_SSH_PASSWORD`, `BOLT_SSH_INSECURE`). CLI flags take highest precedence, then environment variables, then playbook values.
+SSH connection settings can be provided via the playbook `ssh:` block, an inventory file, CLI flags, or environment variables (`BOLT_SSH_USER`, `BOLT_SSH_PORT`, `BOLT_SSH_KEY`, `BOLT_SSH_PASSWORD`, `BOLT_SSH_INSECURE`). Priority (highest first): CLI flags → playbook `ssh:` → per-host inventory → group inventory → `~/.ssh/config` → defaults.
 
 The connection type is auto-detected when not explicitly set: SSH flags (`--ssh-user`, `--ssh-key`, etc.) or remote `--hosts` values infer `ssh`; SSM flags (`--ssm-instances`, `--ssm-tags`) infer `ssm`. SSH config aliases work directly — `bolt run --hosts myserver role/` resolves `myserver` via `~/.ssh/config`.
 
@@ -209,6 +210,74 @@ bolt run patch-app-servers.yaml --ssm-tags env=production,role=app-server --ssm-
 # Target specific instances directly
 bolt run patch-app-servers.yaml --ssm-instances i-0abc123,i-0def456
 ```
+
+## Inventory Files
+
+An inventory file decouples *where to connect* from *what to run*. Define hosts, groups, per-host SSH settings, and variables once — then reference them from any playbook.
+
+```yaml
+# inventory.yaml
+
+hosts:
+  web1:
+    ssh:
+      user: deploy
+      port: 22
+      key: ~/.ssh/id_deploy
+    vars:
+      region: us-east-1
+
+  web2:
+    ssh:
+      user: deploy
+    vars:
+      region: us-west-2
+
+  db1:
+    ssh:
+      user: postgres
+      host_key_checking: false
+    vars:
+      role: database
+
+groups:
+  webservers:
+    hosts: [web1, web2]
+    ssh:
+      user: deploy          # group default; per-host ssh config takes priority
+    vars:
+      app_port: 8080
+
+  prod-app:
+    connection: ssm
+    ssm:
+      region: us-east-1
+      bucket: my-ssm-transfer-bucket
+    hosts: [i-0abc1234, i-0def5678]
+    vars:
+      env: production
+```
+
+Reference a group name in `hosts:`:
+
+```yaml
+name: Deploy Web Servers
+connection: ssh
+hosts: webservers         # expanded from inventory at runtime
+```
+
+Or target a group from the CLI:
+
+```bash
+bolt run deploy.yaml -i inventory.yaml --hosts webservers
+bolt run patch.yaml  -i inventory.yaml --hosts prod-app
+```
+
+**Variable precedence** (highest → lowest): play `vars:` → per-host inventory vars → group inventory vars → role vars → role defaults.
+
+**SSH config precedence** (highest → lowest): CLI flags → playbook `ssh:` → per-host inventory `ssh:` → group inventory `ssh:` → `~/.ssh/config` → defaults.
+
+See [`examples/inventory.yaml`](examples/inventory.yaml) for a complete sample.
 
 ## SSM Parameter Store
 
