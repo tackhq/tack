@@ -96,6 +96,11 @@ func (o *Output) PlaybookEnd(stats Stats) {
 	o.printf(" %s\n", o.color(colorGray, fmt.Sprintf("(%.2fs)", stats.GetDuration().Seconds())))
 }
 
+// HostStart prints the host banner before each host's plan/execute block.
+func (o *Output) HostStart(host, connType string) {
+	o.printf("\n%s %s\n", o.color(colorBold, "HOST"), host+" ["+connType+"]")
+}
+
 // PlayStart prints the play start banner.
 func (o *Output) PlayStart(play *playbook.Play) {
 	name := play.Name
