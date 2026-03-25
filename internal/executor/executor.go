@@ -347,6 +347,8 @@ func (e *Executor) runPlay(ctx context.Context, play *playbook.Play, stats *Stat
 
 // runPlayOnHost executes a play against a single host.
 func (e *Executor) runPlayOnHost(ctx context.Context, play *playbook.Play, stats *Stats, roles []*playbook.Role, host string) error {
+	e.Output.HostStart(host, play.GetConnection())
+
 	// Create play context
 	pctx := &PlayContext{
 		Play:             play,
