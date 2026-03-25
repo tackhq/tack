@@ -26,6 +26,7 @@ import (
 
 	"github.com/eugenetaranov/bolt/internal/executor"
 	"github.com/eugenetaranov/bolt/internal/generate"
+	"github.com/eugenetaranov/bolt/internal/inventory"
 	"github.com/eugenetaranov/bolt/internal/module"
 	"github.com/eugenetaranov/bolt/internal/playbook"
 	"github.com/eugenetaranov/bolt/internal/source"
@@ -156,7 +157,7 @@ Examples:
 
 func init() {
 	// Run-specific flags can be added here
-	runCmd.Flags().StringP("inventory", "i", "", "Inventory file (not yet implemented)")
+	runCmd.Flags().StringP("inventory", "i", "", "Inventory file (YAML)")
 	runCmd.Flags().StringSliceP("extra-vars", "e", nil, "Extra variables (key=value)")
 	runCmd.Flags().StringSlice("tags", nil, "Only run tasks with these tags")
 	runCmd.Flags().StringSlice("skip-tags", nil, "Skip tasks with these tags")
@@ -221,6 +222,16 @@ func runPlaybook(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Load inventory file if provided
+	var inv *inventory.Inventory
+	if inventoryPath, _ := cmd.Flags().GetString("inventory"); inventoryPath != "" {
+		var err error
+		inv, err = inventory.Load(inventoryPath)
+		if err != nil {
+			return fmt.Errorf("failed to load inventory: %w", err)
+		}
+	}
+
 	// Create executor
 	exec := executor.New()
 	exec.Debug = debug
@@ -228,6 +239,7 @@ func runPlaybook(cmd *cobra.Command, args []string) error {
 	exec.DryRun = dryRun
 	exec.AutoApprove = autoApprove
 	exec.Overrides = overrides
+	exec.Inventory = inv
 	exec.PromptSudoPassword = func() (string, error) {
 		fmt.Fprint(os.Stderr, "Sudo password: ")
 		passBytes, err := term.ReadPassword(int(syscall.Stdin))

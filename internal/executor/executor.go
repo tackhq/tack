@@ -16,6 +16,7 @@ import (
 	"github.com/eugenetaranov/bolt/internal/connector/local"
 	sshconn "github.com/eugenetaranov/bolt/internal/connector/ssh"
 	ssmconn "github.com/eugenetaranov/bolt/internal/connector/ssm"
+	"github.com/eugenetaranov/bolt/internal/inventory"
 	"github.com/eugenetaranov/bolt/internal/module"
 	"github.com/eugenetaranov/bolt/internal/output"
 	"github.com/eugenetaranov/bolt/internal/playbook"
@@ -66,6 +67,9 @@ type Executor struct {
 	// when tasks require sudo but no password was provided.
 	PromptSudoPassword func() (string, error)
 
+	// Inventory holds the loaded inventory (optional). When set, group names
+	// in play.Hosts are expanded and per-host vars/SSH config are applied.
+	Inventory *inventory.Inventory
 }
 
 // New creates a new executor.
@@ -253,6 +257,36 @@ func (e *Executor) ApplyOverrides(play *playbook.Play) {
 
 // runPlay executes a single play.
 func (e *Executor) runPlay(ctx context.Context, play *playbook.Play, stats *Stats, rolesDir string) error {
+	// Expand inventory group names in play.Hosts and apply group-level config.
+	if e.Inventory != nil && len(play.Hosts) > 0 {
+		expanded := make([]string, 0, len(play.Hosts))
+		for _, h := range play.Hosts {
+			hosts, group, ok := e.Inventory.ExpandGroup(h)
+			if !ok {
+				// Not in inventory — pass through as-is (plain hostname, URI, etc.)
+				expanded = append(expanded, h)
+				continue
+			}
+			expanded = append(expanded, hosts...)
+			// Apply group-level connection/SSH/SSM as defaults (play values take priority)
+			if group != nil {
+				if play.Connection == "" && group.Connection != "" {
+					play.Connection = group.Connection
+				}
+				if play.SSH == nil && group.SSH != nil {
+					play.SSH = group.SSH
+				}
+				if play.SSM == nil && group.SSM != nil {
+					play.SSM = &playbook.SSMConfig{
+						Region: group.SSM.Region,
+						Bucket: group.SSM.Bucket,
+					}
+				}
+			}
+		}
+		play.Hosts = expanded
+	}
+
 	if play.GetConnection() == "ssm" && play.SSM != nil && len(play.Hosts) == 0 {
 		// ssm.instances is a convenience alias for hosts when connection is ssm
 		if len(play.SSM.Instances) > 0 {
@@ -323,6 +357,25 @@ func (e *Executor) runPlayOnHost(ctx context.Context, play *playbook.Play, stats
 
 	// Merge variables with correct precedence: role defaults < role vars < play vars
 	pctx.Vars = playbook.MergeRoleVars(roles, play.Vars)
+
+	// Inject inventory vars as lower-priority defaults (play vars take precedence).
+	// Group vars are lowest, per-host vars are higher (but still below play vars).
+	if e.Inventory != nil {
+		for _, g := range e.Inventory.GetHostGroups(host) {
+			for k, v := range g.Vars {
+				if _, exists := pctx.Vars[k]; !exists {
+					pctx.Vars[k] = v
+				}
+			}
+		}
+		if entry := e.Inventory.GetHost(host); entry != nil {
+			for k, v := range entry.Vars {
+				if _, exists := pctx.Vars[k]; !exists {
+					pctx.Vars[k] = v
+				}
+			}
+		}
+	}
 
 	// Add environment variables
 	pctx.Vars["env"] = getEnvMap()
@@ -1000,30 +1053,33 @@ func (e *Executor) GetConnector(play *playbook.Play, host string) (connector.Con
 				sshOpts = append(sshOpts, sshconn.WithSudoPassword(play.SudoPassword))
 			}
 		}
-		if play.SSH != nil && play.SSH.User != "" {
-			sshOpts = append(sshOpts, sshconn.WithUser(play.SSH.User))
+
+		// Resolve effective SSH config: play.SSH > inventory host SSH > inventory group SSH.
+		// We build a merged view where play settings always win.
+		effectiveSSH := mergeSSHConfig(play.SSH, e.Inventory, host)
+
+		if effectiveSSH.User != "" {
+			sshOpts = append(sshOpts, sshconn.WithUser(effectiveSSH.User))
 		}
 		// Check if the host string embeds a port (e.g. "host:2222" from a URI).
-		// Per-host port takes priority over the play-level SSH port.
+		// Embedded port takes priority over all other port settings.
 		sshHost := host
 		if h, p, err := net.SplitHostPort(host); err == nil {
 			sshHost = h
 			if pn, err := strconv.Atoi(p); err == nil {
 				sshOpts = append(sshOpts, sshconn.WithPort(pn))
 			}
-		} else if play.SSH != nil && play.SSH.Port != 0 {
-			sshOpts = append(sshOpts, sshconn.WithPort(play.SSH.Port))
+		} else if effectiveSSH.Port != 0 {
+			sshOpts = append(sshOpts, sshconn.WithPort(effectiveSSH.Port))
 		}
-		if play.SSH != nil {
-			if play.SSH.Key != "" {
-				sshOpts = append(sshOpts, sshconn.WithKeyFile(play.SSH.Key))
-			}
-			if play.SSH.Password != "" {
-				sshOpts = append(sshOpts, sshconn.WithPassword(play.SSH.Password))
-			}
-			if play.SSH.HostKeyChecking != nil && !*play.SSH.HostKeyChecking {
-				sshOpts = append(sshOpts, sshconn.WithInsecureHostKey())
-			}
+		if effectiveSSH.Key != "" {
+			sshOpts = append(sshOpts, sshconn.WithKeyFile(effectiveSSH.Key))
+		}
+		if effectiveSSH.Password != "" {
+			sshOpts = append(sshOpts, sshconn.WithPassword(effectiveSSH.Password))
+		}
+		if effectiveSSH.HostKeyChecking != nil && !*effectiveSSH.HostKeyChecking {
+			sshOpts = append(sshOpts, sshconn.WithInsecureHostKey())
 		}
 		return sshconn.New(sshHost, sshOpts...), nil
 
@@ -1208,4 +1264,57 @@ func toStringMap(v any) (map[string]string, bool) {
 	default:
 		return nil, false
 	}
+}
+
+// mergeSSHConfig returns the effective SSH config for a host by merging
+// play-level SSH settings with inventory per-host and group SSH settings.
+// Priority: play.SSH > inventory host SSH > inventory group SSH.
+// A zero-value field means "not set"; the first non-zero value wins.
+func mergeSSHConfig(playCfg *playbook.SSHConfig, inv *inventory.Inventory, host string) playbook.SSHConfig {
+	var result playbook.SSHConfig
+
+	// Collect sources from lowest to highest priority so higher-priority
+	// values overwrite lower-priority ones.
+	var sources []*playbook.SSHConfig
+
+	// Lowest: group SSH
+	if inv != nil {
+		for _, g := range inv.GetHostGroups(host) {
+			if g.SSH != nil {
+				sources = append(sources, g.SSH)
+			}
+		}
+	}
+
+	// Middle: per-host inventory SSH
+	if inv != nil {
+		if entry := inv.GetHost(host); entry != nil && entry.SSH != nil {
+			sources = append(sources, entry.SSH)
+		}
+	}
+
+	// Highest: play-level SSH
+	if playCfg != nil {
+		sources = append(sources, playCfg)
+	}
+
+	for _, src := range sources {
+		if src.User != "" {
+			result.User = src.User
+		}
+		if src.Port != 0 {
+			result.Port = src.Port
+		}
+		if src.Key != "" {
+			result.Key = src.Key
+		}
+		if src.Password != "" {
+			result.Password = src.Password
+		}
+		if src.HostKeyChecking != nil {
+			result.HostKeyChecking = src.HostKeyChecking
+		}
+	}
+
+	return result
 }
