@@ -67,6 +67,19 @@ type Executor struct {
 	// when tasks require sudo but no password was provided.
 	PromptSudoPassword func() (string, error)
 
+	// ResolveVaultPassword is called to obtain the vault password when
+	// a play references a vault_file and no password has been cached yet.
+	ResolveVaultPassword func() ([]byte, error)
+
+	// vaultPassword caches the resolved vault password for the run duration.
+	// Zeroed in Run() deferred cleanup.
+	vaultPassword []byte
+
+	// vaultVarCache caches decrypted vault vars by resolved file path.
+	// Avoids re-running Argon2id (~600ms) when multiple plays reference
+	// the same vault file.
+	vaultVarCache map[string]map[string]any
+
 	// Inventory holds the loaded inventory (optional). When set, group names
 	// in play.Hosts are expanded and per-host vars/SSH config are applied.
 	Inventory *inventory.Inventory
@@ -75,7 +88,8 @@ type Executor struct {
 // New creates a new executor.
 func New() *Executor {
 	return &Executor{
-		Output: output.New(os.Stdout),
+		Output:        output.New(os.Stdout),
+		vaultVarCache: make(map[string]map[string]any),
 	}
 }
 
@@ -168,14 +182,26 @@ func (e *Executor) Run(ctx context.Context, pb *playbook.Playbook) (*RunResult, 
 		Stats:   stats,
 	}
 
+	// Zero vault password and var cache at end of run (D-12).
+	defer func() {
+		for i := range e.vaultPassword {
+			e.vaultPassword[i] = 0
+		}
+		e.vaultPassword = nil
+		for k := range e.vaultVarCache {
+			delete(e.vaultVarCache, k)
+		}
+	}()
+
 	e.Output.PlaybookStart(pb.Path)
 
-	// Determine roles directory (relative to playbook)
-	rolesDir := filepath.Join(filepath.Dir(pb.Path), "roles")
+	// Determine roles directory and playbook directory (relative to playbook)
+	playbookDir := filepath.Dir(pb.Path)
+	rolesDir := filepath.Join(playbookDir, "roles")
 
 	for _, play := range pb.Plays {
 		e.ApplyOverrides(play)
-		if err := e.runPlay(ctx, play, stats, rolesDir); err != nil {
+		if err := e.runPlay(ctx, play, stats, rolesDir, playbookDir); err != nil {
 			if ctx.Err() != nil {
 				return result, nil
 			}
@@ -256,7 +282,7 @@ func (e *Executor) ApplyOverrides(play *playbook.Play) {
 }
 
 // runPlay executes a single play.
-func (e *Executor) runPlay(ctx context.Context, play *playbook.Play, stats *Stats, rolesDir string) error {
+func (e *Executor) runPlay(ctx context.Context, play *playbook.Play, stats *Stats, rolesDir string, playbookDir string) error {
 	// Expand inventory group names in play.Hosts and apply group-level config.
 	if e.Inventory != nil && len(play.Hosts) > 0 {
 		expanded := make([]string, 0, len(play.Hosts))
@@ -332,12 +358,12 @@ func (e *Executor) runPlay(ctx context.Context, play *playbook.Play, stats *Stat
 
 	// For local connection, run once regardless of hosts list
 	if play.GetConnection() == "local" {
-		return e.runPlayOnHost(ctx, play, stats, roles, "localhost")
+		return e.runPlayOnHost(ctx, play, stats, roles, "localhost", playbookDir)
 	}
 
 	// For remote connections, iterate over each host
 	for _, host := range play.Hosts {
-		if err := e.runPlayOnHost(ctx, play, stats, roles, host); err != nil {
+		if err := e.runPlayOnHost(ctx, play, stats, roles, host, playbookDir); err != nil {
 			return err
 		}
 	}
@@ -346,7 +372,7 @@ func (e *Executor) runPlay(ctx context.Context, play *playbook.Play, stats *Stat
 }
 
 // runPlayOnHost executes a play against a single host.
-func (e *Executor) runPlayOnHost(ctx context.Context, play *playbook.Play, stats *Stats, roles []*playbook.Role, host string) error {
+func (e *Executor) runPlayOnHost(ctx context.Context, play *playbook.Play, stats *Stats, roles []*playbook.Role, host string, playbookDir string) error {
 	e.Output.HostStart(host, play.GetConnection())
 
 	// Create play context
@@ -376,6 +402,19 @@ func (e *Executor) runPlayOnHost(ctx context.Context, play *playbook.Play, stats
 				if _, exists := pctx.Vars[k]; !exists {
 					pctx.Vars[k] = v
 				}
+			}
+		}
+	}
+
+	// Merge vault variables (between play vars and facts in precedence)
+	if play.VaultFile != "" {
+		vaultVars, err := e.loadVaultVars(play, playbookDir)
+		if err != nil {
+			return fmt.Errorf("vault: %w", err)
+		}
+		for k, v := range vaultVars {
+			if _, exists := pctx.Vars[k]; !exists {
+				pctx.Vars[k] = v
 			}
 		}
 	}
