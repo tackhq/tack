@@ -88,6 +88,10 @@ type Play struct {
 
 	// SudoPassword is the password for privilege escalation.
 	SudoPassword string `yaml:"sudo_password"`
+
+	// VaultFile is the path to an encrypted vault file whose variables
+	// are merged into play vars at runtime.
+	VaultFile string `yaml:"vault_file"`
 }
 
 // Task represents a single task in a play.
