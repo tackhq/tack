@@ -168,6 +168,9 @@ func init() {
 	runCmd.Flags().BoolVar(&autoApprove, "auto-approve", false, "Skip interactive approval prompt (for CI/scripting)")
 	runCmd.Flags().BoolVar(&dryRun, "check", false, "Show plan and exit without applying (alias for --dry-run)")
 
+	// Vault flags
+	runCmd.Flags().String("vault-password-file", "", "Path to file containing vault password (first line used)")
+
 	// SSM flags
 	runCmd.Flags().StringSlice("ssm-instances", nil, "Instance IDs for SSM (comma-separated)")
 	runCmd.Flags().StringToString("ssm-tags", nil, "EC2 tags for SSM instance discovery (key=value,...)")
@@ -248,6 +251,28 @@ func runPlaybook(cmd *cobra.Command, args []string) error {
 			return "", err
 		}
 		return string(passBytes), nil
+	}
+	// Vault password resolution: env > file > prompt (D-01)
+	vaultPwFile, _ := cmd.Flags().GetString("vault-password-file")
+	if envPw := os.Getenv("BOLT_VAULT_PASSWORD"); envPw != "" {
+		pw := []byte(envPw)
+		exec.ResolveVaultPassword = func() ([]byte, error) { return pw, nil }
+	} else if vaultPwFile != "" {
+		data, err := os.ReadFile(vaultPwFile)
+		if err != nil {
+			return fmt.Errorf("--vault-password-file: %w", err)
+		}
+		// First line only, trim trailing newline (D-03)
+		line := strings.SplitN(string(data), "\n", 2)[0]
+		pw := []byte(line)
+		exec.ResolveVaultPassword = func() ([]byte, error) { return pw, nil }
+	} else {
+		exec.ResolveVaultPassword = func() ([]byte, error) {
+			fmt.Fprint(os.Stderr, "Vault password: ")
+			passBytes, err := term.ReadPassword(int(syscall.Stdin))
+			fmt.Fprintln(os.Stderr)
+			return passBytes, err
+		}
 	}
 	exec.Output.SetColor(!noColor)
 	exec.Output.SetDebug(debug)
