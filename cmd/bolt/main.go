@@ -110,6 +110,7 @@ func init() {
 	rootCmd.AddCommand(generateCmd)
 	rootCmd.AddCommand(scaffoldCmd)
 	rootCmd.AddCommand(testCmd)
+	rootCmd.AddCommand(vaultCmd)
 }
 
 // runCmd executes a playbook
