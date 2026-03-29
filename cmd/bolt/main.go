@@ -58,14 +58,20 @@ func main() {
 // and exits the process on the second signal.
 func signalContext(parent context.Context) (context.Context, context.CancelFunc) {
 	ctx, stop := signal.NotifyContext(parent, syscall.SIGINT, syscall.SIGTERM)
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
-		<-ctx.Done()
-		fmt.Fprintln(os.Stderr, "\nInterrupted, cleaning up...")
-		stop()
-		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-		<-sigCh
-		os.Exit(130)
+		select {
+		case <-sigCh:
+			fmt.Fprintln(os.Stderr, "\nInterrupted, cleaning up...")
+			stop()
+			// Wait for second signal to force-exit
+			signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+			<-sigCh
+			os.Exit(130)
+		case <-ctx.Done():
+			// Normal cancellation (defer cancel()), not a signal — stay quiet
+		}
 	}()
 	return ctx, stop
 }
