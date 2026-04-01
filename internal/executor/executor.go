@@ -2,6 +2,7 @@
 package executor
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net"
@@ -64,6 +65,10 @@ type Executor struct {
 
 	// Verbose enables full diffs in plan output.
 	Verbose bool
+
+	// Forks is the number of hosts to execute concurrently.
+	// Values <= 1 mean serial execution (default).
+	Forks int
 
 	// Overrides holds CLI/env connection overrides applied to each play.
 	Overrides *ConnOverrides
@@ -173,6 +178,10 @@ type PlayContext struct {
 
 	// SSMParams is a lazy-init cached SSM Parameter Store client.
 	SSMParams *ssmparams.Client
+
+	// Output is the emitter for this play context. In parallel mode,
+	// each host gets its own buffered emitter.
+	Output output.Emitter
 }
 
 // Run executes a playbook.
@@ -379,22 +388,85 @@ func (e *Executor) runPlay(ctx context.Context, play *playbook.Play, stats *Stat
 
 	// For local connection, run once regardless of hosts list
 	if play.GetConnection() == "local" {
-		return e.runPlayOnHost(ctx, play, stats, roles, "localhost", playbookDir)
+		return e.runPlayOnHost(ctx, play, stats, roles, "localhost", playbookDir, e.Output)
 	}
 
-	// For remote connections, iterate over each host
-	for _, host := range play.Hosts {
-		if err := e.runPlayOnHost(ctx, play, stats, roles, host, playbookDir); err != nil {
-			return err
+	// Determine effective fork count
+	forks := e.Forks
+	if forks <= 1 {
+		// Serial execution — preserve existing real-time output behavior
+		for _, host := range play.Hosts {
+			if err := e.runPlayOnHost(ctx, play, stats, roles, host, playbookDir, e.Output); err != nil {
+				return err
+			}
 		}
+		return nil
+	}
+
+	// Parallel execution with worker pool
+	pool := NewWorkerPool(forks)
+	hosts := play.Hosts
+
+	for _, host := range hosts {
+		host := host // capture loop variable
+		pool.Submit(ctx, func(ctx context.Context) *HostResult {
+			buf := &bytes.Buffer{}
+			hostOutput := output.New(buf)
+			if textOut, ok := e.Output.(*output.Output); ok {
+				hostOutput.SetColor(textOut.ColorEnabled())
+			}
+			hostOutput.SetDebug(e.Debug)
+			hostOutput.SetVerbose(e.Verbose)
+
+			hostStats := &Stats{}
+			err := e.runPlayOnHost(ctx, play, hostStats, roles, host, playbookDir, hostOutput)
+
+			return &HostResult{
+				Host:    host,
+				Success: err == nil,
+				Error:   err,
+				Stats:   *hostStats,
+				Output:  buf,
+			}
+		})
+	}
+
+	results := pool.Wait()
+
+	// Flush buffered output in host order
+	FlushBuffers(os.Stdout, hosts, results)
+
+	// Aggregate stats and errors
+	var failed []string
+	for _, r := range results {
+		stats.Tasks += r.Stats.Tasks
+		stats.OK += r.Stats.OK
+		stats.Changed += r.Stats.Changed
+		stats.Failed += r.Stats.Failed
+		stats.Skipped += r.Stats.Skipped
+		if !r.Success {
+			failed = append(failed, r.Host)
+		}
+	}
+
+	if len(failed) > 0 {
+		// Show per-host failure summary
+		for _, r := range results {
+			if !r.Success && r.Error != nil {
+				e.Output.Error("Host %s failed: %v", r.Host, r.Error)
+			}
+		}
+		return fmt.Errorf("%d host(s) failed: %v", len(failed), failed)
 	}
 
 	return nil
 }
 
 // runPlayOnHost executes a play against a single host.
-func (e *Executor) runPlayOnHost(ctx context.Context, play *playbook.Play, stats *Stats, roles []*playbook.Role, host string, playbookDir string) error {
-	e.Output.HostStart(host, play.GetConnection())
+// The emitter parameter controls where output is written — either the main
+// emitter (serial mode) or a per-host buffered emitter (parallel mode).
+func (e *Executor) runPlayOnHost(ctx context.Context, play *playbook.Play, stats *Stats, roles []*playbook.Role, host string, playbookDir string, emitter output.Emitter) error {
+	emitter.HostStart(host, play.GetConnection())
 
 	// Create play context
 	pctx := &PlayContext{
@@ -403,6 +475,7 @@ func (e *Executor) runPlayOnHost(ctx context.Context, play *playbook.Play, stats
 		Facts:            make(map[string]any),
 		Registered:       make(map[string]any),
 		NotifiedHandlers: make(map[string]bool),
+		Output:           emitter,
 	}
 
 	// Merge variables with correct precedence: role defaults < role vars < play vars
@@ -469,15 +542,15 @@ func (e *Executor) runPlayOnHost(ctx context.Context, play *playbook.Play, stats
 
 	// Gather facts if enabled
 	if play.ShouldGatherFacts() {
-		e.Output.TaskStart("Gathering Facts", "")
+		emitter.TaskStart("Gathering Facts", "")
 		f, err := facts.Gather(ctx, conn)
 		if err != nil {
-			e.Output.TaskResult("Gathering Facts", "failed", false, err.Error())
+			emitter.TaskResult("Gathering Facts", "failed", false, err.Error())
 			return fmt.Errorf("failed to gather facts: %w", err)
 		}
 		pctx.Facts = f
 		pctx.Vars["facts"] = f
-		e.Output.TaskResult("Gathering Facts", "ok", false, "")
+		emitter.TaskResult("Gathering Facts", "ok", false, "")
 	}
 
 	// Create lazy SSM Parameter Store client.
@@ -495,11 +568,11 @@ func (e *Executor) runPlayOnHost(ctx context.Context, play *playbook.Play, stats
 	allHandlers := playbook.ExpandRoleHandlers(roles, play.Handlers)
 
 	// --- Plan phase ---
-	planned := e.planTasks(ctx, pctx, allTasks)
+	planned := e.planTasks(ctx, pctx, allTasks, emitter)
 	if len(allHandlers) > 0 {
 		planned = append(planned, e.planHandlers(allTasks, planned, allHandlers)...)
 	}
-	e.Output.DisplayPlan(planned, e.DryRun)
+	emitter.DisplayPlan(planned, e.DryRun)
 
 	// Dry run stops after showing the plan
 	if e.DryRun {
@@ -521,8 +594,8 @@ func (e *Executor) runPlayOnHost(ctx context.Context, play *playbook.Play, stats
 
 	// Prompt for approval unless auto-approved
 	if !e.AutoApprove {
-		if !e.Output.PromptApproval() {
-			e.Output.Info("Apply cancelled.")
+		if !emitter.PromptApproval() {
+			emitter.Info("Apply cancelled.")
 			return nil
 		}
 	}
@@ -535,7 +608,7 @@ func (e *Executor) runPlayOnHost(ctx context.Context, play *playbook.Play, stats
 				if !task.IgnoreErrors {
 					return err
 				}
-				e.Output.TaskResult(task.String(), "failed (ignored)", false, err.Error())
+				emitter.TaskResult(task.String(), "failed (ignored)", false, err.Error())
 			}
 			continue
 		}
@@ -548,7 +621,7 @@ func (e *Executor) runPlayOnHost(ctx context.Context, play *playbook.Play, stats
 			if !task.IgnoreErrors {
 				return err
 			}
-			e.Output.TaskResult(task.String(), "failed (ignored)", false, err.Error())
+			emitter.TaskResult(task.String(), "failed (ignored)", false, err.Error())
 			continue
 		}
 
@@ -582,7 +655,7 @@ func (e *Executor) runTask(ctx context.Context, pctx *PlayContext, task *playboo
 			return nil, fmt.Errorf("failed to evaluate 'when' condition: %w", err)
 		}
 		if !shouldRun {
-			e.Output.TaskResult(taskName, "skipped", false, "when condition not met")
+			pctx.Output.TaskResult(taskName, "skipped", false, "when condition not met")
 			return &TaskResult{Status: "skipped"}, nil
 		}
 	}
@@ -609,7 +682,7 @@ func (e *Executor) runTask(ctx context.Context, pctx *PlayContext, task *playboo
 // runSingleTask executes a task once.
 func (e *Executor) runSingleTask(ctx context.Context, pctx *PlayContext, task *playbook.Task) (*TaskResult, error) {
 	taskName := task.String()
-	e.Output.TaskStart(taskName, task.Module)
+	pctx.Output.TaskStart(taskName, task.Module)
 
 	// Handle task-level sudo override
 	playSudo := pctx.Play.Sudo
@@ -626,14 +699,14 @@ func (e *Executor) runSingleTask(ctx context.Context, pctx *PlayContext, task *p
 	mod := module.Get(task.Module)
 	if mod == nil {
 		err := fmt.Errorf("unknown module: %s", task.Module)
-		e.Output.TaskResult(taskName, "failed", false, err.Error())
+		pctx.Output.TaskResult(taskName, "failed", false, err.Error())
 		return nil, err
 	}
 
 	// Interpolate variables in params
 	params, err := e.interpolateParams(ctx, task.Params, pctx)
 	if err != nil {
-		e.Output.TaskResult(taskName, "failed", false, err.Error())
+		pctx.Output.TaskResult(taskName, "failed", false, err.Error())
 		return nil, fmt.Errorf("failed to interpolate parameters: %w", err)
 	}
 
@@ -652,7 +725,7 @@ func (e *Executor) runSingleTask(ctx context.Context, pctx *PlayContext, task *p
 
 	// Handle dry run
 	if e.DryRun {
-		e.Output.TaskResult(taskName, "skipped (dry run)", false, "")
+		pctx.Output.TaskResult(taskName, "skipped (dry run)", false, "")
 		return &TaskResult{Status: "skipped"}, nil
 	}
 
@@ -666,7 +739,7 @@ func (e *Executor) runSingleTask(ctx context.Context, pctx *PlayContext, task *p
 
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		if attempt > 1 {
-			e.Output.Info("Retry %d/%d for task: %s", attempt, maxAttempts, taskName)
+			pctx.Output.Info("Retry %d/%d for task: %s", attempt, maxAttempts, taskName)
 			time.Sleep(time.Duration(task.Delay) * time.Second)
 		}
 
@@ -677,7 +750,7 @@ func (e *Executor) runSingleTask(ctx context.Context, pctx *PlayContext, task *p
 	}
 
 	if lastErr != nil {
-		e.Output.TaskResult(taskName, "failed", false, lastErr.Error())
+		pctx.Output.TaskResult(taskName, "failed", false, lastErr.Error())
 		return &TaskResult{Status: "failed", Error: lastErr}, lastErr
 	}
 
@@ -704,7 +777,7 @@ func (e *Executor) runSingleTask(ctx context.Context, pctx *PlayContext, task *p
 		status = "changed"
 	}
 
-	e.Output.TaskResult(taskName, status, result.Changed, result.Message)
+	pctx.Output.TaskResult(taskName, status, result.Changed, result.Message)
 
 	return &TaskResult{
 		Status:  status,
@@ -751,7 +824,7 @@ func (e *Executor) runHandlersExpanded(ctx context.Context, pctx *PlayContext, s
 		return nil
 	}
 
-	e.Output.Section("RUNNING HANDLERS")
+	pctx.Output.Section("RUNNING HANDLERS")
 
 	for _, handler := range handlers {
 		if !pctx.NotifiedHandlers[handler.Name] {
@@ -783,7 +856,7 @@ func (e *Executor) runInclude(ctx context.Context, pctx *PlayContext, task *play
 			return fmt.Errorf("failed to evaluate 'when' condition: %w", err)
 		}
 		if !shouldRun {
-			e.Output.TaskResult(taskName, "skipped", false, "when condition not met")
+			pctx.Output.TaskResult(taskName, "skipped", false, "when condition not met")
 			stats.Tasks++
 			stats.Skipped++
 			return nil
@@ -800,7 +873,7 @@ func (e *Executor) runInclude(ctx context.Context, pctx *PlayContext, task *play
 		return fmt.Errorf("include path must be a string, got %T", includePath)
 	}
 
-	e.Output.TaskStart(taskName, "include")
+	pctx.Output.TaskStart(taskName, "include")
 
 	// Resolve and fetch the source
 	src, err := source.Resolve(includeStr)
@@ -820,7 +893,7 @@ func (e *Executor) runInclude(ctx context.Context, pctx *PlayContext, task *play
 		return fmt.Errorf("failed to parse included tasks from %q: %w", includeStr, err)
 	}
 
-	e.Output.TaskResult(taskName, "ok", false, fmt.Sprintf("included %d tasks from %s", len(includedTasks), includeStr))
+	pctx.Output.TaskResult(taskName, "ok", false, fmt.Sprintf("included %d tasks from %s", len(includedTasks), includeStr))
 
 	// Execute each included task inline
 	for _, inclTask := range includedTasks {
@@ -832,7 +905,7 @@ func (e *Executor) runInclude(ctx context.Context, pctx *PlayContext, task *play
 			if !inclTask.IgnoreErrors {
 				return err
 			}
-			e.Output.TaskResult(inclTask.String(), "failed (ignored)", false, err.Error())
+			pctx.Output.TaskResult(inclTask.String(), "failed (ignored)", false, err.Error())
 			continue
 		}
 
@@ -843,7 +916,7 @@ func (e *Executor) runInclude(ctx context.Context, pctx *PlayContext, task *play
 }
 
 // planTasks evaluates tasks without executing them and returns a plan.
-func (e *Executor) planTasks(ctx context.Context, pctx *PlayContext, tasks []*playbook.Task) []output.PlannedTask {
+func (e *Executor) planTasks(ctx context.Context, pctx *PlayContext, tasks []*playbook.Task, emitter output.Emitter) []output.PlannedTask {
 	var plan []output.PlannedTask
 
 	// Track which variable names are registered by preceding tasks,
