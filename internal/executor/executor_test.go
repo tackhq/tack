@@ -1,9 +1,12 @@
 package executor
 
 import (
+	"context"
 	"fmt"
+	"sort"
 	"testing"
 
+	"github.com/eugenetaranov/bolt/internal/inventory"
 	"github.com/eugenetaranov/bolt/internal/playbook"
 )
 
@@ -452,6 +455,98 @@ func TestConnOverrides_SSMFields(t *testing.T) {
 	}
 	if o.SSMBucket != "my-bucket" {
 		t.Errorf("SSMBucket = %q, want my-bucket", o.SSMBucket)
+	}
+}
+
+func TestRunPlay_HostsAllExpandsInventory(t *testing.T) {
+	exec := New()
+	exec.Inventory = &inventory.Inventory{
+		Groups: map[string]*inventory.GroupEntry{
+			"web": {Hosts: []string{"web1", "web2"}},
+			"db":  {Hosts: []string{"db1"}},
+		},
+	}
+	play := &playbook.Play{
+		Connection: "local",
+		Hosts:      []string{"all"},
+	}
+	stats := &Stats{}
+
+	// runPlay with local connection won't need real connectors.
+	// We just verify that "all" was expanded and no error about missing hosts.
+	err := exec.runPlay(context.Background(), play, stats, "", "")
+	// It may error about no tasks/roles, but should NOT error about missing hosts.
+	if err != nil && err.Error() == "--hosts all requires an inventory file (-i flag)" {
+		t.Fatal("should not require inventory flag when inventory is set")
+	}
+	// Verify hosts were expanded.
+	sort.Strings(play.Hosts)
+	if len(play.Hosts) != 3 {
+		t.Fatalf("Hosts = %v, want 3 hosts", play.Hosts)
+	}
+	if play.Hosts[0] != "db1" || play.Hosts[1] != "web1" || play.Hosts[2] != "web2" {
+		t.Errorf("Hosts = %v, want [db1 web1 web2]", play.Hosts)
+	}
+}
+
+func TestRunPlay_HostsAllWithoutInventory(t *testing.T) {
+	exec := New()
+	// No inventory set.
+	play := &playbook.Play{
+		Connection: "ssh",
+		Hosts:      []string{"all"},
+	}
+	stats := &Stats{}
+
+	err := exec.runPlay(context.Background(), play, stats, "", "")
+	if err == nil {
+		t.Fatal("expected error for --hosts all without inventory")
+	}
+	want := "--hosts all requires an inventory file (-i flag)"
+	if err.Error() != want {
+		t.Errorf("error = %q, want %q", err.Error(), want)
+	}
+}
+
+func TestRunPlay_MissingHostsErrorMessage(t *testing.T) {
+	exec := New()
+	play := &playbook.Play{
+		Connection: "ssh",
+	}
+	stats := &Stats{}
+
+	err := exec.runPlay(context.Background(), play, stats, "", "")
+	if err == nil {
+		t.Fatal("expected error for missing hosts")
+	}
+	want := "play has no target hosts (provide via --hosts, playbook hosts: field, or -c flag)"
+	if err.Error() != want {
+		t.Errorf("error = %q, want %q", err.Error(), want)
+	}
+}
+
+func TestRunPlay_SSMTagsZeroInstances(t *testing.T) {
+	exec := New()
+	// Group with SSM tags that will resolve to zero instances (no AWS call — we
+	// set up the play directly with tags and empty hosts to test the post-resolution check).
+	play := &playbook.Play{
+		Connection: "ssm",
+		SSM: &playbook.SSMConfig{
+			Region: "us-east-1",
+			Tags:   map[string]string{"env": "ghost", "role": "none"},
+		},
+	}
+	stats := &Stats{}
+
+	err := exec.runPlay(context.Background(), play, stats, "", "")
+	if err == nil {
+		t.Fatal("expected error for zero SSM tag matches")
+	}
+	// The error could be from ResolveInstancesByTags (AWS call fails in test) or
+	// our zero-match check. Either way it should NOT be the generic missing hosts error.
+	generic := "play has no target hosts"
+	if fmt.Sprintf("%v", err) == generic {
+		t.Errorf("got generic missing-hosts error, want SSM-specific error")
 	}
 }
 

@@ -21,8 +21,6 @@ func createTestVault(t *testing.T, dir string, filename string, content string, 
 	return path
 }
 
-func boolPtr(b bool) *bool { return &b }
-
 // TestVaultIntegration_PasswordFromCallback tests that a full playbook run with
 // vault_file succeeds when ResolveVaultPassword returns the correct password.
 func TestVaultIntegration_PasswordFromCallback(t *testing.T) {
