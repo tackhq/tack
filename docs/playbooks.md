@@ -8,13 +8,19 @@ Playbooks are YAML files that define a set of tasks to execute on target hosts. 
 # A playbook contains one or more plays
 name: Play Name                    # Optional description
 hosts: localhost                   # Required: target hosts
-connection: local                  # Connection type (local, ssh, ssm)
+connection: local                  # Connection type (local, ssh, ssm, docker)
 gather_facts: true                 # Gather system facts (default: true)
-become: false                      # Enable privilege escalation
-become_user: root                  # User to become (default: root)
+sudo: false                        # Enable privilege escalation
+sudo_password: ""                  # Password for sudo
 
 vars:                              # Play-level variables
   myvar: value
+
+vars_files:                        # External variable files
+  - vars.yaml
+  - ?optional.yaml                 # ? prefix = skip if missing
+
+vault_file: secrets.yaml           # Encrypted vault variables
 
 tasks:                             # List of tasks to execute
   - name: Task name
@@ -32,14 +38,19 @@ handlers:                          # Tasks triggered by notify
 | Attribute | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | `name` | string | no | - | Description of the play |
-| `hosts` | string | **yes** | - | Target hosts (e.g., `localhost`, `webservers`) |
-| `connection` | string | no | `local` | Connection type: `local`, `ssh`, `ssm` |
+| `hosts` | string/list | **yes** | - | Target hosts (e.g., `localhost`, `webservers`) |
+| `connection` | string | no | `local` | Connection type: `local`, `ssh`, `ssm`, `docker` |
 | `gather_facts` | bool | no | `true` | Gather system facts before tasks |
-| `become` | bool | no | `false` | Enable privilege escalation (sudo) |
-| `become_user` | string | no | `root` | User to become when using sudo |
+| `sudo` | bool | no | `false` | Enable privilege escalation |
+| `sudo_password` | string | no | - | Password for sudo |
 | `vars` | map | no | - | Variables available to all tasks |
+| `vars_files` | list | no | - | External YAML variable files (prefix `?` for optional) |
+| `vault_file` | string | no | - | Encrypted vault file path |
+| `roles` | list | no | - | Roles to include |
 | `tasks` | list | no | - | Tasks to execute |
 | `handlers` | list | no | - | Handlers triggered by notify |
+| `ssh` | map | no | - | SSH connection config (user, port, key, password, host_key_checking) |
+| `ssm` | map | no | - | SSM connection config (region, bucket, instances, tags) |
 
 ## Task Attributes
 
@@ -55,7 +66,7 @@ tasks:
     ignore_errors: false             # Continue on failure
     retries: 3                       # Retry count on failure
     delay: 5                         # Seconds between retries
-    become: true                     # Sudo for this task
+    sudo: true                       # Sudo for this task
     changed_when: "false"            # Override change detection
 ```
 
@@ -70,8 +81,7 @@ tasks:
 | `ignore_errors` | bool | Continue execution even if task fails |
 | `retries` | int | Number of retry attempts |
 | `delay` | int | Seconds to wait between retries |
-| `become` | bool | Enable sudo for this task |
-| `become_user` | string | User to become |
+| `sudo` | bool | Enable sudo for this task (overrides play-level) |
 | `changed_when` | string | Override when task reports changed |
 | `failed_when` | string | Override when task reports failed |
 
@@ -205,27 +215,29 @@ A playbook can contain multiple plays:
 
 ## Privilege Escalation
 
-Run tasks with elevated privileges:
+Run tasks with elevated privileges using `sudo`:
 
 ```yaml
-# Play-level become
+# Play-level sudo
 name: System Setup
 hosts: localhost
-become: true
-become_user: root
+sudo: true
 
 tasks:
   - name: Install system packages
     apt:
       name: nginx
 
-  # Override for specific task
-  - name: Run as app user
+  # Disable sudo for specific task
+  - name: Run as current user
     command:
       cmd: whoami
-    become: true
-    become_user: appuser
+    sudo: false
 ```
+
+Provide the sudo password via `--sudo-password` flag, `BOLT_SUDO_PASSWORD` env var, or the play-level `sudo_password` field.
+
+> **Note:** Bolt uses `sudo`, NOT `become`/`become_user` (those are Ansible-specific).
 
 ## Complete Example
 
@@ -234,7 +246,6 @@ name: Setup Web Application
 hosts: localhost
 connection: local
 gather_facts: true
-become: false
 
 vars:
   app_name: myapp
@@ -247,7 +258,7 @@ tasks:
       path: "{{ app_dir }}"
       state: directory
       mode: "0755"
-    become: true
+    sudo: true
 
   - name: Install dependencies (macOS)
     brew:
@@ -265,7 +276,7 @@ tasks:
       state: present
       update_cache: true
     when: facts.os_family == 'Debian'
-    become: true
+    sudo: true
 
   - name: Copy application config
     copy:

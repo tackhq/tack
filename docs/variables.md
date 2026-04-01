@@ -1,16 +1,41 @@
 # Variables and Facts
 
-Bolt supports variable interpolation using `{{ variable }}` syntax, similar to Jinja2/Ansible templates.
+Bolt supports variable interpolation using `{{ variable }}` syntax.
+
+> **Note:** This is Bolt's own interpolation, NOT Jinja2. See [filters](#available-filters) for what's supported.
 
 ## Variable Sources
 
-Variables come from several sources (in order of precedence):
+Variables come from several sources (in order of precedence, highest first):
 
 1. **Registered results** - Task outputs stored via `register`
 2. **Loop variables** - `item` and `loop_index` during loops
 3. **Play variables** - Defined in `vars` section
 4. **Facts** - Gathered system information
-5. **Environment** - Available via `env.VARNAME`
+5. **CLI extra vars** - Passed via `-e key=value`
+6. **Vault variables** - From encrypted `vault_file`
+7. **vars_files** - External YAML files loaded via `vars_files`
+8. **Role defaults** - From `defaults/main.yaml` in roles
+9. **Environment** - Available via `env.VARNAME`
+
+### vars_files
+
+Load variables from external YAML files:
+
+```yaml
+vars_files:
+  - vars/common.yaml
+  - vars/{{ facts.os_family | lower }}.yaml
+  - ?vars/local.yaml          # ? prefix = skip if file doesn't exist
+```
+
+### vault_file
+
+Load encrypted variables (see `bolt vault init` to create):
+
+```yaml
+vault_file: secrets.yaml
+```
 
 ## Basic Interpolation
 

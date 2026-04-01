@@ -45,7 +45,8 @@ tasks:
 - **Multiple connectors** -- Local, Docker, SSH, AWS SSM with tag-based discovery
 - **Plan/apply workflow** -- preview changes before applying, `--auto-approve` for CI
 - **Parallel execution** -- `--forks N` for concurrent multi-host runs
-- **Variable system** -- interpolation, filters, registered outputs, vault encryption
+- **Variable system** -- interpolation, filters, registered outputs, vars_files, vault encryption
+- **JSON output** -- `--output json` for machine-readable output in CI pipelines
 - **System facts** -- OS, arch, network, EC2 metadata (via IMDSv2)
 - **Remote sources** -- run playbooks from git repos, S3, or HTTP URLs
 - **No dependencies** -- single static binary
@@ -180,7 +181,7 @@ bolt generate --packages nginx --files /etc/nginx/nginx.conf -c ssh://root@web1 
 bolt scaffold myrole          # create role boilerplate
 bolt test myrole              # test in Docker container (reused for idempotency checks)
 bolt validate playbook.yaml   # syntax check
-bolt vault encrypt secrets.yaml   # encrypt variables file
+bolt vault init secrets.yaml      # create encrypted vault file
 ```
 
 ## Documentation
@@ -194,6 +195,7 @@ bolt vault encrypt secrets.yaml   # encrypt variables file
 | [Variables & Facts](docs/variables.md) | Interpolation, filters, system/network/EC2 facts |
 | [Connectors](docs/connectors.md) | Local, Docker, SSH, SSM configuration |
 | [Development](docs/development.md) | Building, testing, project structure |
+| [llms.txt](llms.txt) | LLM-optimized reference (for AI code generation) |
 
 ## License
 

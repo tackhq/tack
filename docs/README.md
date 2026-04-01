@@ -15,3 +15,7 @@
 ## Contributing
 
 - [Development](development.md) - Building, testing, project structure
+
+## For LLMs
+
+- [llms.txt](../llms.txt) - Self-contained LLM-optimized reference for AI code generation
