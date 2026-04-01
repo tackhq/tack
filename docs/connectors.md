@@ -4,293 +4,190 @@ Connectors define how Bolt connects to and executes commands on target systems.
 
 ## Available Connectors
 
-| Connector | Status | Description |
+| Connector | Syntax | Description |
 |-----------|--------|-------------|
-| `local` | ✅ Implemented | Execute on local machine |
-| `docker` | ✅ Implemented | Execute in Docker containers |
-| `ssh` | 🚧 Planned | Connect via SSH |
-| `ssm` | 🚧 Planned | AWS Systems Manager |
+| **Local** | `connection: local` | Execute on the local machine |
+| **Docker** | `connection: docker` | Execute inside a Docker container |
+| **SSH** | `connection: ssh` or `-c ssh://user@host:port` | Connect via SSH |
+| **SSM** | `connection: ssm` | Connect via AWS Systems Manager |
 
 ## Local Connector
 
-Execute commands on the local machine.
-
-### Configuration
+Execute commands on the local machine. This is the default when no connection is specified.
 
 ```yaml
-name: Local Playbook
-hosts: localhost
-connection: local  # This is the default
-
-tasks:
-  - name: Run locally
-    command:
-      cmd: whoami
-```
-
-### Features
-
-- Direct command execution via `/bin/sh`
-- File operations using local filesystem
-- Optional sudo support via `become`
-
-### With Privilege Escalation
-
-```yaml
-name: System Setup
+name: Local Setup
 hosts: localhost
 connection: local
-become: true
-become_user: root
 
 tasks:
-  - name: Install package (as root)
-    apt:
-      name: nginx
+  - name: Install packages
+    brew:
+      name: [git, go]
       state: present
-
-  - name: Run as specific user
-    command:
-      cmd: whoami
-    become: true
-    become_user: postgres
 ```
+
+Supports sudo via `sudo: true` at play or task level. Password can be provided via `--sudo-password` flag, `BOLT_SUDO_PASSWORD` env var, or interactive prompt.
 
 ## Docker Connector
 
-Execute commands inside Docker containers using `docker exec`.
-
-### Configuration
+Execute commands inside Docker containers using `docker exec`. File transfer uses `docker cp`.
 
 ```yaml
 name: Configure Container
-hosts: my-container        # Container name or ID
-connection: docker
-
-tasks:
-  - name: Install package
-    command:
-      cmd: apt-get update && apt-get install -y curl
-
-  - name: Create directory
-    file:
-      path: /app/data
-      state: directory
-```
-
-### Features
-
-- Execute commands via `docker exec`
-- File upload/download via `docker cp`
-- Run as specific user with `become_user`
-- Works with container names or IDs
-
-### With User Override
-
-```yaml
-name: Configure as App User
 hosts: my-container
 connection: docker
-become: true
-become_user: appuser
 
 tasks:
-  - name: Run as appuser
+  - name: Install curl
     command:
-      cmd: whoami
-    # Output: appuser
+      cmd: apt-get update && apt-get install -y curl
 ```
 
-### Example: Setup a Development Container
+The `hosts` value is the container name or ID. Sudo runs commands as the specified user inside the container.
 
-```yaml
-name: Setup Dev Container
-hosts: dev-container
-connection: docker
-
-tasks:
-  - name: Update package cache
-    command:
-      cmd: apt-get update
-
-  - name: Install development tools
-    command:
-      cmd: apt-get install -y git vim curl
-
-  - name: Create workspace
-    file:
-      path: /workspace
-      state: directory
-      mode: "0755"
-
-  - name: Copy configuration
-    copy:
-      content: |
-        export PATH="/usr/local/bin:$PATH"
-        alias ll="ls -la"
-      dest: /root/.bashrc
-```
-
-### Running the Container First
+**CLI shorthand:**
 
 ```bash
-# Start a container
-docker run -d --name my-container ubuntu:22.04 sleep 600
-
-# Run bolt playbook
-bolt run container-setup.yaml
-
-# Enter the container to verify
-docker exec -it my-container bash
+bolt run playbook.yaml -c docker://my-container
 ```
 
-## SSH Connector (Planned)
+## SSH Connector
 
-Connect to remote hosts via SSH.
+Connect to remote hosts via SSH. Supports key-based and password authentication, and reads `~/.ssh/config` and `~/.ssh/known_hosts` automatically.
 
-### Planned Configuration
+### Configuration Sources
+
+SSH settings can come from multiple sources. Priority (highest first):
+
+1. CLI flags (`--ssh-user`, `--ssh-port`, `--ssh-key`, `--ssh-password`, `--ssh-insecure`)
+2. Playbook `ssh:` block
+3. Per-host inventory `ssh:` settings
+4. Group inventory `ssh:` settings
+5. `~/.ssh/config`
+6. Defaults
+
+### Playbook Configuration
 
 ```yaml
-name: Remote Setup
-hosts: webserver.example.com
+name: Configure Web Server
+hosts: [web1, web2]
 connection: ssh
 
-# SSH-specific settings
-ssh_user: deploy
-ssh_port: 22
-ssh_private_key: ~/.ssh/id_rsa
+ssh:
+  user: deploy
+  key: ~/.ssh/deploy_key
+  port: 22
 
 tasks:
-  - name: Install on remote
+  - name: Install nginx
     apt:
       name: nginx
+      state: present
 ```
 
-### Planned Features
+### CLI Usage
 
-- Password and key-based authentication
-- SSH agent forwarding
-- Jump host / bastion support
-- Connection multiplexing
-- Configurable timeouts
+```bash
+# URI-style connection strings
+bolt run playbook.yaml -c ssh://deploy@web1:2222
+bolt run playbook.yaml -c ssh://deploy@web1 -c ssh://deploy@web2
 
-## SSM Connector (Planned)
+# Separate flags
+bolt run playbook.yaml --hosts web1,web2 --ssh-user deploy --ssh-key ~/.ssh/deploy_key
 
-Connect to AWS EC2 instances via Systems Manager.
+# SSH config aliases work directly
+bolt run playbook.yaml --hosts myserver
 
-### Planned Configuration
+# Connection type is auto-detected from SSH flags or remote hosts
+bolt run playbook.yaml --hosts web1 --ssh-user deploy
+```
+
+### Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `BOLT_CONNECTION` | Connection type |
+| `BOLT_HOSTS` | Comma-separated host list |
+| `BOLT_SSH_USER` | SSH username |
+| `BOLT_SSH_PORT` | SSH port |
+| `BOLT_SSH_KEY` | Path to SSH private key |
+| `BOLT_SSH_PASSWORD` | SSH password |
+| `BOLT_SSH_INSECURE` | Skip host key verification (`1`, `true`, or `yes`) |
+
+## SSM Connector
+
+Connect to AWS EC2 instances via Systems Manager. No SSH keys required - uses IAM-based authentication. Works with private instances that have no public IP.
+
+### Tag-Based Discovery
+
+SSM can discover instances by EC2 tags at runtime:
 
 ```yaml
-name: AWS Instance Setup
-hosts: i-1234567890abcdef0
+name: Patch App Servers
 connection: ssm
 
-# AWS-specific settings
-aws_region: us-east-1
-aws_profile: production
+ssm:
+  region: us-east-1
+  bucket: my-ssm-transfer-bucket
+  tags:
+    env: production
+    role: app-server
 
 tasks:
-  - name: Install on EC2
+  - name: Install security updates
     apt:
-      name: nginx
+      name: "*"
+      state: latest
 ```
 
-### Planned Features
+The `bucket` field is required for file upload/download operations (copy, template modules).
 
-- No SSH keys required
-- Works with private instances (no public IP)
-- IAM-based authentication
-- CloudWatch logging integration
-- Automatic session management
-
-## Connector Interface
-
-All connectors implement this interface:
-
-```go
-type Connector interface {
-    // Connect establishes a connection
-    Connect(ctx context.Context) error
-
-    // Execute runs a command and returns output
-    Execute(ctx context.Context, cmd string) (*Result, error)
-
-    // Upload copies content to target
-    Upload(ctx context.Context, src io.Reader, dst string, mode uint32) error
-
-    // Download copies content from target
-    Download(ctx context.Context, src string, dst io.Writer) error
-
-    // Close terminates the connection
-    Close() error
-
-    // String returns connection description
-    String() string
-}
-
-type Result struct {
-    Stdout   string
-    Stderr   string
-    ExitCode int
-}
-```
-
-## Implementing Custom Connectors
-
-1. Create a new package under `internal/connector/`
-2. Implement the `Connector` interface
-3. Add connector selection in `executor.getConnector()`
-
-Example structure:
-
-```go
-package myconnector
-
-import (
-    "context"
-    "github.com/eugenetaranov/bolt/internal/connector"
-)
-
-type Connector struct {
-    // connection settings
-}
-
-func New(opts ...Option) *Connector {
-    return &Connector{}
-}
-
-func (c *Connector) Connect(ctx context.Context) error {
-    // establish connection
-    return nil
-}
-
-func (c *Connector) Execute(ctx context.Context, cmd string) (*connector.Result, error) {
-    // run command
-    return &connector.Result{
-        Stdout:   "output",
-        ExitCode: 0,
-    }, nil
-}
-
-// ... implement remaining methods
-
-// Verify interface compliance
-var _ connector.Connector = (*Connector)(nil)
-```
-
-## Connection Selection
-
-The connector is selected based on the `connection` field in the play:
+### Direct Instance IDs
 
 ```yaml
-# Explicit local
-connection: local
-
-# SSH (when implemented)
-connection: ssh
-
-# AWS SSM (when implemented)
+name: Configure Instances
 connection: ssm
+hosts: [i-0abc123, i-0def456]
+
+ssm:
+  region: us-east-1
+  bucket: my-transfer-bucket
 ```
 
-If not specified, `local` is used by default.
+### CLI Usage
+
+```bash
+# Tags on CLI (SSM connection auto-detected)
+bolt run patch.yaml --ssm-tags env=production,role=app-server --ssm-region us-east-1
+
+# Direct instance IDs
+bolt run patch.yaml --ssm-instances i-0abc123,i-0def456 --ssm-region us-east-1 --ssm-bucket my-bucket
+```
+
+### Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `BOLT_SSM_INSTANCES` | Comma-separated instance IDs |
+| `BOLT_SSM_TAGS` | Comma-separated key=value tags |
+| `BOLT_SSM_REGION` | AWS region |
+| `BOLT_SSM_BUCKET` | S3 bucket for file transfer |
+
+AWS credentials use the standard SDK credential chain (env vars, shared config, IAM roles).
+
+## Auto-Detection
+
+When no `connection:` is specified, Bolt infers the type from flags:
+
+- SSH flags (`--ssh-user`, `--ssh-key`, etc.) or remote `--hosts` values imply `ssh`
+- SSM flags (`--ssm-instances`, `--ssm-tags`) imply `ssm`
+- Otherwise defaults to `local`
+
+## Parallel Execution
+
+Use `--forks N` (or `BOLT_FORKS` env var) to execute against multiple hosts concurrently. Output is buffered per-host and flushed in host order after completion. Defaults to 1 (serial).
+
+```bash
+bolt run deploy.yaml --hosts web1,web2,web3 --forks 3
+```

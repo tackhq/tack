@@ -1,49 +1,41 @@
 # Getting Started
 
-This guide will help you install Bolt and run your first playbook.
-
 ## Installation
+
+### Homebrew (macOS/Linux)
+
+```bash
+brew install eugenetaranov/tap/bolt
+```
+
+### Download Binary
+
+Download from the [releases page](https://github.com/eugenetaranov/bolt/releases).
+
+### Go Install
+
+```bash
+go install github.com/eugenetaranov/bolt/cmd/bolt@latest
+```
 
 ### From Source
 
 ```bash
-# Clone the repository
 git clone https://github.com/eugenetaranov/bolt.git
-cd bolt
-
-# Build
-make build
-
-# Install (optional)
-sudo make install
+cd bolt && make build
+# Binary at ./bin/bolt
 ```
-
-### Binary Location
-
-After building, the binary is located at `./bin/bolt`. You can either:
-- Add `./bin` to your PATH
-- Copy the binary to `/usr/local/bin` with `make install`
-- Run directly with `./bin/bolt`
 
 ## Verify Installation
 
 ```bash
 bolt --version
-# bolt version dev (commit: abc123, built: 2024-01-15T10:00:00Z)
-
 bolt modules
-# Available modules:
-#   - apt
-#   - brew
-#   - yum
-#   - command
-#   - copy
-#   - file
 ```
 
 ## Your First Playbook
 
-Create a file named `hello.yaml`:
+Create `hello.yaml`:
 
 ```yaml
 name: Hello Bolt
@@ -55,99 +47,60 @@ tasks:
   - name: Show system info
     command:
       cmd: echo "Hello from {{ facts.os_type }} on {{ facts.architecture }}"
-    register: result
 
   - name: Create a test file
-    file:
-      path: /tmp/bolt-test
-      state: touch
-
-  - name: Write content to file
     copy:
-      dest: /tmp/bolt-test
+      dest: /tmp/bolt-hello
       content: |
         Bolt was here!
         OS: {{ facts.os_type }}
         User: {{ facts.user }}
 ```
 
-## Running the Playbook
-
-### Basic Run
+Run it:
 
 ```bash
-bolt run hello.yaml
+bolt run hello.yaml             # plan + approve + apply
+bolt run hello.yaml --check     # preview only, no changes
+bolt run hello.yaml --debug     # detailed output
 ```
 
-Output:
-```
-PLAYBOOK: hello.yaml
-============================================================
-
-PLAY [Hello Bolt] ****************************************
-TASK [Gathering Facts]
-    ok: [localhost]
-TASK [Show system info]
-    changed: [localhost]
-TASK [Create a test file]
-    changed: [localhost]
-TASK [Write content to file]
-    changed: [localhost]
-
-============================================================
-PLAY RECAP
-
-localhost            : ok=4    changed=3    failed=0    skipped=0
-
-Total time: 0.15s
-```
-
-### Dry Run Mode
-
-See what would happen without making changes:
-
-```bash
-bolt run hello.yaml --dry-run
-```
-
-### Debug Output
-
-Get detailed information about each task:
-
-```bash
-bolt run hello.yaml --debug
-```
-
-### Validate Without Running
-
-Check playbook syntax without executing:
-
-```bash
-bolt validate hello.yaml
-```
-
-## CLI Reference
+## CLI Overview
 
 ```
-Usage:
-  bolt [command]
-
-Available Commands:
-  run         Run a playbook
-  validate    Validate a playbook
-  modules     List available modules
-  help        Help about any command
-
-Flags:
-  -h, --help       help for bolt
-  -n, --dry-run    Show what would be done without making changes
-      --no-color   Disable colored output
-      --debug      Enable debug output
-      --version    version for bolt
+bolt run <playbook|role>    Run a playbook or role directory
+bolt validate <playbook>    Check playbook syntax without executing
+bolt test <playbook|role>   Test in an ephemeral Docker container
+bolt generate               Capture live system state as a playbook
+bolt scaffold <name>        Create a new role with sample files
+bolt module <name>          Show module documentation
+bolt modules                List available modules
+bolt vault encrypt <file>   Encrypt a YAML file
+bolt vault decrypt <file>   Decrypt a vault file
+bolt vault view <file>      View encrypted file contents
 ```
+
+### Key Flags
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--check` / `--dry-run` | `-n` | Preview without applying |
+| `--debug` | `-d` | Detailed task output |
+| `--verbose` | `-v` | Full diffs in plan |
+| `--auto-approve` | | Skip confirmation prompt |
+| `--forks N` | `-f` | Parallel host execution (default: 1) |
+| `--output json` | | Machine-readable JSON output |
+| `--no-color` | | Disable colored output |
+| `--inventory` | `-i` | Inventory file |
+| `--extra-vars` | `-e` | Extra variables (key=value) |
+| `--connection` | `-c` | Connection URI (e.g. `ssh://user@host`) |
+
+Run `bolt run --help` for the full flag reference.
 
 ## Next Steps
 
-- Learn about [Playbook Structure](playbooks.md)
-- Explore [Available Modules](modules.md)
-- Understand [Variables and Facts](variables.md)
+- [Playbook Structure](playbooks.md) - tasks, handlers, loops, conditionals
+- [Modules Reference](modules.md) - apt, brew, yum, file, copy, command, systemd, template
+- [Variables & Facts](variables.md) - interpolation, filters, system facts
+- [Connectors](connectors.md) - local, Docker, SSH, SSM
+- [Roles](roles.md) - reusable role structure

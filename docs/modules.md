@@ -12,6 +12,7 @@ Modules are the units of work in Bolt. Each module performs a specific action li
 | [command](#command) | Execute shell commands |
 | [copy](#copy) | Copy files to targets |
 | [file](#file) | Manage files and directories |
+| [systemd](#systemd) | Manage systemd services |
 | [template](#template) | Render templates to targets |
 
 ---
@@ -472,6 +473,56 @@ Manage files, directories, and symlinks.
     path: /var/run/myapp.updated
     state: touch
 ```
+
+---
+
+## systemd
+
+Manage systemd services on Linux systems.
+
+### Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `name` | string | **yes** | - | Service unit name (e.g., `nginx`, `docker.service`) |
+| `state` | string | no | - | `started`, `stopped`, `restarted`, `reloaded` |
+| `enabled` | bool | no | - | Enable/disable service at boot |
+| `daemon_reload` | bool | no | `false` | Run `systemctl daemon-reload` first |
+| `masked` | bool | no | - | Mask/unmask the service |
+
+### Examples
+
+```yaml
+# Start and enable a service
+- name: Enable nginx
+  systemd:
+    name: nginx
+    state: started
+    enabled: true
+
+# Restart after config change
+- name: Restart app
+  systemd:
+    name: myapp
+    state: restarted
+
+# Reload systemd after unit file changes
+- name: Reload and start
+  systemd:
+    name: myapp
+    daemon_reload: true
+    state: started
+
+# Mask a service
+- name: Mask unused service
+  systemd:
+    name: cups
+    masked: true
+```
+
+### Idempotency
+
+The module checks current service state before acting. If the service is already in the desired state, no changes are made.
 
 ---
 
