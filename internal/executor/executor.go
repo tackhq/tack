@@ -1169,59 +1169,9 @@ func (e *Executor) GetConnector(play *playbook.Play, host string) (connector.Con
 	}
 }
 
-// evaluateCondition evaluates a when condition.
+// evaluateCondition evaluates a when condition using the expression parser.
 func (e *Executor) evaluateCondition(condition string, pctx *PlayContext) (bool, error) {
-	// Simple condition evaluation
-	// Supports: variable truthiness, comparisons, and registered results
-
-	condition = strings.TrimSpace(condition)
-
-	// Check for negation
-	if strings.HasPrefix(condition, "not ") {
-		result, err := e.evaluateCondition(condition[4:], pctx)
-		return !result, err
-	}
-
-	// Check for registered variable .changed
-	if strings.HasSuffix(condition, ".changed") {
-		varName := strings.TrimSuffix(condition, ".changed")
-		if reg, ok := pctx.Registered[varName]; ok {
-			if regMap, ok := reg.(map[string]any); ok {
-				if changed, ok := regMap["changed"].(bool); ok {
-					return changed, nil
-				}
-			}
-		}
-		return false, nil
-	}
-
-	// Check for == comparison
-	if strings.Contains(condition, "==") {
-		parts := strings.SplitN(condition, "==", 2)
-		left := strings.TrimSpace(parts[0])
-		right := strings.TrimSpace(parts[1])
-
-		leftVal := e.resolveValue(left, pctx)
-		rightVal := e.resolveValue(right, pctx)
-
-		return fmt.Sprintf("%v", leftVal) == fmt.Sprintf("%v", rightVal), nil
-	}
-
-	// Check for != comparison
-	if strings.Contains(condition, "!=") {
-		parts := strings.SplitN(condition, "!=", 2)
-		left := strings.TrimSpace(parts[0])
-		right := strings.TrimSpace(parts[1])
-
-		leftVal := e.resolveValue(left, pctx)
-		rightVal := e.resolveValue(right, pctx)
-
-		return fmt.Sprintf("%v", leftVal) != fmt.Sprintf("%v", rightVal), nil
-	}
-
-	// Simple variable truthiness
-	val := e.resolveValue(condition, pctx)
-	return isTruthy(val), nil
+	return evaluateConditionExpr(condition, pctx)
 }
 
 // resolveValue resolves a value that might be a variable reference.
