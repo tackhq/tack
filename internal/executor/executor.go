@@ -283,6 +283,17 @@ func (e *Executor) ApplyOverrides(play *playbook.Play) {
 
 // runPlay executes a single play.
 func (e *Executor) runPlay(ctx context.Context, play *playbook.Play, stats *Stats, rolesDir string, playbookDir string) error {
+	// Handle --hosts all: expand entire inventory.
+	for _, h := range play.Hosts {
+		if h == "all" {
+			if e.Inventory == nil {
+				return fmt.Errorf("--hosts all requires an inventory file (-i flag)")
+			}
+			play.Hosts = e.Inventory.AllHosts()
+			break
+		}
+	}
+
 	// Expand inventory group names in play.Hosts and apply group-level config.
 	if e.Inventory != nil && len(play.Hosts) > 0 {
 		expanded := make([]string, 0, len(play.Hosts))
@@ -324,13 +335,16 @@ func (e *Executor) runPlay(ctx context.Context, play *playbook.Play, stats *Stat
 			if err != nil {
 				return fmt.Errorf("failed to resolve SSM instances by tags: %w", err)
 			}
+			if len(ids) == 0 {
+				return fmt.Errorf("SSM tag resolution matched zero instances for tags: %v", play.SSM.Tags)
+			}
 			play.Hosts = ids
 		}
 	}
 
 	// Validate hosts after overrides have been applied (non-local connections need hosts)
 	if play.GetConnection() != "local" && len(play.Hosts) == 0 {
-		return fmt.Errorf("play is missing 'hosts' (provide via playbook or -c flag)")
+		return fmt.Errorf("play has no target hosts (provide via --hosts, playbook hosts: field, or -c flag)")
 	}
 
 	// Load roles if specified

@@ -175,7 +175,9 @@ func TestRunVaultEdit_NoOpDetection(t *testing.T) {
 	w.Close()
 	os.Stderr = oldStderr
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	if _, err := buf.ReadFrom(r); err != nil {
+		t.Fatalf("reading stderr: %v", err)
+	}
 	stderrOut := buf.String()
 
 	if runErr != nil {

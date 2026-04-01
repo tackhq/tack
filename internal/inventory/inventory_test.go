@@ -3,7 +3,10 @@ package inventory
 import (
 	"os"
 	"path/filepath"
+	"sort"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 const sshInventory = `
@@ -298,4 +301,83 @@ func TestNilInventory(t *testing.T) {
 	if groups := inv.GetHostGroups("anything"); groups != nil {
 		t.Error("nil inventory GetHostGroups should return nil")
 	}
+}
+
+func TestAllHosts_MultipleGroups(t *testing.T) {
+	inv := &Inventory{
+		Groups: map[string]*GroupEntry{
+			"web": {Hosts: []string{"web1", "web2"}},
+			"db":  {Hosts: []string{"db1"}},
+		},
+	}
+	got := inv.AllHosts()
+	sort.Strings(got)
+	assert.Equal(t, []string{"db1", "web1", "web2"}, got)
+}
+
+func TestAllHosts_Deduplication(t *testing.T) {
+	inv := &Inventory{
+		Groups: map[string]*GroupEntry{
+			"prod": {Hosts: []string{"web1", "db1"}},
+			"web":  {Hosts: []string{"web1", "web2"}},
+		},
+	}
+	got := inv.AllHosts()
+	sort.Strings(got)
+	assert.Equal(t, []string{"db1", "web1", "web2"}, got)
+}
+
+func TestAllHosts_SSMInstances(t *testing.T) {
+	inv := &Inventory{
+		Groups: map[string]*GroupEntry{
+			"ssm-group": {
+				SSM: &GroupSSMConfig{
+					Instances: []string{"i-111", "i-222"},
+				},
+			},
+		},
+	}
+	got := inv.AllHosts()
+	sort.Strings(got)
+	assert.Equal(t, []string{"i-111", "i-222"}, got)
+}
+
+func TestAllHosts_TopLevelHosts(t *testing.T) {
+	inv := &Inventory{
+		Hosts: map[string]*HostEntry{
+			"standalone1": {},
+			"standalone2": {},
+		},
+		Groups: map[string]*GroupEntry{
+			"web": {Hosts: []string{"web1"}},
+		},
+	}
+	got := inv.AllHosts()
+	sort.Strings(got)
+	assert.Equal(t, []string{"standalone1", "standalone2", "web1"}, got)
+}
+
+func TestAllHosts_DedupeAcrossGroupsAndHosts(t *testing.T) {
+	inv := &Inventory{
+		Hosts: map[string]*HostEntry{
+			"web1": {},
+		},
+		Groups: map[string]*GroupEntry{
+			"web": {Hosts: []string{"web1"}},
+		},
+	}
+	got := inv.AllHosts()
+	assert.Equal(t, []string{"web1"}, got)
+}
+
+func TestAllHosts_EmptyInventory(t *testing.T) {
+	inv := &Inventory{}
+	got := inv.AllHosts()
+	assert.Nil(t, got)
+}
+
+func TestAllHosts_NilInventory(t *testing.T) {
+	var inv *Inventory
+	got := inv.AllHosts()
+	assert.Nil(t, got)
 }

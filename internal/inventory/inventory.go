@@ -106,6 +106,37 @@ func (inv *Inventory) GetHost(name string) *HostEntry {
 	return inv.Hosts[name]
 }
 
+// AllHosts expands every group, merges top-level hosts, and returns a
+// deduplicated list of all host names in the inventory.
+func (inv *Inventory) AllHosts() []string {
+	if inv == nil {
+		return nil
+	}
+	seen := make(map[string]bool)
+	var result []string
+	add := func(h string) {
+		if !seen[h] {
+			seen[h] = true
+			result = append(result, h)
+		}
+	}
+
+	for _, g := range inv.Groups {
+		for _, h := range g.Hosts {
+			add(h)
+		}
+		if g.SSM != nil {
+			for _, h := range g.SSM.Instances {
+				add(h)
+			}
+		}
+	}
+	for name := range inv.Hosts {
+		add(name)
+	}
+	return result
+}
+
 // GetHostGroups returns all GroupEntry values that contain the given host name.
 func (inv *Inventory) GetHostGroups(host string) []*GroupEntry {
 	if inv == nil {
