@@ -41,6 +41,11 @@ type ConnOverrides struct {
 	SSMTags      map[string]string
 	SSMRegion    string
 	SSMBucket    string
+
+	// ConnectionInferred is true when Connection was inferred from flags
+	// (e.g. --hosts with non-local targets implies ssh) rather than explicitly
+	// set by the user. Inferred connections can be overridden by inventory groups.
+	ConnectionInferred bool
 }
 
 // Executor runs playbooks.
@@ -305,9 +310,11 @@ func (e *Executor) runPlay(ctx context.Context, play *playbook.Play, stats *Stat
 				continue
 			}
 			expanded = append(expanded, hosts...)
-			// Apply group-level connection/SSH/SSM as defaults (play values take priority)
+			// Apply group-level connection/SSH/SSM as defaults.
+			// Group connection overrides inferred connections (e.g. --hosts infers ssh)
+			// but not explicitly set ones (from playbook or -c flag).
 			if group != nil {
-				if play.Connection == "" && group.Connection != "" {
+				if group.Connection != "" && (play.Connection == "" || (e.Overrides != nil && e.Overrides.ConnectionInferred)) {
 					play.Connection = group.Connection
 				}
 				if play.SSH == nil && group.SSH != nil {

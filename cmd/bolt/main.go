@@ -723,10 +723,13 @@ func buildConnOverrides(cmd *cobra.Command) (*executor.ConnOverrides, error) {
 	if o.Connection == "" {
 		if o.SSHUser != "" || o.SSHKey != "" || o.SSHPort != 0 || o.HasSSHPass {
 			o.Connection = "ssh"
+			o.ConnectionInferred = true
 		} else if len(o.SSMInstances) > 0 || len(o.SSMTags) > 0 {
 			o.Connection = "ssm"
+			o.ConnectionInferred = true
 		} else if len(o.Hosts) > 0 && !isLocalHost(o.Hosts) {
 			o.Connection = "ssh"
+			o.ConnectionInferred = true
 		}
 	}
 
