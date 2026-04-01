@@ -35,6 +35,7 @@ bolt modules
 # Available modules:
 #   - apt
 #   - brew
+#   - yum
 #   - command
 #   - copy
 #   - file

@@ -23,6 +23,7 @@ import (
 	_ "github.com/eugenetaranov/bolt/internal/module/file"
 	_ "github.com/eugenetaranov/bolt/internal/module/systemd"
 	_ "github.com/eugenetaranov/bolt/internal/module/template"
+	_ "github.com/eugenetaranov/bolt/internal/module/yum"
 
 	"github.com/eugenetaranov/bolt/internal/executor"
 	"github.com/eugenetaranov/bolt/internal/generate"
