@@ -382,3 +382,25 @@ var _ module.Module = (*Module)(nil)
 
 // Ensure Module implements the module.Checker interface.
 var _ module.Checker = (*Module)(nil)
+
+// Ensure Module implements the module.Describer interface.
+var _ module.Describer = (*Module)(nil)
+
+// Description returns a short summary of the file module.
+func (m *Module) Description() string {
+	return "Manage files, directories, and symlinks on the target system."
+}
+
+// Parameters returns the parameter documentation for the file module.
+func (m *Module) Parameters() []module.ParamDoc {
+	return []module.ParamDoc{
+		{Name: "path", Type: "string", Required: true, Description: "Path to the file or directory"},
+		{Name: "state", Type: "string", Default: "file", Description: "Desired state: file, directory, link, absent, touch"},
+		{Name: "mode", Type: "string", Description: "File permissions in octal (e.g. 0755, 0644)"},
+		{Name: "owner", Type: "string", Description: "Owner username"},
+		{Name: "group", Type: "string", Description: "Group name"},
+		{Name: "src", Type: "string", Description: "Source path for symlinks (required when state=link)"},
+		{Name: "recurse", Type: "bool", Default: "false", Description: "Recursively set attributes on directory contents"},
+		{Name: "force", Type: "bool", Default: "false", Description: "Force symlink creation even if destination exists"},
+	}
+}

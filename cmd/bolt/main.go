@@ -108,12 +108,14 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&debug, "debug", "d", false, "Enable debug output with detailed task information")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Show full diffs in plan output")
 	rootCmd.PersistentFlags().BoolVarP(&dryRun, "dry-run", "n", false, "Show what would be done without making changes")
+	rootCmd.PersistentFlags().BoolVar(&dryRun, "check", false, "Alias for --dry-run")
 	rootCmd.PersistentFlags().BoolVar(&noColor, "no-color", false, "Disable colored output")
 
 	// Add subcommands
 	rootCmd.AddCommand(runCmd)
 	rootCmd.AddCommand(validateCmd)
 	rootCmd.AddCommand(modulesCmd)
+	rootCmd.AddCommand(moduleCmd)
 	rootCmd.AddCommand(generateCmd)
 	rootCmd.AddCommand(scaffoldCmd)
 	rootCmd.AddCommand(testCmd)
@@ -169,12 +171,9 @@ func init() {
 	runCmd.Flags().StringSliceP("extra-vars", "e", nil, "Extra variables (key=value)")
 	runCmd.Flags().StringSlice("tags", nil, "Only run tasks with these tags")
 	runCmd.Flags().StringSlice("skip-tags", nil, "Skip tasks with these tags")
-	runCmd.Flags().IntP("forks", "f", 1, "Number of parallel processes (not yet implemented)")
-
 	// Connection override flags
 	addConnectionFlags(runCmd)
 	runCmd.Flags().BoolVar(&autoApprove, "auto-approve", false, "Skip interactive approval prompt (for CI/scripting)")
-	runCmd.Flags().BoolVar(&dryRun, "check", false, "Show plan and exit without applying (alias for --dry-run)")
 
 	// Vault flags
 	runCmd.Flags().String("vault-password-file", "", "Path to file containing vault password (first line used)")
@@ -402,6 +401,56 @@ var modulesCmd = &cobra.Command{
 		}
 		fmt.Println()
 		fmt.Printf("Total: %d modules\n", len(modules))
+	},
+}
+
+// moduleCmd shows documentation for a specific module.
+var moduleCmd = &cobra.Command{
+	Use:   "module [name]",
+	Short: "Show module documentation",
+	Long: `Display detailed documentation for a specific module including
+parameters, types, defaults, and descriptions.
+
+If no module name is given, lists all available modules.
+
+Examples:
+  bolt module apt
+  bolt module file
+  bolt module`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) == 0 {
+			modulesCmd.Run(cmd, args)
+			return nil
+		}
+
+		name := args[0]
+		mod := module.Get(name)
+		if mod == nil {
+			modules := module.List()
+			return fmt.Errorf("unknown module %q\n\nAvailable modules: %s", name, strings.Join(modules, ", "))
+		}
+
+		desc, ok := mod.(module.Describer)
+		if !ok {
+			fmt.Printf("Module: %s\n\nNo documentation available.\n", name)
+			return nil
+		}
+
+		fmt.Printf("Module: %s\n\n  %s\n\nParameters:\n\n", name, desc.Description())
+		for _, p := range desc.Parameters() {
+			req := ""
+			if p.Required {
+				req = " (required)"
+			}
+			def := ""
+			if p.Default != "" {
+				def = fmt.Sprintf(" [default: %s]", p.Default)
+			}
+			fmt.Printf("  %-20s %s%s%s\n", p.Name, p.Description, req, def)
+			fmt.Printf("  %-20s type: %s\n\n", "", p.Type)
+		}
+		return nil
 	},
 }
 

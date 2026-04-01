@@ -73,6 +73,21 @@ func List() []string {
 	return names
 }
 
+// ParamDoc describes a module parameter for documentation.
+type ParamDoc struct {
+	Name        string
+	Type        string
+	Required    bool
+	Default     string
+	Description string
+}
+
+// Describer is an optional interface for modules that provide documentation.
+type Describer interface {
+	Description() string
+	Parameters() []ParamDoc
+}
+
 // CheckResult describes what a module would do without making changes.
 type CheckResult struct {
 	WouldChange bool
