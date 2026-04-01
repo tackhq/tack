@@ -75,9 +75,8 @@ bolt generate               Capture live system state as a playbook
 bolt scaffold <name>        Create a new role with sample files
 bolt module <name>          Show module documentation
 bolt modules                List available modules
-bolt vault encrypt <file>   Encrypt a YAML file
-bolt vault decrypt <file>   Decrypt a vault file
-bolt vault view <file>      View encrypted file contents
+bolt vault init <file>      Create a new encrypted vault file
+bolt vault edit <file>      Edit an existing encrypted vault file
 ```
 
 ### Key Flags
