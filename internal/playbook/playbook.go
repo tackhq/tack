@@ -89,6 +89,11 @@ type Play struct {
 	// SudoPassword is the password for privilege escalation.
 	SudoPassword string `yaml:"sudo_password"`
 
+	// VarsFiles is a list of YAML file paths whose variables are loaded
+	// and merged into play variables. Paths starting with "?" are optional
+	// (no error if missing). Files are relative to the playbook directory.
+	VarsFiles []string `yaml:"vars_files"`
+
 	// VaultFile is the path to an encrypted vault file whose variables
 	// are merged into play vars at runtime.
 	VaultFile string `yaml:"vault_file"`

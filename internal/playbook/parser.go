@@ -139,6 +139,20 @@ func parseRawPlay(raw map[string]any) (*Play, error) {
 		play.SSM = parseSSMConfig(ssmRaw)
 	}
 
+	// Parse vars_files
+	if vf, ok := raw["vars_files"].([]any); ok {
+		for _, item := range vf {
+			if s, ok := item.(string); ok {
+				play.VarsFiles = append(play.VarsFiles, s)
+			}
+		}
+	}
+
+	// Parse vault_file
+	if v, ok := raw["vault_file"].(string); ok {
+		play.VaultFile = v
+	}
+
 	// Parse roles
 	if roles, ok := raw["roles"].([]any); ok {
 		for _, role := range roles {

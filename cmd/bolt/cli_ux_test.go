@@ -31,13 +31,9 @@ func TestCheckFlag_IsGlobalAlias(t *testing.T) {
 	if dryRunFlag == nil {
 		t.Fatal("expected --dry-run to be a persistent flag on root command")
 	}
-	// --check should NOT be a local flag on run command
-	localFlag := runCmd.Flags().Lookup("check")
-	if localFlag != nil {
-		// It should come from the persistent parent, not be locally defined
-		if !runCmd.InheritedFlags().HasFlags() {
-			// Just verify it's not a local-only flag
-		}
+	// --check should be inherited from root, not defined locally on run
+	if runCmd.LocalFlags().Lookup("check") != nil {
+		t.Fatal("--check should not be a local flag on run command")
 	}
 }
 
