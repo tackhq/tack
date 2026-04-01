@@ -408,6 +408,17 @@ func (e *Executor) runPlayOnHost(ctx context.Context, play *playbook.Play, stats
 	// Merge variables with correct precedence: role defaults < role vars < play vars
 	pctx.Vars = playbook.MergeRoleVars(roles, play.Vars)
 
+	// Merge vars_files (higher priority than play vars, lower than inventory vars)
+	if len(play.VarsFiles) > 0 {
+		vfVars, err := e.loadVarsFiles(play, playbookDir, pctx.Vars)
+		if err != nil {
+			return fmt.Errorf("vars_files: %w", err)
+		}
+		for k, v := range vfVars {
+			pctx.Vars[k] = v
+		}
+	}
+
 	// Inject inventory vars as lower-priority defaults (play vars take precedence).
 	// Group vars are lowest, per-host vars are higher (but still below play vars).
 	if e.Inventory != nil {
