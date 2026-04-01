@@ -16,10 +16,12 @@ import (
 
 // Connector executes commands inside Docker containers.
 type Connector struct {
-	container string
-	user      string
-	workdir   string
-	env       map[string]string
+	container    string
+	user         string
+	originalUser string
+	sudoEnabled  bool
+	workdir      string
+	env          map[string]string
 }
 
 // Option configures the Docker connector.
@@ -29,6 +31,14 @@ type Option func(*Connector)
 func WithWorkdir(dir string) Option {
 	return func(c *Connector) {
 		c.workdir = dir
+	}
+}
+
+// WithUser sets the user for command execution.
+func WithUser(user string) Option {
+	return func(c *Connector) {
+		c.user = user
+		c.originalUser = user
 	}
 }
 
@@ -206,8 +216,17 @@ func (c *Connector) Download(ctx context.Context, src string, dst io.Writer) err
 	return nil
 }
 
-// SetSudo is a no-op for Docker connections (containers run as root by default).
-func (c *Connector) SetSudo(enabled bool, password string) {}
+// SetSudo switches execution user to root when enabled, reverting to the
+// original user when disabled. The password parameter is accepted but ignored
+// as Docker privilege escalation does not use passwords.
+func (c *Connector) SetSudo(enabled bool, password string) {
+	c.sudoEnabled = enabled
+	if enabled {
+		c.user = "root"
+	} else {
+		c.user = c.originalUser
+	}
+}
 
 // Close is a no-op for Docker connections.
 func (c *Connector) Close() error {
