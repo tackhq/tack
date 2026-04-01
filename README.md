@@ -74,7 +74,8 @@ bolt run s3://bucket/path/to/playbook.yaml
 - **Inventory files** — Define hosts, groups, per-host SSH config, and variables in a reusable YAML file
 - **Remote playbook sources** — Run playbooks directly from git repos, S3, or HTTP URLs
 - **SSM Parameter Store** — Fetch secrets at runtime with `ssm_param()` in vars and templates
-- **EC2 instance facts** — Auto-gathered instance ID, region, instance type, AMI, and tags
+- **Network facts** — Auto-gathered default IP, interface, all IPv4/IPv6 addresses
+- **EC2 instance facts** — Auto-gathered instance ID, region, instance type, AMI, tags, private/public IP
 - **Variable filters** — Transform values with `default`, `upper`, `lower`, `trim`, `join`, `first`, `last`, `length`, `int`, `bool`, `string`
 - **Conditional execution** — `when`, `changed_when`, `failed_when` on any task
 - **Task retries** — Automatic retries with configurable delay; `ignore_errors` to continue on failure
