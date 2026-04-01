@@ -113,21 +113,68 @@ When `gather_facts: true` (the default), Bolt collects system information.
 
 ### Available Facts
 
+#### System
+
 | Fact | Description | Example Value |
 |------|-------------|---------------|
-| `facts.os_type` | OS kernel name | `Darwin`, `Linux` |
-| `facts.os_family` | OS family | `Darwin`, `Debian`, `RedHat` |
-| `facts.distribution` | Linux distribution | `ubuntu`, `fedora` |
-| `facts.distribution_version` | Distribution version | `22.04` |
-| `facts.os_name` | Full OS name | `macOS`, `Ubuntu 22.04 LTS` |
-| `facts.os_version` | OS version | `14.0`, `22.04` |
-| `facts.architecture` | CPU architecture | `x86_64`, `aarch64` |
-| `facts.arch` | Normalized architecture | `amd64`, `arm64` |
-| `facts.kernel` | Kernel version | `6.2.0-generic` |
+| `facts.os_type` | OS kernel name (uname -s) | `Darwin`, `Linux` |
+| `facts.os_family` | OS family (derived) | `Darwin`, `Debian`, `RedHat`, `Alpine`, `Arch`, `Suse` |
+| `facts.distribution` | Linux distribution (from /etc/os-release) | `ubuntu`, `fedora`, `alpine` |
+| `facts.distribution_version` | Distribution version | `22.04`, `39` |
+| `facts.os_name` | Full OS name | `macOS`, `Ubuntu 22.04.3 LTS` |
+| `facts.os_version` | OS version (macOS only) | `14.0` |
+| `facts.architecture` | Raw CPU architecture (uname -m) | `x86_64`, `aarch64` |
+| `facts.arch` | Normalized architecture | `amd64`, `arm64`, `arm` |
+| `facts.kernel` | Kernel version (uname -r) | `6.2.0-generic` |
 | `facts.hostname` | System hostname | `myserver` |
 | `facts.user` | Current username | `alice` |
 | `facts.home` | Home directory | `/home/alice` |
-| `facts.pkg_manager` | Package manager | `apt`, `brew`, `dnf` |
+| `facts.pkg_manager` | Package manager (derived from OS) | `apt`, `brew`, `dnf`, `pacman`, `apk`, `zypper` |
+| `facts.go_os` | Go runtime OS | `linux`, `darwin` |
+| `facts.go_arch` | Go runtime architecture | `amd64`, `arm64` |
+
+#### Network
+
+| Fact | Description | Example Value |
+|------|-------------|---------------|
+| `facts.default_ipv4` | Primary IPv4 address | `10.0.0.5` |
+| `facts.default_interface` | Default network interface | `eth0`, `en0` |
+| `facts.all_ipv4` | All non-loopback IPv4 addresses (list) | `[10.0.0.5, 172.17.0.1]` |
+| `facts.all_ipv6` | All global IPv6 addresses (list) | `[2001:db8::1]` |
+
+On Linux, network facts are gathered via `ip route` and `ip addr`. On macOS, `route` and `ifconfig` are used. If the commands are unavailable (e.g., minimal containers), the facts are simply absent.
+
+#### EC2 (auto-detected via IMDSv2)
+
+These facts are only available when running on an EC2 instance. Bolt uses IMDSv2 with a 1-second timeout, so there is no delay on non-EC2 hosts.
+
+| Fact | Description | Example Value |
+|------|-------------|---------------|
+| `facts.ec2_instance_id` | Instance ID | `i-01bc2d8980ba86bc7` |
+| `facts.ec2_region` | AWS region | `eu-west-1` |
+| `facts.ec2_az` | Availability zone | `eu-west-1a` |
+| `facts.ec2_instance_type` | Instance type | `t3.medium` |
+| `facts.ec2_ami_id` | AMI ID | `ami-0abcdef1234567890` |
+| `facts.ec2_tags.<key>` | Instance tags (map) | `facts.ec2_tags.Name` → `prod-web-0` |
+| `facts.ec2_private_ip` | Private IPv4 address | `10.80.41.80` |
+| `facts.ec2_public_ip` | Public IPv4 address (if assigned) | `54.12.34.56` |
+
+EC2 tags require "Allow tags in instance metadata" to be enabled on the instance. If IMDS tags are unavailable, Bolt falls back to the EC2 API (requires `ec2:DescribeTags` permission).
+
+#### Environment
+
+A subset of environment variables is captured under `facts.env`:
+
+| Fact | Description |
+|------|-------------|
+| `facts.env.PATH` | System PATH |
+| `facts.env.SHELL` | Login shell |
+| `facts.env.LANG` | Locale |
+| `facts.env.LC_ALL` | Locale override |
+| `facts.env.TERM` | Terminal type |
+| `facts.env.EDITOR` | Default editor |
+
+These are also accessible via the top-level `env` variable (e.g., `{{ env.HOME }}`).
 
 ### Using Facts in Conditionals
 

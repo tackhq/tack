@@ -42,6 +42,10 @@ func TestGather_Linux(t *testing.T) {
 		"BOLT_FACT os_release_end",
 		"BOLT_FACT env_PATH=/usr/local/bin:/usr/bin",
 		"BOLT_FACT env_SHELL=/bin/bash",
+		"BOLT_FACT default_interface=eth0",
+		"BOLT_FACT default_ipv4=10.0.0.5",
+		"BOLT_FACT all_ipv4=10.0.0.5,172.17.0.1",
+		"BOLT_FACT all_ipv6=2001:db8::1",
 	}, "\n")
 
 	conn := &mockConnector{stdout: output}
@@ -85,6 +89,25 @@ func TestGather_Linux(t *testing.T) {
 	}
 	if env["SHELL"] != "/bin/bash" {
 		t.Errorf("env[SHELL] = %q, want /bin/bash", env["SHELL"])
+	}
+
+	// Network facts
+	if facts["default_interface"] != "eth0" {
+		t.Errorf("default_interface = %q, want eth0", facts["default_interface"])
+	}
+	if facts["default_ipv4"] != "10.0.0.5" {
+		t.Errorf("default_ipv4 = %q, want 10.0.0.5", facts["default_ipv4"])
+	}
+	allIPv4, ok := facts["all_ipv4"].([]string)
+	if !ok || len(allIPv4) != 2 {
+		t.Fatalf("all_ipv4 = %v, want [10.0.0.5 172.17.0.1]", facts["all_ipv4"])
+	}
+	if allIPv4[0] != "10.0.0.5" || allIPv4[1] != "172.17.0.1" {
+		t.Errorf("all_ipv4 = %v, want [10.0.0.5 172.17.0.1]", allIPv4)
+	}
+	allIPv6, ok := facts["all_ipv6"].([]string)
+	if !ok || len(allIPv6) != 1 || allIPv6[0] != "2001:db8::1" {
+		t.Errorf("all_ipv6 = %v, want [2001:db8::1]", facts["all_ipv6"])
 	}
 }
 

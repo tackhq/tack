@@ -37,6 +37,31 @@ for v in PATH SHELL LANG LC_ALL TERM EDITOR; do
     echo "BOLT_FACT env_${v}=${val}"
   fi
 done
+# Network facts
+if [ "$(uname -s)" = "Darwin" ]; then
+  _def_iface=$(route -n get default 2>/dev/null | awk '/interface:/{print $2}')
+  if [ -n "$_def_iface" ]; then
+    echo "BOLT_FACT default_interface=$_def_iface"
+    _def_ip=$(ifconfig "$_def_iface" 2>/dev/null | awk '/inet /{print $2; exit}')
+    [ -n "$_def_ip" ] && echo "BOLT_FACT default_ipv4=$_def_ip"
+  fi
+  _all4=$(ifconfig 2>/dev/null | awk '/inet /{if($2!="127.0.0.1")printf sep $2; sep=","}')
+  [ -n "$_all4" ] && echo "BOLT_FACT all_ipv4=$_all4"
+  _all6=$(ifconfig 2>/dev/null | awk '/inet6 /{split($2,a,"%"); if(a[1]!="::1"&&a[1]!="fe80")printf sep a[1]; sep=","}')
+  [ -n "$_all6" ] && echo "BOLT_FACT all_ipv6=$_all6"
+else
+  _route=$(ip route get 1 2>/dev/null | head -1)
+  if [ -n "$_route" ]; then
+    _def_iface=$(echo "$_route" | sed -n 's/.* dev \([^ ]*\).*/\1/p')
+    _def_ip=$(echo "$_route" | sed -n 's/.* src \([^ ]*\).*/\1/p')
+    [ -n "$_def_iface" ] && echo "BOLT_FACT default_interface=$_def_iface"
+    [ -n "$_def_ip" ] && echo "BOLT_FACT default_ipv4=$_def_ip"
+  fi
+  _all4=$(ip -4 addr show 2>/dev/null | awk '/inet /{split($2,a,"/"); if(a[1]!="127.0.0.1")printf sep a[1]; sep=","}')
+  [ -n "$_all4" ] && echo "BOLT_FACT all_ipv4=$_all4"
+  _all6=$(ip -6 addr show scope global 2>/dev/null | awk '/inet6 /{split($2,a,"/"); printf sep a[1]; sep=","}')
+  [ -n "$_all6" ] && echo "BOLT_FACT all_ipv6=$_all6"
+fi
 # EC2 detection via IMDSv2
 TOKEN=$(curl -sf -X PUT "http://169.254.169.254/latest/api/token" \
   -H "X-aws-ec2-metadata-token-ttl-seconds: 10" --connect-timeout 1 2>/dev/null)
@@ -47,6 +72,8 @@ if [ -n "$TOKEN" ]; then
   echo "BOLT_FACT ec2_az=$(curl -sf -H "$HDR" http://169.254.169.254/latest/meta-data/placement/availability-zone)"
   echo "BOLT_FACT ec2_instance_type=$(curl -sf -H "$HDR" http://169.254.169.254/latest/meta-data/instance-type)"
   echo "BOLT_FACT ec2_ami_id=$(curl -sf -H "$HDR" http://169.254.169.254/latest/meta-data/ami-id)"
+  echo "BOLT_FACT ec2_private_ip=$(curl -sf -H "$HDR" http://169.254.169.254/latest/meta-data/local-ipv4)"
+  echo "BOLT_FACT ec2_public_ip=$(curl -sf -H "$HDR" http://169.254.169.254/latest/meta-data/public-ipv4)"
   # Try IMDS tags (requires "allow tags in instance metadata" enabled)
   TAGS=$(curl -sf -H "$HDR" http://169.254.169.254/latest/meta-data/tags/instance/ 2>/dev/null)
   if [ -n "$TAGS" ]; then
@@ -147,7 +174,16 @@ func Gather(ctx context.Context, conn connector.Connector) (map[string]any, erro
 			facts["os_version"] = value
 		case "os_name":
 			facts["os_name"] = value
-		case "ec2_instance_id", "ec2_region", "ec2_az", "ec2_instance_type", "ec2_ami_id":
+		case "default_ipv4", "default_interface":
+			if value != "" {
+				facts[key] = value
+			}
+		case "all_ipv4", "all_ipv6":
+			if value != "" {
+				facts[key] = strings.Split(value, ",")
+			}
+		case "ec2_instance_id", "ec2_region", "ec2_az", "ec2_instance_type", "ec2_ami_id",
+			"ec2_private_ip", "ec2_public_ip":
 			if value != "" {
 				facts[key] = value
 			}
