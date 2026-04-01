@@ -57,6 +57,11 @@ func (o *Output) SetColor(enabled bool) {
 	o.useColor = enabled
 }
 
+// ColorEnabled returns whether color output is enabled.
+func (o *Output) ColorEnabled() bool {
+	return o.useColor
+}
+
 // SetDebug enables or disables debug output.
 func (o *Output) SetDebug(enabled bool) {
 	o.debug = enabled

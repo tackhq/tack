@@ -7,16 +7,19 @@ import (
 	"github.com/eugenetaranov/bolt/internal/module"
 )
 
-func TestForksFlag_Removed(t *testing.T) {
-	// The --forks flag should not exist on the run command
+func TestForksFlag_Present(t *testing.T) {
+	// The --forks flag should exist on the run command for parallel host execution
 	flag := runCmd.Flags().Lookup("forks")
-	if flag != nil {
-		t.Fatal("expected --forks flag to be removed from run command")
+	if flag == nil {
+		t.Fatal("expected --forks flag on run command")
 	}
-	// Also check the shorthand
+	if flag.DefValue != "1" {
+		t.Fatalf("expected --forks default to be 1, got %s", flag.DefValue)
+	}
+	// Check the shorthand
 	flag = runCmd.Flags().ShorthandLookup("f")
-	if flag != nil {
-		t.Fatal("expected -f shorthand to be removed from run command")
+	if flag == nil {
+		t.Fatal("expected -f shorthand on run command")
 	}
 }
 

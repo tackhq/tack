@@ -177,6 +177,7 @@ func init() {
 	// Connection override flags
 	addConnectionFlags(runCmd)
 	runCmd.Flags().BoolVar(&autoApprove, "auto-approve", false, "Skip interactive approval prompt (for CI/scripting)")
+	runCmd.Flags().IntP("forks", "f", 1, "Number of hosts to execute concurrently")
 
 	// Vault flags
 	runCmd.Flags().String("vault-password-file", "", "Path to file containing vault password (first line used)")
@@ -256,6 +257,21 @@ func runPlaybook(cmd *cobra.Command, args []string) error {
 		autoApprove = true
 	}
 
+	// Resolve forks: CLI flag > env var > default (1)
+	forks, _ := cmd.Flags().GetInt("forks")
+	if !cmd.Flags().Changed("forks") {
+		if envForks := os.Getenv("BOLT_FORKS"); envForks != "" {
+			if n, err := strconv.Atoi(envForks); err == nil {
+				forks = n
+			} else {
+				return fmt.Errorf("invalid BOLT_FORKS value %q: %w", envForks, err)
+			}
+		}
+	}
+	if forks < 1 {
+		return fmt.Errorf("--forks must be >= 1, got %d", forks)
+	}
+
 	// Create executor
 	exec := executor.New()
 	exec.Output = emitter
@@ -263,6 +279,7 @@ func runPlaybook(cmd *cobra.Command, args []string) error {
 	exec.Verbose = verbose
 	exec.DryRun = dryRun
 	exec.AutoApprove = autoApprove
+	exec.Forks = forks
 	exec.Overrides = overrides
 	exec.Inventory = inv
 	exec.PromptSudoPassword = func() (string, error) {
