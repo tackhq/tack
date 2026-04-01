@@ -437,3 +437,22 @@ var _ module.Module = (*Module)(nil)
 
 // Ensure Module implements the module.Checker interface.
 var _ module.Checker = (*Module)(nil)
+
+// Ensure Module implements the module.Describer interface.
+var _ module.Describer = (*Module)(nil)
+
+// Description returns a short summary of the yum module.
+func (m *Module) Description() string {
+	return "Manage packages on RPM-based systems (RHEL, CentOS, Fedora, Rocky Linux) using yum/dnf."
+}
+
+// Parameters returns the parameter documentation for the yum module.
+func (m *Module) Parameters() []module.ParamDoc {
+	return []module.ParamDoc{
+		{Name: "name", Type: "string|[]string", Required: true, Description: "Package name(s) to manage"},
+		{Name: "state", Type: "string", Default: "present", Description: "Desired state: present, absent, latest"},
+		{Name: "update_cache", Type: "bool", Default: "false", Description: "Run yum makecache before operations"},
+		{Name: "upgrade", Type: "string", Default: "none", Description: "Upgrade mode: none, yes"},
+		{Name: "autoremove", Type: "bool", Default: "false", Description: "Remove unused dependency packages"},
+	}
+}

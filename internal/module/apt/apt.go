@@ -492,3 +492,25 @@ var _ module.Module = (*Module)(nil)
 
 // Ensure Module implements the module.Checker interface.
 var _ module.Checker = (*Module)(nil)
+
+// Ensure Module implements the module.Describer interface.
+var _ module.Describer = (*Module)(nil)
+
+// Description returns a short summary of the apt module.
+func (m *Module) Description() string {
+	return "Manage packages on Debian/Ubuntu systems using apt."
+}
+
+// Parameters returns the parameter documentation for the apt module.
+func (m *Module) Parameters() []module.ParamDoc {
+	return []module.ParamDoc{
+		{Name: "name", Type: "string|[]string", Required: true, Description: "Package name(s) to manage"},
+		{Name: "state", Type: "string", Default: "present", Description: "Desired state: present, absent, latest, purged"},
+		{Name: "update_cache", Type: "bool", Default: "false", Description: "Run apt-get update before operations"},
+		{Name: "upgrade", Type: "string", Default: "none", Description: "Upgrade mode: none, yes, safe, full, dist"},
+		{Name: "cache_valid_time", Type: "int", Default: "0", Description: "Cache validity in seconds; skip update if cache is newer"},
+		{Name: "install_recommends", Type: "bool", Default: "true", Description: "Install recommended packages"},
+		{Name: "autoremove", Type: "bool", Default: "false", Description: "Remove unused dependency packages"},
+		{Name: "deb", Type: "string", Description: "Path or URL to .deb file to install"},
+	}
+}

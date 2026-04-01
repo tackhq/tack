@@ -274,3 +274,19 @@ func TestPlaybookEnd(t *testing.T) {
 		t.Error("expected duration in output")
 	}
 }
+
+func TestIsApproval(t *testing.T) {
+	accepted := []string{"y", "Y", "yes", "Yes", "YES", "yEs"}
+	for _, input := range accepted {
+		if !IsApproval(input) {
+			t.Errorf("expected %q to be accepted", input)
+		}
+	}
+
+	rejected := []string{"", "n", "no", "No", "NO", "ok", "sure", "ye", "yess", " "}
+	for _, input := range rejected {
+		if IsApproval(input) {
+			t.Errorf("expected %q to be rejected", input)
+		}
+	}
+}

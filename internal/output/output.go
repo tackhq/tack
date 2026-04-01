@@ -444,8 +444,14 @@ func findNextMatch(old, new []string, oi, nj int) (int, int) {
 	return len(old), len(new)
 }
 
+// IsApproval returns true if the input matches an accepted approval response
+// (case-insensitive "y" or "yes").
+func IsApproval(input string) bool {
+	return strings.EqualFold(input, "y") || strings.EqualFold(input, "yes")
+}
+
 // PromptApproval asks the user to confirm applying changes.
-// Returns true only if the user types exactly "yes".
+// Returns true if the user types "y" or "yes" (case-insensitive).
 // Responds immediately to SIGINT/SIGTERM.
 func (o *Output) PromptApproval() bool {
 	o.printf("\n%s ", o.color(colorBold, "Do you want to apply these changes?"))
@@ -468,7 +474,7 @@ func (o *Output) PromptApproval() bool {
 
 	select {
 	case text := <-resultCh:
-		return text == "yes"
+		return IsApproval(text)
 	case <-sigCh:
 		fmt.Fprintln(o.w)
 		return false
