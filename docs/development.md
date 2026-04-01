@@ -2,66 +2,57 @@
 
 ## Requirements
 
-- Go 1.21+
+- Go 1.24+
 - Docker (for integration tests and `bolt test`)
+- golangci-lint (for linting)
 
 ## Project Structure
 
 ```
 bolt/
-├── cmd/bolt/           # CLI entrypoint
+├── cmd/bolt/           # CLI entrypoint (Cobra)
 ├── internal/
 │   ├── connector/      # Connection backends (local, docker, ssh, ssm)
-│   ├── executor/       # Playbook execution engine
-│   ├── module/         # Task modules (apt, brew, file, systemd, etc.)
-│   ├── output/         # Formatted terminal output
-│   ├── playbook/       # YAML parsing
-│   └── source/         # Remote playbook sources (git, s3, http)
+│   ├── executor/       # Playbook execution engine + parallel host support
+│   ├── generate/       # bolt generate command
+│   ├── module/         # Task modules (apt, brew, yum, file, copy, command, systemd, template)
+│   ├── output/         # Formatted terminal and JSON output
+│   ├── playbook/       # YAML parsing, variable interpolation, conditions
+│   ├── source/         # Remote playbook sources (git, s3, http)
+│   ├── testrun/        # bolt test command
+│   └── vault/          # Encrypted vault file support
 ├── pkg/
-│   ├── facts/          # System fact gathering (OS, arch, EC2)
+│   ├── facts/          # System fact gathering (OS, arch, network, EC2)
 │   └── ssmparams/      # AWS SSM Parameter Store client
 ├── tests/integration/  # Integration tests (testcontainers)
 ├── docs/               # Documentation
-└── examples/           # Example playbooks
+└── examples/           # Example playbooks and roles
 ```
 
 ## Build & Run
 
 ```bash
-# Build for current platform
-make build
-
-# Build for all platforms (cross-compile)
-make build-all
-
-# Run directly without building
-go run ./cmd/bolt
-
-# Install to /usr/local/bin
-sudo make install
+make build              # Build for current platform (output: ./bin/bolt)
+make test               # Run unit tests with race detector
+make lint               # Run golangci-lint
+go run ./cmd/bolt       # Run directly without building
 ```
 
 ## Testing
 
 ```bash
-# Run unit tests
-make test
+# Unit tests (skip integration)
+go test -short ./...
 
-# Run linter
-make lint
-```
-
-### Integration Tests
-
-Integration tests use [testcontainers-go](https://golang.testcontainers.org/) to spin up a Docker container, run a playbook against it, and validate the results with Go assertions.
-
-```bash
-# Run integration tests (requires Docker)
+# Integration tests (requires Docker)
 make test-integration
 
-# Or directly with go test
+# Or directly
 go test -v ./tests/integration/...
-
-# Skip integration tests (short mode)
-go test -short ./...
 ```
+
+Integration tests use [testcontainers-go](https://golang.testcontainers.org/) to spin up Docker containers, run playbooks against them, and validate results.
+
+## Releasing
+
+See [RELEASING.md](../RELEASING.md) for release instructions. Releases are automated via GoReleaser and GitHub Actions.
