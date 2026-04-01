@@ -26,6 +26,7 @@ import (
 	_ "github.com/eugenetaranov/bolt/internal/module/yum"
 
 	"github.com/eugenetaranov/bolt/internal/executor"
+	"github.com/eugenetaranov/bolt/internal/output"
 	"github.com/eugenetaranov/bolt/internal/generate"
 	"github.com/eugenetaranov/bolt/internal/inventory"
 	"github.com/eugenetaranov/bolt/internal/module"
@@ -47,6 +48,7 @@ var (
 	dryRun      bool
 	noColor     bool
 	autoApprove bool
+	outputMode  string
 )
 
 func main() {
@@ -110,6 +112,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&dryRun, "dry-run", "n", false, "Show what would be done without making changes")
 	rootCmd.PersistentFlags().BoolVar(&dryRun, "check", false, "Alias for --dry-run")
 	rootCmd.PersistentFlags().BoolVar(&noColor, "no-color", false, "Disable colored output")
+	rootCmd.PersistentFlags().StringVar(&outputMode, "output", "text", "Output format: text or json")
 
 	// Add subcommands
 	rootCmd.AddCommand(runCmd)
@@ -242,8 +245,20 @@ func runPlaybook(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Create output emitter
+	emitter, err := output.NewEmitter(outputMode)
+	if err != nil {
+		return err
+	}
+
+	// JSON mode implies auto-approve (no interactive prompts on stdout)
+	if outputMode == "json" {
+		autoApprove = true
+	}
+
 	// Create executor
 	exec := executor.New()
+	exec.Output = emitter
 	exec.Debug = debug
 	exec.Verbose = verbose
 	exec.DryRun = dryRun

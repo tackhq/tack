@@ -51,7 +51,7 @@ type ConnOverrides struct {
 // Executor runs playbooks.
 type Executor struct {
 	// Output handles formatted output.
-	Output *output.Output
+	Output output.Emitter
 
 	// DryRun only shows what would be done without making changes.
 	DryRun bool
