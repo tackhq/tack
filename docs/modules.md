@@ -8,6 +8,7 @@ Modules are the units of work in Bolt. Each module performs a specific action li
 |--------|-------------|
 | [apt](#apt) | Manage packages on Debian/Ubuntu |
 | [brew](#brew) | Manage Homebrew packages on macOS |
+| [yum](#yum) | Manage packages on RHEL/CentOS/Fedora |
 | [command](#command) | Execute shell commands |
 | [copy](#copy) | Copy files to targets |
 | [file](#file) | Manage files and directories |
@@ -151,6 +152,77 @@ Manage Homebrew packages on macOS.
   brew:
     name: go
     state: latest
+```
+
+---
+
+## yum
+
+Manage packages on RPM-based systems (RHEL, CentOS, Fedora, Amazon Linux, Rocky Linux) using yum or dnf. The module auto-detects whether `dnf` or `yum` is available, preferring `dnf`.
+
+### Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `name` | string/list | no* | - | Package name(s) |
+| `state` | string | no | `present` | `present`, `absent`, `latest` |
+| `update_cache` | bool | no | `false` | Run `yum makecache` first |
+| `upgrade` | string | no | `none` | `none`, `yes` |
+| `autoremove` | bool | no | `false` | Remove unused dependencies |
+
+*Required unless using `update_cache` or `upgrade`
+
+### States
+
+| State | Description |
+|-------|-------------|
+| `present` | Ensure package is installed |
+| `absent` | Remove package |
+| `latest` | Install and upgrade to latest version |
+
+### Examples
+
+```yaml
+# Install a single package
+- name: Install nginx
+  yum:
+    name: nginx
+    state: present
+
+# Install multiple packages
+- name: Install development tools
+  yum:
+    name:
+      - gcc
+      - make
+      - git
+    state: present
+
+# Update cache and install
+- name: Install with fresh cache
+  yum:
+    name: nginx
+    state: present
+    update_cache: true
+
+# Upgrade all packages
+- name: Full system upgrade
+  yum:
+    upgrade: yes
+    autoremove: true
+
+# Keep package at latest version
+- name: Ensure nginx is latest
+  yum:
+    name: nginx
+    state: latest
+
+# Remove a package
+- name: Remove old package
+  yum:
+    name: httpd
+    state: absent
+    autoremove: true
 ```
 
 ---
