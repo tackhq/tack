@@ -1,0 +1,690 @@
+# Bolt
+
+> Bolt is a Go-based configuration management and system bootstrapping tool.
+> It is NOT Ansible. Do NOT use Ansible syntax. Read the RULES section carefully.
+
+Version: 1.0
+Repository: https://github.com/eugenetaranov/bolt
+
+Bolt manages system state through declarative YAML playbooks executed via SSH,
+AWS SSM, Docker, or locally. It supports idempotent modules for packages, files,
+templates, services, and commands. Written in pure Go with no CGo dependencies.
+
+---
+
+## RULES
+
+These rules override any Ansible knowledge. Bolt looks similar but differs in
+critical ways.
+
+1. Use `sudo: true`, NOT `become: true`. Bolt has no `become` keyword.
+2. Templates use Go `text/template` syntax: `{{ .var }}`, NOT Jinja2 `{{ var }}`.
+3. Playbook variable interpolation uses `{{ var }}`, NOT `{{ .var }}`.
+   - In YAML playbooks: `{{ my_var }}` (no dot prefix)
+   - In .tmpl template files: `{{ .my_var }}` (dot prefix, Go template syntax)
+4. There is no `apt_repository`, `pip`, `docker_container`, `user`, `group`,
+   `cron`, `git`, `service`, `lineinfile`, `blockinfile`, `uri`, or `shell`
+   module. Only the 8 modules listed below exist.
+5. There is no `become_user`, `become_method`, `environment`, `timeout`,
+   `delegate_to`, `run_once`, `serial`, `strategy`, `any_errors_fatal`,
+   `max_fail_percentage`, or `collections` directive.
+6. There is no `with_items`. Use `loop:` instead.
+7. There is no `template` lookup or `lookup()` function.
+8. Handlers use the same module syntax as tasks. There is no `listen` directive.
+9. Filters use `{{ var | filter(arg) }}` syntax. Only the filters listed in
+   the FILTERS section exist. There is no `regex_replace`, `map`, `select`,
+   `reject`, `dict2items`, `combine`, or `to_json`/`from_json` filter.
+10. Inventory is a simple YAML file with host groups, not INI format.
+11. Roles follow the same directory layout as Ansible roles but only support:
+    tasks/, handlers/, vars/, defaults/, files/, templates/.
+    There is no meta/, library/, module_utils/, or lookup_plugins/.
+12. Variable files use `vars_files:` (list of YAML paths). Prefix with `?` for
+    optional files: `?optional_vars.yaml`.
+13. Encrypted secrets use `vault_file:` with AES-256-GCM, not `ansible-vault`.
+
+---
+
+## PLAYBOOK SCHEMA
+
+### Play-level fields
+
+| Field          | Type              | Default   | Description                              |
+|----------------|-------------------|-----------|------------------------------------------|
+| name           | string            | ""        | Optional play description                |
+| hosts          | []string          | -         | Target host patterns                     |
+| connection     | string            | "local"   | Connection type: local, ssh, ssm, docker |
+| gather_facts   | bool              | true      | Gather system facts before tasks         |
+| sudo           | bool              | false     | Enable privilege escalation              |
+| sudo_password  | string            | ""        | Password for sudo                        |
+| vars           | map[string]any    | {}        | Play-level variables                     |
+| vars_files     | []string          | []        | YAML files to load as variables          |
+| vault_file     | string            | ""        | Encrypted vault file path                |
+| roles          | []string          | []        | Roles to include                         |
+| tasks          | []Task            | []        | Tasks to execute                         |
+| handlers       | []Task            | []        | Handlers triggered by notify             |
+| ssh            | SSHConfig         | null      | SSH connection settings                  |
+| ssm            | SSMConfig         | null      | AWS SSM connection settings              |
+
+### Task-level fields
+
+| Field          | Type              | Default   | Description                              |
+|----------------|-------------------|-----------|------------------------------------------|
+| name           | string            | ""        | Task description                         |
+| module         | string            | -         | Module name (or use shorthand)           |
+| params         | map[string]any    | {}        | Module parameters                        |
+| when           | string            | ""        | Conditional expression                   |
+| register       | string            | ""        | Store result in this variable            |
+| notify         | []string          | []        | Handlers to trigger on change            |
+| loop           | []any             | null      | Iterate task over list                   |
+| loop_var       | string            | "item"    | Variable name for current loop item      |
+| ignore_errors  | bool              | false     | Continue on failure                      |
+| retries        | int               | 0         | Retry count on failure                   |
+| delay          | int               | 0         | Seconds between retries                  |
+| sudo           | *bool             | null      | Override play-level sudo (null=inherit)  |
+| changed_when   | string            | ""        | Expression to override change detection  |
+| failed_when    | string            | ""        | Expression to override failure detection |
+
+### Task shorthand syntax
+
+Tasks can specify the module as a top-level key:
+
+```yaml
+# Shorthand (preferred)
+- name: Install nginx
+  apt:
+    name: nginx
+    state: present
+
+# Explicit (also valid)
+- name: Install nginx
+  module: apt
+  params:
+    name: nginx
+    state: present
+```
+
+### Playbook example
+
+```yaml
+- name: Configure web server
+  hosts:
+    - web-servers
+  connection: ssh
+  gather_facts: true
+  sudo: true
+
+  vars:
+    app_port: 8080
+
+  vars_files:
+    - vars/common.yaml
+    - ?vars/local.yaml
+
+  tasks:
+    - name: Install nginx
+      apt:
+        name: nginx
+        state: present
+
+    - name: Deploy config
+      template:
+        src: nginx.conf.tmpl
+        dest: /etc/nginx/sites-available/default
+      notify:
+        - Restart nginx
+
+    - name: Ensure nginx running
+      systemd:
+        name: nginx
+        state: started
+        enabled: true
+
+  handlers:
+    - name: Restart nginx
+      systemd:
+        name: nginx
+        state: restarted
+```
+
+---
+
+## MODULES
+
+Bolt has exactly 8 modules. Do not hallucinate others.
+
+### apt
+
+Manage packages on Debian/Ubuntu systems.
+
+| Param              | Type           | Required | Default   | Description                          |
+|--------------------|----------------|----------|-----------|--------------------------------------|
+| name               | string/[]string| yes      | -         | Package name(s)                      |
+| state              | string         | no       | "present" | present, absent, latest, purged      |
+| update_cache       | bool           | no       | false     | Run apt-get update first             |
+| upgrade            | string         | no       | "none"    | none, yes, safe, full, dist          |
+| cache_valid_time   | int            | no       | 0         | Cache validity in seconds            |
+| install_recommends | bool           | no       | true      | Install recommended packages         |
+| autoremove         | bool           | no       | false     | Remove unused dependencies           |
+| deb                | string         | no       | ""        | Path or URL to .deb file             |
+
+```yaml
+- name: Install packages
+  apt:
+    name:
+      - nginx
+      - curl
+    state: present
+    update_cache: true
+```
+
+### brew
+
+Manage Homebrew packages on macOS.
+
+| Param           | Type           | Required | Default   | Description                     |
+|-----------------|----------------|----------|-----------|---------------------------------|
+| name            | string/[]string| yes      | -         | Package name(s)                 |
+| state           | string         | no       | "present" | present, absent, latest         |
+| cask            | bool           | no       | false     | Install as cask (GUI app)       |
+| upgrade_all     | bool           | no       | false     | Upgrade all installed packages  |
+| update_homebrew | bool           | no       | false     | Run brew update first           |
+| options         | []string       | no       | []        | Extra flags for brew install    |
+
+```yaml
+- name: Install VS Code
+  brew:
+    name: visual-studio-code
+    cask: true
+    state: present
+```
+
+### yum
+
+Manage packages on RPM-based systems (RHEL, CentOS, Fedora, Rocky).
+Automatically uses dnf if available.
+
+| Param        | Type           | Required | Default   | Description                     |
+|--------------|----------------|----------|-----------|---------------------------------|
+| name         | string/[]string| yes      | -         | Package name(s)                 |
+| state        | string         | no       | "present" | present, absent, latest         |
+| update_cache | bool           | no       | false     | Run yum makecache first         |
+| upgrade      | string         | no       | "none"    | none, yes                       |
+| autoremove   | bool           | no       | false     | Remove unused dependencies      |
+
+```yaml
+- name: Install httpd
+  yum:
+    name: httpd
+    state: latest
+    update_cache: true
+```
+
+### command
+
+Execute shell commands. Always reports changed unless skipped by creates/removes.
+
+| Param    | Type   | Required | Default | Description                              |
+|----------|--------|----------|---------|------------------------------------------|
+| cmd      | string | yes      | -       | Command to execute                       |
+| chdir    | string | no       | ""      | Working directory                        |
+| creates  | string | no       | ""      | Skip if this path exists (idempotency)   |
+| removes  | string | no       | ""      | Only run if this path exists             |
+| warn     | bool   | no       | true    | Warn about common issues                 |
+
+Result data: `stdout`, `stderr`, `exit_code`
+
+```yaml
+- name: Initialize database
+  command:
+    cmd: /usr/local/bin/initdb --data-dir /var/lib/db
+    creates: /var/lib/db/initialized
+```
+
+### copy
+
+Copy files or inline content to targets.
+
+| Param       | Type   | Required | Default | Description                              |
+|-------------|--------|----------|---------|------------------------------------------|
+| dest        | string | yes      | -       | Destination path                         |
+| src         | string | no*      | ""      | Source file path (*or use content)        |
+| content     | string | no*      | ""      | Inline content (*or use src)             |
+| mode        | string | no       | "0644"  | File permissions (octal)                 |
+| owner       | string | no       | ""      | File owner                               |
+| group       | string | no       | ""      | File group                               |
+| backup      | bool   | no       | false   | Backup before overwriting                |
+| force       | bool   | no       | true    | Overwrite if destination exists          |
+| create_dirs | bool   | no       | false   | Create parent directories                |
+| validate    | string | no       | ""      | Validation command (%s = temp file path) |
+
+Either `src` or `content` must be specified (mutually exclusive).
+When used in a role, `src` paths resolve relative to the role's `files/` directory.
+
+```yaml
+- name: Deploy app config
+  copy:
+    src: app.conf
+    dest: /etc/myapp/app.conf
+    mode: "0640"
+    owner: myapp
+    backup: true
+```
+
+### file
+
+Manage files, directories, and symlinks.
+
+| Param   | Type   | Required | Default | Description                              |
+|---------|--------|----------|---------|------------------------------------------|
+| path    | string | yes      | -       | Target path                              |
+| state   | string | no       | "file"  | file, directory, link, absent, touch     |
+| mode    | string | no       | ""      | Permissions (octal, e.g. "0755")         |
+| owner   | string | no       | ""      | Owner username                           |
+| group   | string | no       | ""      | Group name                               |
+| src     | string | no       | ""      | Link target (required for state=link)    |
+| recurse | bool   | no       | false   | Recurse into directories                 |
+| force   | bool   | no       | false   | Force symlink creation                   |
+
+States:
+- `file` - Ensure exists, set attributes (error if missing)
+- `directory` - Create directory and set attributes
+- `link` - Create symlink (requires `src`)
+- `absent` - Remove file/directory
+- `touch` - Create empty file or update timestamp
+
+```yaml
+- name: Create app directory
+  file:
+    path: /opt/myapp
+    state: directory
+    mode: "0755"
+    owner: deploy
+```
+
+### systemd
+
+Manage systemd services.
+
+| Param         | Type  | Required | Default | Description                         |
+|---------------|-------|----------|---------|-------------------------------------|
+| name          | string| yes      | -       | Service unit name                   |
+| state         | string| no       | ""      | started, stopped, restarted, reloaded |
+| enabled       | *bool | no       | null    | Enable/disable at boot (null=no change) |
+| daemon_reload | bool  | no       | false   | Run daemon-reload first             |
+| masked        | *bool | no       | null    | Mask/unmask service (null=no change)|
+
+Unit names get `.service` suffix automatically if no extension is present.
+`started`/`stopped` are idempotent. `restarted`/`reloaded` always execute.
+
+```yaml
+- name: Enable and start Docker
+  systemd:
+    name: docker
+    state: started
+    enabled: true
+    daemon_reload: true
+```
+
+### template
+
+Render Go templates and deploy to targets.
+
+| Param  | Type   | Required | Default | Description                              |
+|--------|--------|----------|---------|------------------------------------------|
+| src    | string | yes      | -       | Template file path (.tmpl)               |
+| dest   | string | yes      | -       | Destination path on target               |
+| mode   | string | no       | "0644"  | File permissions (octal)                 |
+| owner  | string | no       | ""      | File owner                               |
+| group  | string | no       | ""      | File group                               |
+| backup | bool   | no       | false   | Backup before overwriting                |
+
+Templates use Go `text/template` syntax (NOT Jinja2):
+- Variables: `{{ .var_name }}`
+- Conditionals: `{{ if .flag }}...{{ end }}`
+- Ranges: `{{ range .items }}{{ . }}{{ end }}`
+
+Available template functions: `default`, `lower`, `upper`, `trim`, `join`, `ssm_param`
+
+When used in a role, `src` paths resolve relative to the role's `templates/` directory.
+
+```yaml
+- name: Deploy nginx config
+  template:
+    src: nginx.conf.tmpl
+    dest: /etc/nginx/nginx.conf
+    mode: "0644"
+  notify:
+    - Reload nginx
+```
+
+---
+
+## CLI
+
+### Commands
+
+| Command                | Description                                  |
+|------------------------|----------------------------------------------|
+| `bolt run <target>`    | Execute a playbook or role                   |
+| `bolt validate <file>` | Validate playbook syntax without executing   |
+| `bolt modules`         | List available modules                       |
+| `bolt module <name>`   | Show module documentation                    |
+| `bolt test <target>`   | Test in ephemeral Docker container           |
+| `bolt scaffold <name>` | Generate sample role directory structure      |
+| `bolt generate`        | Capture live system state as a playbook      |
+| `bolt vault init <f>`  | Create new encrypted vault file              |
+| `bolt vault edit <f>`  | Edit existing encrypted vault file           |
+| `bolt version`         | Show version information                     |
+
+Target can be a playbook YAML file or a role directory path.
+
+### Global flags
+
+| Flag          | Short | Type   | Default | Description                    |
+|---------------|-------|--------|---------|--------------------------------|
+| --debug       | -d    | bool   | false   | Detailed task output           |
+| --verbose     | -v    | bool   | false   | Show full diffs in plan output |
+| --dry-run     | -n    | bool   | false   | Show what would change         |
+| --check       |       | bool   | false   | Alias for --dry-run            |
+| --no-color    |       | bool   | false   | Disable colored output         |
+| --output      |       | string | "text"  | Output format: text, json      |
+
+### Run flags
+
+| Flag                 | Short | Type   | Default | Env var              |
+|----------------------|-------|--------|---------|----------------------|
+| --connection         | -c    | string | ""      | BOLT_CONNECTION      |
+| --hosts              |       | string | ""      | BOLT_HOSTS           |
+| --sudo               | -s    | bool   | false   | -                    |
+| --sudo-password      |       | string | ""      | BOLT_SUDO_PASSWORD   |
+| --inventory          | -i    | string | ""      | -                    |
+| --extra-vars         | -e    | string | ""      | -                    |
+| --tags               |       | string | ""      | -                    |
+| --skip-tags          |       | string | ""      | -                    |
+| --forks              | -f    | int    | 1       | BOLT_FORKS           |
+| --auto-approve       |       | bool   | false   | -                    |
+| --ssh-user           |       | string | ""      | BOLT_SSH_USER        |
+| --ssh-port           |       | int    | 0       | BOLT_SSH_PORT        |
+| --ssh-key            |       | string | ""      | BOLT_SSH_KEY         |
+| --ssh-password       |       | string | ""      | BOLT_SSH_PASSWORD    |
+| --ssh-insecure       |       | bool   | false   | BOLT_SSH_INSECURE    |
+| --vault-password-file|       | string | ""      | -                    |
+| --ssm-instances      |       | string | ""      | BOLT_SSM_INSTANCES   |
+| --ssm-tags           |       | string | ""      | BOLT_SSM_TAGS        |
+| --ssm-region         |       | string | ""      | BOLT_SSM_REGION      |
+| --ssm-bucket         |       | string | ""      | BOLT_SSM_BUCKET      |
+
+`--connection` accepts URI format: `ssh://user@host:port`, `docker://container`, `local://`
+`--extra-vars` accepts `key=value` format, repeatable.
+`--vault-password-file` reads the first line of the file as the password.
+Vault password resolution: `BOLT_VAULT_PASSWORD` env > `--vault-password-file` > interactive prompt.
+
+### Test flags
+
+| Flag    | Type   | Default        | Description                    |
+|---------|--------|----------------|--------------------------------|
+| --image |string  | "ubuntu:24.04" | Docker image for testing       |
+| --new   | bool   | false          | Force fresh container          |
+| --rm    | bool   | false          | Remove container after test    |
+
+### Generate flags
+
+| Flag       | Type   | Description                     |
+|------------|--------|---------------------------------|
+| --packages | string | Packages to capture (comma-sep) |
+| --files    | string | Files/dirs to capture           |
+| --services | string | Systemd services to capture     |
+| --users    | string | Users to capture                |
+| --output   | string | Output file (default: stdout)   |
+
+### Scaffold flags
+
+| Flag   | Type   | Default | Description               |
+|--------|--------|---------|---------------------------|
+| --path | string | "roles" | Base directory for role    |
+
+---
+
+## CONNECTORS
+
+### local
+
+Executes commands on the local machine. Default connection type.
+
+```yaml
+connection: local
+```
+
+No additional configuration needed.
+
+### ssh
+
+Connects to remote hosts via SSH. Reads `~/.ssh/config` and `~/.ssh/known_hosts`.
+
+```yaml
+connection: ssh
+ssh:
+  user: deploy
+  port: 22
+  key: ~/.ssh/id_ed25519
+  password: ""
+  host_key_checking: true
+```
+
+Authentication priority: explicit key > SSH agent > default keys (~/.ssh/id_ed25519, id_rsa, id_ecdsa) > password.
+
+File transfers use SFTP. When sudo is enabled and user is not root, files upload
+to /tmp first then move via sudo.
+
+### ssm
+
+Connects to EC2 instances via AWS Systems Manager.
+
+```yaml
+connection: ssm
+ssm:
+  region: us-east-1
+  bucket: my-transfer-bucket
+  instances:
+    - i-0123456789abcdef0
+  tags:
+    Environment: production
+```
+
+Requires SSM agent on instances and IAM permissions (ssm:SendCommand,
+ssm:GetCommandInvocation). File transfers >24KB require an S3 bucket.
+
+Instance targeting: `instances` for explicit IDs, `tags` for dynamic discovery
+via EC2 API. Uses standard AWS credential chain.
+
+### docker
+
+Executes commands inside Docker containers.
+
+```yaml
+connection: docker
+```
+
+Connect via CLI: `bolt run playbook.yaml -c docker://container-name`
+
+Uses `docker exec` for commands and `docker cp` for file transfers.
+
+---
+
+## VARIABLES
+
+### Interpolation syntax
+
+```yaml
+# Simple variable
+name: "{{ app_name }}"
+
+# Dotted path
+family: "{{ facts.os_family }}"
+
+# With filter
+name: "{{ app_name | upper }}"
+name: "{{ app_name | default('myapp') }}"
+
+# SSM Parameter Store
+secret: "{{ ssm_param('/prod/db/password') }}"
+secret: "{{ ssm_param(param_path_var) }}"
+```
+
+Variable interpolation uses `{{ var }}` syntax (no dot prefix).
+When the entire value is a single `{{ var }}` reference, the original type is
+preserved (not stringified).
+
+### Filters
+
+| Filter          | Args     | Description                          |
+|-----------------|----------|--------------------------------------|
+| default(val)    | string   | Return val if variable is nil/empty  |
+| lower           | -        | Lowercase string                     |
+| upper           | -        | Uppercase string                     |
+| trim            | -        | Strip whitespace                     |
+| bool            | -        | Convert to boolean                   |
+| string          | -        | Convert to string                    |
+| int             | -        | Convert to integer                   |
+| first           | -        | First element of list                |
+| last            | -        | Last element of list                 |
+| length / count  | -        | Length of string, list, or map       |
+| join(sep)       | string   | Join list with separator (default ",") |
+
+These are the ONLY filters. No others exist.
+
+### Variable precedence (highest to lowest)
+
+1. Registered task results (`register:`)
+2. Play vars (`vars:` block)
+3. Facts (gathered at play start)
+4. CLI extra vars (`-e key=value`)
+5. Vault variables (`vault_file:`)
+
+### when: conditions
+
+```yaml
+when: facts.os_family == 'Debian'
+when: app_port > 1024 and app_port < 65535
+when: item in ['web', 'api', 'worker']
+when: custom_var is defined
+when: custom_var is not defined
+when: not skip_deploy
+when: (env == 'prod') or (force_deploy == true)
+```
+
+Operators: `==`, `!=`, `<`, `>`, `<=`, `>=`, `and`, `or`, `not`, `in`, `not in`,
+`is defined`, `is not defined`. Parentheses for grouping.
+
+Truthiness: non-empty strings, non-zero numbers, and `true` are truthy.
+Empty strings, zero, `nil`, and `false` are falsy.
+
+---
+
+## FACTS
+
+Gathered automatically unless `gather_facts: false`. Available as `{{ key }}`
+or `{{ facts.key }}` in playbook variables and `{{ .key }}` in templates.
+
+### System
+
+| Fact          | Example           | Description                |
+|---------------|-------------------|----------------------------|
+| os_type       | "Linux", "Darwin" | OS from uname              |
+| os_family     | "Debian", "RedHat", "Darwin" | Derived OS family |
+| os_name       | "Ubuntu", "macOS" | OS name                    |
+| os_version    | "14.5"            | macOS version              |
+| distribution  | "ubuntu", "rhel"  | Linux distro ID            |
+| distribution_version | "22.04"    | Linux distro version       |
+| architecture  | "x86_64", "aarch64" | CPU architecture (raw)   |
+| arch          | "amd64", "arm64"  | Normalized architecture    |
+| kernel        | "6.1.0"           | Kernel version             |
+| hostname      | "web-01"          | System hostname            |
+| user          | "deploy"          | Current user               |
+| home          | "/home/deploy"    | Home directory             |
+| pkg_manager   | "apt", "dnf", "brew" | Detected package manager|
+
+### Network
+
+| Fact              | Example          | Description               |
+|-------------------|------------------|---------------------------|
+| default_interface | "eth0", "en0"    | Default network interface |
+| default_ipv4      | "10.0.1.50"      | Default IPv4 address      |
+| all_ipv4          | "10.0.1.50,..."  | All non-localhost IPv4    |
+| all_ipv6          | "2001:db8::1,..." | All global IPv6          |
+
+### Environment
+
+| Fact        | Example          | Description                |
+|-------------|------------------|----------------------------|
+| env.PATH    | "/usr/bin:..."   | PATH variable              |
+| env.SHELL   | "/bin/bash"      | User shell                 |
+| env.LANG    | "en_US.UTF-8"   | Locale                     |
+| env.TERM    | "xterm-256color" | Terminal type              |
+| env.EDITOR  | "vim"            | Default editor             |
+
+### EC2 (only on AWS instances with IMDSv2)
+
+| Fact              | Example              | Description            |
+|-------------------|----------------------|------------------------|
+| ec2_instance_id   | "i-0123456789abcdef0"| Instance ID            |
+| ec2_region        | "us-east-1"         | AWS region             |
+| ec2_az            | "us-east-1a"        | Availability zone      |
+| ec2_instance_type | "t3.micro"          | Instance type          |
+| ec2_ami_id        | "ami-0abcdef1234"   | AMI ID                 |
+| ec2_private_ip    | "10.0.1.50"         | Private IPv4           |
+| ec2_public_ip     | "54.123.45.67"      | Public IPv4            |
+
+---
+
+## ROLES
+
+Directory structure:
+
+```
+roles/myrole/
+  tasks/main.yaml       # Task list (required)
+  handlers/main.yaml    # Handler list
+  vars/main.yaml        # High-priority variables
+  defaults/main.yaml    # Low-priority defaults
+  files/                # Static files for copy module
+  templates/            # Template files for template module
+```
+
+Usage:
+
+```yaml
+roles:
+  - myrole
+  - /absolute/path/to/role
+```
+
+Variable precedence: role vars/ > play vars > role defaults/
+
+Run a role directly: `bolt run roles/myrole`
+
+---
+
+## VAULT
+
+Encrypted variable files using AES-256-GCM.
+
+```bash
+# Create new vault
+bolt vault init secrets.yaml
+
+# Edit existing vault
+bolt vault edit secrets.yaml
+
+# Use in playbook
+```
+
+```yaml
+vault_file: secrets.yaml
+tasks:
+  - name: Use secret
+    command:
+      cmd: echo "{{ db_password }}"
+```
+
+Password resolution: `BOLT_VAULT_PASSWORD` env var > `--vault-password-file` > interactive prompt.
