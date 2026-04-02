@@ -185,6 +185,10 @@ type PlayContext struct {
 	// Output is the emitter for this play context. In parallel mode,
 	// each host gets its own buffered emitter.
 	Output output.Emitter
+
+	// PlaybookDir is the directory of the playbook file, used for
+	// resolving relative include paths.
+	PlaybookDir string
 }
 
 // Run executes a playbook.
@@ -480,6 +484,7 @@ func (e *Executor) runPlayOnHost(ctx context.Context, play *playbook.Play, stats
 		Registered:       make(map[string]any),
 		NotifiedHandlers: make(map[string]bool),
 		Output:           emitter,
+		PlaybookDir:      playbookDir,
 	}
 
 	// Merge variables with correct precedence: role defaults < role vars < play vars
@@ -608,7 +613,7 @@ func (e *Executor) runPlayOnHost(ctx context.Context, play *playbook.Play, stats
 	for _, task := range allTasks {
 		// Handle include directive
 		if task.Include != "" {
-			if err := e.runInclude(ctx, pctx, task, stats); err != nil {
+			if err := e.runInclude(ctx, pctx, task, stats, nil); err != nil {
 				if !task.IgnoreErrors {
 					return err
 				}
@@ -849,8 +854,12 @@ func (e *Executor) runHandlersExpanded(ctx context.Context, pctx *PlayContext, s
 	return nil
 }
 
-// runInclude handles an include directive during the apply phase.
-func (e *Executor) runInclude(ctx context.Context, pctx *PlayContext, task *playbook.Task, stats *Stats) error {
+// maxIncludeDepth is the maximum nesting depth for include directives.
+const maxIncludeDepth = 64
+
+// runInclude handles an include/include_tasks directive during the apply phase.
+// visitedPaths tracks the include chain for circular detection.
+func (e *Executor) runInclude(ctx context.Context, pctx *PlayContext, task *playbook.Task, stats *Stats, visitedPaths []string) error {
 	taskName := task.String()
 
 	// Check 'when' condition
@@ -867,6 +876,56 @@ func (e *Executor) runInclude(ctx context.Context, pctx *PlayContext, task *play
 		}
 	}
 
+	// Handle loop on include_tasks
+	if len(task.Loop) > 0 || task.LoopExpr != "" {
+		return e.runIncludeLoop(ctx, pctx, task, stats, visitedPaths)
+	}
+
+	return e.runIncludeOnce(ctx, pctx, task, stats, visitedPaths)
+}
+
+// runIncludeLoop executes an include directive once per loop iteration.
+func (e *Executor) runIncludeLoop(ctx context.Context, pctx *PlayContext, task *playbook.Task, stats *Stats, visitedPaths []string) error {
+	taskName := task.String()
+
+	// Resolve loop expression if needed
+	loop := task.Loop
+	if task.LoopExpr != "" && len(loop) == 0 {
+		resolved, err := e.interpolateString(ctx, task.LoopExpr, pctx)
+		if err != nil {
+			return fmt.Errorf("failed to resolve loop expression: %w", err)
+		}
+		items, ok := resolved.([]any)
+		if !ok {
+			return fmt.Errorf("loop expression must resolve to a list, got %T", resolved)
+		}
+		loop = items
+	}
+
+	loopVar := task.GetLoopVar()
+
+	for i, item := range loop {
+		// Set loop variables
+		pctx.Vars[loopVar] = item
+		pctx.Vars["loop_index"] = i
+
+		if err := e.runIncludeOnce(ctx, pctx, task, stats, visitedPaths); err != nil {
+			return err
+		}
+	}
+
+	// Clean up loop variables
+	delete(pctx.Vars, loopVar)
+	delete(pctx.Vars, "loop_index")
+
+	_ = taskName
+	return nil
+}
+
+// runIncludeOnce executes a single include with vars scoping and circular detection.
+func (e *Executor) runIncludeOnce(ctx context.Context, pctx *PlayContext, task *playbook.Task, stats *Stats, visitedPaths []string) error {
+	taskName := task.String()
+
 	// Interpolate variables in the include path
 	includePath, err := e.interpolateString(ctx, task.Include, pctx)
 	if err != nil {
@@ -877,12 +936,45 @@ func (e *Executor) runInclude(ctx context.Context, pctx *PlayContext, task *play
 		return fmt.Errorf("include path must be a string, got %T", includePath)
 	}
 
-	pctx.Output.TaskStart(taskName, "include")
+	// Resolve path: role-relative, playbook-relative, or absolute
+	resolvedPath := e.resolveIncludePath(includeStr, task.RolePath, pctx.PlaybookDir)
 
-	// Resolve and fetch the source
+	// Circular include detection
+	absPath, err := filepath.Abs(resolvedPath)
+	if err != nil {
+		absPath = resolvedPath
+	}
+	// Try to resolve symlinks for accurate cycle detection
+	if evaluated, err := filepath.EvalSymlinks(absPath); err == nil {
+		absPath = evaluated
+	}
+
+	// Check max depth
+	if len(visitedPaths) >= maxIncludeDepth {
+		return fmt.Errorf("maximum include depth (%d) exceeded", maxIncludeDepth)
+	}
+
+	// Check for circular include
+	for _, vp := range visitedPaths {
+		if vp == absPath {
+			chain := append(visitedPaths, absPath)
+			return fmt.Errorf("circular include detected: %s", strings.Join(chain, " → "))
+		}
+	}
+
+	newVisited := append(append([]string(nil), visitedPaths...), absPath)
+
+	pctx.Output.TaskStart(taskName, "include_tasks")
+
+	// Resolve and fetch the source (handles local, git, s3, http)
 	src, err := source.Resolve(includeStr)
 	if err != nil {
 		return fmt.Errorf("failed to resolve include source %q: %w", includeStr, err)
+	}
+
+	// For local sources, use the resolved path instead
+	if _, isLocal := src.(*source.LocalSource); isLocal {
+		src = &source.LocalSource{Path: resolvedPath}
 	}
 
 	localPath, cleanup, err := src.Fetch(ctx)
@@ -899,14 +991,42 @@ func (e *Executor) runInclude(ctx context.Context, pctx *PlayContext, task *play
 
 	pctx.Output.TaskResult(taskName, "ok", false, fmt.Sprintf("included %d tasks from %s", len(includedTasks), includeStr))
 
+	// Scope variables from IncludeVars: snapshot, merge, execute, restore
+	var savedVars map[string]any
+	var injectedKeys []string
+	if len(task.IncludeVars) > 0 {
+		savedVars = make(map[string]any)
+		for k, v := range task.IncludeVars {
+			if existing, exists := pctx.Vars[k]; exists {
+				savedVars[k] = existing
+			} else {
+				injectedKeys = append(injectedKeys, k)
+			}
+			pctx.Vars[k] = v
+		}
+	}
+
 	// Execute each included task inline
 	for _, inclTask := range includedTasks {
+		// Handle nested includes
+		if inclTask.Include != "" {
+			if err := e.runInclude(ctx, pctx, inclTask, stats, newVisited); err != nil {
+				if !inclTask.IgnoreErrors {
+					e.restoreIncludeVars(pctx, savedVars, injectedKeys)
+					return err
+				}
+				pctx.Output.TaskResult(inclTask.String(), "failed (ignored)", false, err.Error())
+			}
+			continue
+		}
+
 		stats.Tasks++
 
 		taskResult, err := e.runTask(ctx, pctx, inclTask)
 		if err != nil {
 			stats.Failed++
 			if !inclTask.IgnoreErrors {
+				e.restoreIncludeVars(pctx, savedVars, injectedKeys)
 				return err
 			}
 			pctx.Output.TaskResult(inclTask.String(), "failed (ignored)", false, err.Error())
@@ -916,7 +1036,47 @@ func (e *Executor) runInclude(ctx context.Context, pctx *PlayContext, task *play
 		stats.RecordResult(taskResult.Status)
 	}
 
+	// Restore vars scope
+	e.restoreIncludeVars(pctx, savedVars, injectedKeys)
+
 	return nil
+}
+
+// restoreIncludeVars restores variables after an include completes.
+func (e *Executor) restoreIncludeVars(pctx *PlayContext, savedVars map[string]any, injectedKeys []string) {
+	// Restore overridden vars
+	for k, v := range savedVars {
+		pctx.Vars[k] = v
+	}
+	// Remove vars that were injected (didn't exist before)
+	for _, k := range injectedKeys {
+		delete(pctx.Vars, k)
+	}
+}
+
+// resolveIncludePath resolves an include path relative to the appropriate base directory.
+func (e *Executor) resolveIncludePath(includePath, rolePath, playbookDir string) string {
+	// Absolute paths are used as-is
+	if filepath.IsAbs(includePath) {
+		return includePath
+	}
+
+	// URLs and special prefixes are not resolved
+	if strings.Contains(includePath, "://") || strings.HasPrefix(includePath, "git@") {
+		return includePath
+	}
+
+	// Role-relative: resolve against role's tasks/ directory
+	if rolePath != "" {
+		return filepath.Join(rolePath, "tasks", includePath)
+	}
+
+	// Playbook-relative
+	if playbookDir != "" {
+		return filepath.Join(playbookDir, includePath)
+	}
+
+	return includePath
 }
 
 // planTasks evaluates tasks without executing them and returns a plan.
@@ -935,7 +1095,7 @@ func (e *Executor) planTasks(ctx context.Context, pctx *PlayContext, tasks []*pl
 		if task.Include != "" {
 			pt := output.PlannedTask{
 				Name:   task.String(),
-				Module: "include",
+				Module: "include_tasks",
 				Status: "will_run",
 				Params: map[string]any{"source": task.Include},
 			}

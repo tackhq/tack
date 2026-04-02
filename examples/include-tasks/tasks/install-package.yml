@@ -1,0 +1,6 @@
+# Reusable task file for installing a package.
+# Expected vars: package_name, package_state (default: present)
+- name: "Install {{ package_name }}"
+  apt:
+    name: "{{ package_name }}"
+    state: "{{ package_state }}"

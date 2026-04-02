@@ -42,7 +42,9 @@ var knownTaskFields = map[string]bool{
 	"sudo":         true,
 	"changed_when": true,
 	"failed_when":  true,
-	"include":      true,
+	"include":       true,
+	"include_tasks": true,
+	"vars":          true,
 	// Module argument keys that Ansible allows at task level
 	"args":    true,
 	"creates": true,
@@ -239,6 +241,14 @@ func parseRawTask(raw map[string]any) (*Task, error) {
 	}
 	if v, ok := raw["include"].(string); ok {
 		task.Include = v
+	}
+	if v, ok := raw["include_tasks"].(string); ok {
+		task.Include = v
+	}
+
+	// Parse vars on include/include_tasks directives
+	if vars, ok := raw["vars"].(map[string]any); ok {
+		task.IncludeVars = vars
 	}
 
 	// Parse notify (can be string or list)
