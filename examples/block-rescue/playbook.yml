@@ -1,0 +1,46 @@
+# Demonstrates block/rescue/always for a deploy-with-rollback pattern.
+#
+# Run:
+#   bolt run examples/block-rescue/playbook.yml --check   # preview
+#   bolt run examples/block-rescue/playbook.yml            # apply
+
+name: Deploy with rollback
+hosts: localhost
+connection: local
+gather_facts: false
+
+vars:
+  app_dir: /tmp/bolt-block-demo
+  version: "2.0"
+
+tasks:
+  - name: Setup demo directory
+    file:
+      path: "{{ app_dir }}"
+      state: directory
+
+  - name: Deploy application
+    block:
+      - name: Write current version marker
+        copy:
+          dest: "{{ app_dir }}/version.txt"
+          content: "{{ version }}"
+
+      - name: Run post-deploy validation
+        command:
+          cmd: test -f {{ app_dir }}/version.txt
+
+    rescue:
+      - name: Rollback -- remove failed deploy
+        file:
+          path: "{{ app_dir }}/version.txt"
+          state: absent
+
+      - name: Log rollback
+        command:
+          cmd: echo "Rolled back deploy of version {{ version }}"
+
+    always:
+      - name: Report deploy status
+        command:
+          cmd: echo "Deploy pipeline complete for version {{ version }}"

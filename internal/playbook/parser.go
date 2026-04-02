@@ -45,6 +45,10 @@ var knownTaskFields = map[string]bool{
 	"include":       true,
 	"include_tasks": true,
 	"vars":          true,
+	// Block/rescue/always directives
+	"block":  true,
+	"rescue": true,
+	"always": true,
 	// Module argument keys that Ansible allows at task level
 	"args":    true,
 	"creates": true,
@@ -244,6 +248,29 @@ func parseRawTask(raw map[string]any) (*Task, error) {
 	}
 	if v, ok := raw["include_tasks"].(string); ok {
 		task.Include = v
+	}
+
+	// Parse block/rescue/always
+	if blockRaw, ok := raw["block"].([]any); ok {
+		blockTasks, err := parseTaskList(blockRaw, "block task")
+		if err != nil {
+			return nil, fmt.Errorf("block: %w", err)
+		}
+		task.Block = blockTasks
+	}
+	if rescueRaw, ok := raw["rescue"].([]any); ok {
+		rescueTasks, err := parseTaskList(rescueRaw, "rescue task")
+		if err != nil {
+			return nil, fmt.Errorf("rescue: %w", err)
+		}
+		task.Rescue = rescueTasks
+	}
+	if alwaysRaw, ok := raw["always"].([]any); ok {
+		alwaysTasks, err := parseTaskList(alwaysRaw, "always task")
+		if err != nil {
+			return nil, fmt.Errorf("always: %w", err)
+		}
+		task.Always = alwaysTasks
 	}
 
 	// Parse vars on include/include_tasks directives

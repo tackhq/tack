@@ -12,7 +12,7 @@ Feature roadmap based on team discussion covering PM, DevOps (senior/mid/junior)
 | Status | Feature | Description | Details |
 |--------|---------|-------------|---------|
 | [x] | `include_tasks` | Enhanced task inclusion with `vars:`, `loop:`, circular detection | `include_tasks:` — dynamic runtime inclusion with scoped `vars:`, `loop:` support, variable-interpolated paths, circular detection (max depth 64). `include:` remains as alias. `import_tasks` deferred (unnecessary complexity). |
-| [ ] | `block` / `rescue` / `always` | Group tasks with structured error handling | `block:` tasks to attempt, `rescue:` on failure, `always:` runs regardless. Required for rollback workflows (DB migrations, blue-green deploys) |
+| [x] | `block` / `rescue` / `always` | Group tasks with structured error handling | `block:` tasks to attempt, `rescue:` on failure, `always:` runs regardless. Required for rollback workflows (DB migrations, blue-green deploys) |
 
 ## P1 — High Impact
 

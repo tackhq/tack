@@ -625,3 +625,130 @@ tasks:
 		}
 	}
 }
+
+func TestParseBlock(t *testing.T) {
+	yaml := `
+hosts: localhost
+tasks:
+  - name: Deploy app
+    block:
+      - name: Pull code
+        command:
+          cmd: git pull
+      - name: Restart service
+        command:
+          cmd: systemctl restart app
+`
+	pb, err := ParseRaw([]byte(yaml), "test.yaml")
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	task := pb.Plays[0].Tasks[0]
+	if !task.IsBlock() {
+		t.Fatal("expected task to be a block")
+	}
+	if task.Module != "" {
+		t.Errorf("expected empty module for block task, got %q", task.Module)
+	}
+	if len(task.Block) != 2 {
+		t.Fatalf("expected 2 block tasks, got %d", len(task.Block))
+	}
+	if task.Block[0].Name != "Pull code" {
+		t.Errorf("expected block task 0 name 'Pull code', got %q", task.Block[0].Name)
+	}
+}
+
+func TestParseBlockWithRescueAlways(t *testing.T) {
+	yaml := `
+hosts: localhost
+tasks:
+  - name: Safe deploy
+    block:
+      - command:
+          cmd: deploy.sh
+    rescue:
+      - command:
+          cmd: rollback.sh
+    always:
+      - command:
+          cmd: notify.sh
+`
+	pb, err := ParseRaw([]byte(yaml), "test.yaml")
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	task := pb.Plays[0].Tasks[0]
+	if !task.IsBlock() {
+		t.Fatal("expected block")
+	}
+	if len(task.Block) != 1 {
+		t.Errorf("expected 1 block task, got %d", len(task.Block))
+	}
+	if len(task.Rescue) != 1 {
+		t.Errorf("expected 1 rescue task, got %d", len(task.Rescue))
+	}
+	if len(task.Always) != 1 {
+		t.Errorf("expected 1 always task, got %d", len(task.Always))
+	}
+}
+
+func TestParseBlockWithDirectives(t *testing.T) {
+	yaml := `
+hosts: localhost
+tasks:
+  - name: Conditional block
+    block:
+      - command:
+          cmd: echo hello
+    when: facts.os == "linux"
+    sudo: true
+`
+	pb, err := ParseRaw([]byte(yaml), "test.yaml")
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	task := pb.Plays[0].Tasks[0]
+	if !task.IsBlock() {
+		t.Fatal("expected block")
+	}
+	if task.When != `facts.os == "linux"` {
+		t.Errorf("expected when condition, got %q", task.When)
+	}
+	if task.Sudo == nil || !*task.Sudo {
+		t.Error("expected sudo to be true")
+	}
+}
+
+func TestParseBlockRejectBlockPlusModule(t *testing.T) {
+	yaml := `
+hosts: localhost
+tasks:
+  - name: Bad task
+    command:
+      cmd: echo hello
+    block:
+      - command:
+          cmd: echo world
+`
+	_, err := ParseRaw([]byte(yaml), "test.yaml")
+	if err == nil {
+		t.Fatal("expected error for block + module, got nil")
+	}
+}
+
+func TestParseBlockRejectRescueWithoutBlock(t *testing.T) {
+	yaml := `
+hosts: localhost
+tasks:
+  - name: Bad task
+    command:
+      cmd: echo hello
+    rescue:
+      - command:
+          cmd: echo fix
+`
+	_, err := ParseRaw([]byte(yaml), "test.yaml")
+	if err == nil {
+		t.Fatal("expected error for rescue without block, got nil")
+	}
+}

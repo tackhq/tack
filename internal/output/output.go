@@ -215,6 +215,12 @@ type PlannedTask struct {
 	NewChecksum string
 	OldContent  string
 	NewContent  string
+
+	// Indent is the nesting depth for block tasks (0 = top-level).
+	Indent int
+
+	// IsSection marks this entry as a section header (e.g. "BLOCK:", "RESCUE:", "ALWAYS:").
+	IsSection bool
 }
 
 // DisplayPlan renders the plan table showing what tasks will run.
@@ -279,15 +285,24 @@ func (o *Output) DisplayPlan(tasks []PlannedTask, dryRun bool) {
 			suffix += fmt.Sprintf("%d items", t.LoopCount)
 		}
 
-		line := fmt.Sprintf("  %s %s%s", indicator, module, t.Name)
+		// Section headers (block/rescue/always) get special rendering
+		if t.IsSection {
+			indent := strings.Repeat("  ", t.Indent)
+			o.printf("%s%s\n", indent, o.color(colorBold, t.Name))
+			continue
+		}
+
+		indent := strings.Repeat("  ", t.Indent)
+		line := fmt.Sprintf("%s  %s %s%s", indent, indicator, module, t.Name)
 		if suffix != "" {
 			line += " - " + suffix
 		}
 		o.printf("%s\n", o.color(col, strings.TrimRight(line, " ")))
 
 		// Show task parameters
+		paramIndent := strings.Repeat("  ", t.Indent) + "      "
 		for _, paramLine := range formatTaskParams(t.Module, t.Params) {
-			o.printf("      %s\n", o.color(colorGray, paramLine))
+			o.printf("%s%s\n", paramIndent, o.color(colorGray, paramLine))
 		}
 
 		// Show checksums or diff when content differs
