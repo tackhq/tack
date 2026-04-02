@@ -20,7 +20,7 @@ Feature roadmap based on team discussion covering PM, DevOps (senior/mid/junior)
 |--------|---------|-------------|---------|
 | [ ] | Tags | Selective task execution via `--tags` / `--skip-tags` | Tags on tasks and roles with inheritance through blocks/roles. Large playbooks become unusable without selective execution |
 | [ ] | `user` + `group` modules | Idempotent user and group provisioning | `user`: name, state, groups, shell, home, uid, password (hashed), system, remove. `group`: name, state, gid, system. Optional `ssh_authorized_keys` management |
-| [ ] | `lineinfile` / `blockinfile` | Surgical file edits without full template management | `lineinfile`: regexp, line, state, insertafter/insertbefore, backup. `blockinfile`: marker, block, state, insertafter/insertbefore, backup |
+| [x] | `lineinfile` / `blockinfile` | Surgical file edits without full template management | `lineinfile`: regexp, line, state, insertafter/insertbefore, backup. `blockinfile`: marker, block, state, insertafter/insertbefore, backup |
 | [ ] | Dynamic inventory | External inventory sources beyond static YAML | Script/binary plugin (run command, parse JSON), built-in AWS EC2 plugin, generic HTTP source. Static YAML doesn't scale for cloud fleets |
 
 ## P2 — Quality of Life

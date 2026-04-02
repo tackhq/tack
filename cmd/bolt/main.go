@@ -17,10 +17,12 @@ import (
 
 	// Import modules to register them
 	_ "github.com/eugenetaranov/bolt/internal/module/apt"
+	_ "github.com/eugenetaranov/bolt/internal/module/blockinfile"
 	_ "github.com/eugenetaranov/bolt/internal/module/brew"
 	_ "github.com/eugenetaranov/bolt/internal/module/command"
 	_ "github.com/eugenetaranov/bolt/internal/module/copy"
 	_ "github.com/eugenetaranov/bolt/internal/module/file"
+	_ "github.com/eugenetaranov/bolt/internal/module/lineinfile"
 	_ "github.com/eugenetaranov/bolt/internal/module/systemd"
 	_ "github.com/eugenetaranov/bolt/internal/module/template"
 	_ "github.com/eugenetaranov/bolt/internal/module/waitfor"
