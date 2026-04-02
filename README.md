@@ -40,7 +40,7 @@ tasks:
 ## Features
 
 - **Simple YAML playbooks** with Ansible-compatible role structure
-- **Idempotent modules** -- apt, brew, yum, file, copy, command, systemd, template
+- **Idempotent modules** -- apt, brew, yum, file, copy, command, systemd, template, wait_for
 - **Cross-platform** -- macOS (brew) and Linux (apt, yum, systemd)
 - **Multiple connectors** -- Local, Docker, SSH, AWS SSM with tag-based discovery
 - **Plan/apply workflow** -- preview changes before applying, `--auto-approve` for CI
@@ -171,6 +171,7 @@ See [`examples/inventory.yaml`](examples/inventory.yaml) for a complete sample.
 | `file` | Manage files, directories, and symlinks |
 | `systemd` | Manage systemd services (start, stop, enable, mask, daemon-reload) |
 | `template` | Render Go templates with variable substitution |
+| `wait_for` | Wait for port, path, command, or URL before proceeding |
 
 Run `bolt module <name>` for detailed parameter docs.
 

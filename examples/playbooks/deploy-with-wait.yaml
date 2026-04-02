@@ -1,0 +1,95 @@
+# Example playbook: Deploy app with wait_for checks
+# Demonstrates all four wait_for condition types in a deployment workflow.
+# Run with: bolt run examples/playbooks/deploy-with-wait.yaml
+
+- name: Deploy application with health checks
+  hosts: localhost
+  connection: local
+  gather_facts: true
+
+  vars:
+    app_port: 8080
+    db_port: 5432
+    app_dir: /opt/myapp
+
+  tasks:
+    # --- wait_for type: port ---
+    # Wait for database to accept connections before deploying the app.
+    - name: Wait for PostgreSQL to be ready
+      wait_for:
+        type: port
+        host: localhost
+        port: "{{ db_port }}"
+        timeout: 60
+        interval: 2
+
+    # --- wait_for type: command ---
+    # Use a command to verify the database is actually accepting queries,
+    # not just listening on the port.
+    - name: Wait for database to accept queries
+      wait_for:
+        type: command
+        cmd: pg_isready -h localhost -p {{ db_port }}
+        timeout: 30
+        interval: 5
+      register: db_ready
+
+    - name: Deploy application
+      command:
+        cmd: "{{ app_dir }}/deploy.sh"
+        creates: "{{ app_dir }}/current/app.pid"
+
+    # --- wait_for type: path ---
+    # Wait for the app to write its PID file, indicating it has started.
+    - name: Wait for app PID file
+      wait_for:
+        type: path
+        path: "{{ app_dir }}/current/app.pid"
+        timeout: 30
+        interval: 2
+
+    # --- wait_for type: url ---
+    # Wait for the app's health endpoint to return a successful response.
+    - name: Wait for app health check
+      wait_for:
+        type: url
+        url: "http://localhost:{{ app_port }}/health"
+        timeout: 120
+        interval: 5
+      register: health_result
+
+    - name: Show health check timing
+      command:
+        cmd: "echo 'App healthy after {{ health_result.data.elapsed }}s ({{ health_result.data.attempts }} attempts)'"
+
+- name: Decommission old service
+  hosts: localhost
+  connection: local
+
+  tasks:
+    # --- wait_for with state: stopped ---
+    # Wait for the old service to fully shut down before cleanup.
+    - name: Stop old service
+      command:
+        cmd: /opt/oldapp/stop.sh
+        removes: /var/run/oldapp.pid
+
+    - name: Wait for old service port to close
+      wait_for:
+        type: port
+        port: 9090
+        state: stopped
+        timeout: 30
+        interval: 2
+
+    - name: Wait for PID file to be removed
+      wait_for:
+        type: path
+        path: /var/run/oldapp.pid
+        state: stopped
+        timeout: 30
+
+    - name: Clean up old service
+      file:
+        path: /opt/oldapp
+        state: absent

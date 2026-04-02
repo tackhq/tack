@@ -14,6 +14,7 @@ Modules are the units of work in Bolt. Each module performs a specific action li
 | [file](#file) | Manage files and directories |
 | [systemd](#systemd) | Manage systemd services |
 | [template](#template) | Render templates to targets |
+| [wait_for](#wait_for) | Wait for a condition before proceeding |
 
 ---
 
@@ -615,6 +616,118 @@ The template module uses SHA256 checksums to detect changes. It will:
 - Render the template and compare checksum with destination
 - Skip if rendered content matches existing file
 - Only update attributes if content is same but mode/owner differs
+
+---
+
+## wait_for
+
+Wait for a condition to be met before continuing playbook execution. Supports waiting for TCP ports, filesystem paths, shell commands, and HTTP URLs.
+
+### Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `type` | string | **yes** | - | Condition type: `port`, `path`, `command`, `url` |
+| `host` | string | no | `localhost` | Host to check (port type only) |
+| `port` | int | no | - | TCP port number (required for port type) |
+| `path` | string | no | - | Filesystem path (required for path type) |
+| `cmd` | string | no | - | Shell command (required for command type) |
+| `url` | string | no | - | HTTP(S) URL (required for url type) |
+| `timeout` | int | no | `300` | Maximum wait time in seconds |
+| `interval` | int | no | `5` | Poll interval in seconds |
+| `state` | string | no | `started` | Desired state: `started` or `stopped` (port and path types) |
+
+### Condition Types
+
+| Type | Checks From | Success Condition |
+|------|-------------|-------------------|
+| `port` | Controller | TCP connection succeeds (started) or is refused (stopped) |
+| `path` | Target | File/directory exists (started) or is absent (stopped) |
+| `command` | Target | Command returns exit code 0 |
+| `url` | Controller | HTTP response with status 200-399 |
+
+### Examples
+
+```yaml
+# Wait for a service port to open
+- name: Wait for PostgreSQL
+  wait_for:
+    type: port
+    port: 5432
+    timeout: 60
+
+# Wait for a remote port
+- name: Wait for web server
+  wait_for:
+    type: port
+    host: 10.0.1.5
+    port: 443
+    timeout: 30
+    interval: 2
+
+# Wait for a port to close
+- name: Wait for old service to stop
+  wait_for:
+    type: port
+    port: 8080
+    state: stopped
+    timeout: 30
+
+# Wait for a file to appear
+- name: Wait for PID file
+  wait_for:
+    type: path
+    path: /var/run/myapp.pid
+    timeout: 60
+
+# Wait for a lock file to be removed
+- name: Wait for deploy lock
+  wait_for:
+    type: path
+    path: /var/lock/deploy.lock
+    state: stopped
+    timeout: 120
+
+# Wait for a command to succeed
+- name: Wait for database ready
+  wait_for:
+    type: command
+    cmd: pg_isready -h localhost
+    timeout: 60
+    interval: 5
+
+# Wait for HTTP endpoint
+- name: Wait for health check
+  wait_for:
+    type: url
+    url: http://localhost:8080/health
+    timeout: 120
+    interval: 5
+```
+
+### Result Data
+
+When using `register`, the result contains:
+
+```yaml
+result:
+  changed: true
+  data:
+    elapsed: 12.5      # seconds waited
+    attempts: 3         # number of polls
+    # For command type:
+    stdout: "ready"
+    stderr: ""
+    # For url type:
+    status_code: 200
+```
+
+### Notes
+
+- Port and URL checks run from the **controller** (the machine running Bolt), not from the target. To check from the target's perspective, use `type: command` with tools like `nc` or `curl`.
+- Path and command checks execute on the **target** via the connector.
+- The `state` parameter only applies to `port` and `path` types. Use `started` (default) to wait for the condition to be true, or `stopped` to wait for it to become false.
+- On timeout, the module returns an error with a descriptive message.
 
 ---
 

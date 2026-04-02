@@ -24,7 +24,7 @@ critical ways.
    - In .tmpl template files: `{{ .my_var }}` (dot prefix, Go template syntax)
 4. There is no `apt_repository`, `pip`, `docker_container`, `user`, `group`,
    `cron`, `git`, `service`, `lineinfile`, `blockinfile`, `uri`, or `shell`
-   module. Only the 8 modules listed below exist.
+   module. Only the 9 modules listed below exist.
 5. There is no `become_user`, `become_method`, `environment`, `timeout`,
    `delegate_to`, `run_once`, `serial`, `strategy`, `any_errors_fatal`,
    `max_fail_percentage`, or `collections` directive.
@@ -150,7 +150,7 @@ Tasks can specify the module as a top-level key:
 
 ## MODULES
 
-Bolt has exactly 8 modules. Do not hallucinate others.
+Bolt has exactly 9 modules. Do not hallucinate others.
 
 ### apt
 
@@ -355,6 +355,53 @@ When used in a role, `src` paths resolve relative to the role's `templates/` dir
     mode: "0644"
   notify:
     - Reload nginx
+```
+
+### wait_for
+
+Wait for a condition to be met before proceeding. Polls until success or timeout.
+
+| Param    | Type   | Required | Default     | Description                                    |
+|----------|--------|----------|-------------|------------------------------------------------|
+| type     | string | yes      | -           | port, path, command, or url                    |
+| host     | string | no       | "localhost" | Host for port check                            |
+| port     | int    | no       | -           | TCP port (required for type=port)              |
+| path     | string | no       | -           | File path (required for type=path)             |
+| cmd      | string | no       | -           | Shell command (required for type=command)       |
+| url      | string | no       | -           | HTTP(S) URL (required for type=url)            |
+| timeout  | int    | no       | 300         | Max wait in seconds                            |
+| interval | int    | no       | 5           | Poll interval in seconds                       |
+| state    | string | no       | "started"   | started or stopped (port and path types only)  |
+
+Port and URL checks run from the controller. Path and command checks run on the target via the connector.
+
+Result data: `elapsed`, `attempts`, plus `stdout`/`stderr` (command) or `status_code` (url).
+
+```yaml
+- name: Wait for app to start
+  wait_for:
+    type: port
+    port: 8080
+    timeout: 60
+
+- name: Wait for health endpoint
+  wait_for:
+    type: url
+    url: http://localhost:8080/health
+    timeout: 120
+    interval: 5
+
+- name: Wait for database
+  wait_for:
+    type: command
+    cmd: pg_isready -h localhost
+    timeout: 30
+
+- name: Wait for lock file removal
+  wait_for:
+    type: path
+    path: /var/lock/deploy.lock
+    state: stopped
 ```
 
 ---
