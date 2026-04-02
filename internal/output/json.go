@@ -17,6 +17,7 @@ type JSONEmitter struct {
 	w      io.Writer
 	errW   io.Writer
 	debug  bool
+	diff   bool
 }
 
 // NewJSONEmitter creates a JSONEmitter writing events to w and errors to errW.
@@ -116,6 +117,20 @@ func (j *JSONEmitter) DisplayPlan(tasks []PlannedTask, dryRun bool) {
 		if t.Reason != "" {
 			event["reason"] = t.Reason
 		}
+		if t.OldChecksum != "" {
+			event["old_checksum"] = t.OldChecksum
+		}
+		if t.NewChecksum != "" {
+			event["new_checksum"] = t.NewChecksum
+		}
+		if j.diff {
+			if t.OldContent != "" {
+				event["old_content"] = t.OldContent
+			}
+			if t.NewContent != "" {
+				event["new_content"] = t.NewContent
+			}
+		}
 		j.emit(event)
 	}
 }
@@ -174,6 +189,16 @@ func (j *JSONEmitter) SetDebug(enabled bool) {
 
 // SetVerbose is a no-op for JSON output.
 func (j *JSONEmitter) SetVerbose(_ bool) {}
+
+// SetDiff enables diff data in JSON plan events.
+func (j *JSONEmitter) SetDiff(enabled bool) {
+	j.diff = enabled
+}
+
+// DiffEnabled returns whether diff mode is active.
+func (j *JSONEmitter) DiffEnabled() bool {
+	return j.diff
+}
 
 // NewEmitter creates the appropriate Emitter based on the output mode.
 func NewEmitter(mode string) (Emitter, error) {

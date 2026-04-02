@@ -45,6 +45,7 @@ var (
 var (
 	debug       bool
 	verbose     bool
+	showDiff    bool
 	dryRun      bool
 	noColor     bool
 	autoApprove bool
@@ -108,7 +109,8 @@ Supports local execution, SSH, and AWS SSM connectors.`,
 func init() {
 	// Global flags
 	rootCmd.PersistentFlags().BoolVarP(&debug, "debug", "d", false, "Enable debug output with detailed task information")
-	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Show full diffs in plan output")
+	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose output")
+	rootCmd.PersistentFlags().BoolVar(&showDiff, "diff", false, "Show file content diffs in plan output")
 	rootCmd.PersistentFlags().BoolVarP(&dryRun, "dry-run", "n", false, "Show what would be done without making changes")
 	rootCmd.PersistentFlags().BoolVar(&dryRun, "check", false, "Alias for --dry-run")
 	rootCmd.PersistentFlags().BoolVar(&noColor, "no-color", false, "Disable colored output")
@@ -277,6 +279,7 @@ func runPlaybook(cmd *cobra.Command, args []string) error {
 	exec.Output = emitter
 	exec.Debug = debug
 	exec.Verbose = verbose
+	exec.ShowDiff = showDiff
 	exec.DryRun = dryRun
 	exec.AutoApprove = autoApprove
 	exec.Forks = forks
@@ -316,6 +319,7 @@ func runPlaybook(cmd *cobra.Command, args []string) error {
 	exec.Output.SetColor(!noColor)
 	exec.Output.SetDebug(debug)
 	exec.Output.SetVerbose(verbose)
+	exec.Output.SetDiff(showDiff)
 
 	// Run playbook
 	result, err := exec.Run(ctx, pb)

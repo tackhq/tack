@@ -66,6 +66,9 @@ type Executor struct {
 	// Verbose enables full diffs in plan output.
 	Verbose bool
 
+	// ShowDiff enables file content diffs in plan output.
+	ShowDiff bool
+
 	// Forks is the number of hosts to execute concurrently.
 	// Values <= 1 mean serial execution (default).
 	Forks int
@@ -417,6 +420,7 @@ func (e *Executor) runPlay(ctx context.Context, play *playbook.Play, stats *Stat
 			}
 			hostOutput.SetDebug(e.Debug)
 			hostOutput.SetVerbose(e.Verbose)
+			hostOutput.SetDiff(e.ShowDiff)
 
 			hostStats := &Stats{}
 			err := e.runPlayOnHost(ctx, play, hostStats, roles, host, playbookDir, hostOutput)
@@ -1030,6 +1034,7 @@ func (e *Executor) planTasks(ctx context.Context, pctx *PlayContext, tasks []*pl
 				if task.RolePath != "" {
 					checkParams["_role_path"] = task.RolePath
 				}
+				checkParams["_diff_enabled"] = e.Verbose || e.ShowDiff
 				if task.Module == "template" {
 					checkParams["_template_vars"] = pctx.Vars
 					if pctx.SSMParams != nil {

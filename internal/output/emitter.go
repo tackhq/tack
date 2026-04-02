@@ -22,6 +22,8 @@ type Emitter interface {
 	SetColor(enabled bool)
 	SetDebug(enabled bool)
 	SetVerbose(enabled bool)
+	SetDiff(enabled bool)
+	DiffEnabled() bool
 }
 
 // Verify Output implements Emitter at compile time.

@@ -242,8 +242,20 @@ func DeployFile(ctx context.Context, conn connector.Connector, opts DeployOpts) 
 	}), nil
 }
 
+// CheckOptions configures behavior of the check phase.
+type CheckOptions struct {
+	// DiffEnabled controls whether remote file content is fetched for diff display.
+	// When false, only checksums are compared (faster, no cat over the wire).
+	DiffEnabled bool
+}
+
 // CheckDeployFile checks whether a file deployment would make changes without applying them.
-func CheckDeployFile(ctx context.Context, conn connector.Connector, content []byte, dest, mode, owner, group string) (*CheckResult, error) {
+// If opts is nil, defaults to fetching content (backward compatible).
+func CheckDeployFile(ctx context.Context, conn connector.Connector, content []byte, dest, mode, owner, group string, opts ...CheckOptions) (*CheckResult, error) {
+	fetchContent := true
+	if len(opts) > 0 {
+		fetchContent = opts[0].DiffEnabled
+	}
 	srcChecksum := Checksum(content)
 
 	destExists, destChecksum, err := GetRemoteChecksum(ctx, conn, dest)
@@ -263,10 +275,12 @@ func CheckDeployFile(ctx context.Context, conn connector.Connector, content []by
 		cr.OldChecksum = destChecksum
 		cr.NewChecksum = srcChecksum
 		cr.NewContent = string(content)
-		// Fetch old content for diff (best-effort)
-		result, err := conn.Execute(ctx, fmt.Sprintf("cat %s", connector.ShellQuote(dest)))
-		if err == nil && result.ExitCode == 0 {
-			cr.OldContent = result.Stdout
+		// Fetch old content for diff only when diff/verbose mode is active
+		if fetchContent {
+			result, err := conn.Execute(ctx, fmt.Sprintf("cat %s", connector.ShellQuote(dest)))
+			if err == nil && result.ExitCode == 0 {
+				cr.OldContent = result.Stdout
+			}
 		}
 		return cr, nil
 	}
