@@ -275,6 +275,212 @@ func TestPlaybookEnd(t *testing.T) {
 	}
 }
 
+func TestSetDiff(t *testing.T) {
+	var buf bytes.Buffer
+	o := New(&buf)
+
+	o.SetDiff(true)
+	if !o.diff {
+		t.Error("expected diff to be true")
+	}
+	if !o.DiffEnabled() {
+		t.Error("expected DiffEnabled() to be true")
+	}
+
+	o.SetDiff(false)
+	if o.diff {
+		t.Error("expected diff to be false")
+	}
+}
+
+func TestDiffEnabledViaVerbose(t *testing.T) {
+	var buf bytes.Buffer
+	o := New(&buf)
+
+	o.SetVerbose(true)
+	if !o.DiffEnabled() {
+		t.Error("expected DiffEnabled() to be true when verbose is set")
+	}
+}
+
+func TestDisplayPlan_DiffFlag(t *testing.T) {
+	var buf bytes.Buffer
+	o := New(&buf)
+	o.SetColor(false)
+	o.SetDiff(true)
+
+	tasks := []PlannedTask{{
+		Name:        "Copy config",
+		Module:      "copy",
+		Status:      "will_change",
+		Params:      map[string]any{"dest": "/etc/app.conf"},
+		OldChecksum: "aaa",
+		NewChecksum: "bbb",
+		OldContent:  "line1\nline2\n",
+		NewContent:  "line1\nline3\n",
+	}}
+	o.DisplayPlan(tasks, false)
+	out := buf.String()
+
+	if !strings.Contains(out, "--- /etc/app.conf") {
+		t.Error("expected old file path header in diff output")
+	}
+	if !strings.Contains(out, "+++ /etc/app.conf") {
+		t.Error("expected new file path header in diff output")
+	}
+	if !strings.Contains(out, "-line2") {
+		t.Error("expected removed line in diff output")
+	}
+	if !strings.Contains(out, "+line3") {
+		t.Error("expected added line in diff output")
+	}
+}
+
+func TestDisplayPlan_DiffVerboseBackwardCompat(t *testing.T) {
+	var buf bytes.Buffer
+	o := New(&buf)
+	o.SetColor(false)
+	o.SetVerbose(true) // verbose should still show diffs
+
+	tasks := []PlannedTask{{
+		Name:        "Copy config",
+		Module:      "copy",
+		Status:      "will_change",
+		Params:      map[string]any{"dest": "/etc/app.conf"},
+		OldChecksum: "aaa",
+		NewChecksum: "bbb",
+		OldContent:  "old\n",
+		NewContent:  "new\n",
+	}}
+	o.DisplayPlan(tasks, false)
+	out := buf.String()
+
+	if !strings.Contains(out, "--- /etc/app.conf") {
+		t.Error("expected diff output with --verbose flag")
+	}
+}
+
+func TestDisplayPlan_NewFile(t *testing.T) {
+	var buf bytes.Buffer
+	o := New(&buf)
+	o.SetColor(false)
+	o.SetDiff(true)
+
+	tasks := []PlannedTask{{
+		Name:       "Create config",
+		Module:     "copy",
+		Status:     "will_change",
+		Params:     map[string]any{"dest": "/etc/new.conf"},
+		NewChecksum: "abc123",
+		NewContent: "server=localhost\nport=8080\n",
+	}}
+	o.DisplayPlan(tasks, false)
+	out := buf.String()
+
+	if !strings.Contains(out, "--- /dev/null") {
+		t.Error("expected /dev/null for old path on new file")
+	}
+	if !strings.Contains(out, "+++ /etc/new.conf") {
+		t.Error("expected new file path header")
+	}
+	if !strings.Contains(out, "+server=localhost") {
+		t.Error("expected all lines as additions for new file")
+	}
+}
+
+func TestDisplayPlan_BinaryFile(t *testing.T) {
+	var buf bytes.Buffer
+	o := New(&buf)
+	o.SetColor(false)
+	o.SetDiff(true)
+
+	tasks := []PlannedTask{{
+		Name:        "Copy binary",
+		Module:      "copy",
+		Status:      "will_change",
+		Params:      map[string]any{"dest": "/usr/bin/app"},
+		OldChecksum: "aaa",
+		NewChecksum: "bbb",
+		OldContent:  "ELF\x00\x00\x00binary content",
+		NewContent:  "ELF\x00\x00\x00new binary content",
+	}}
+	o.DisplayPlan(tasks, false)
+	out := buf.String()
+
+	if !strings.Contains(out, "Binary files differ") {
+		t.Error("expected 'Binary files differ' for binary content")
+	}
+}
+
+func TestDisplayPlan_LargeFile(t *testing.T) {
+	var buf bytes.Buffer
+	o := New(&buf)
+	o.SetColor(false)
+	o.SetDiff(true)
+
+	largeContent := strings.Repeat("x", 65*1024) // > 64KB
+
+	tasks := []PlannedTask{{
+		Name:        "Copy large file",
+		Module:      "copy",
+		Status:      "will_change",
+		Params:      map[string]any{"dest": "/tmp/large"},
+		OldChecksum: "aaa",
+		NewChecksum: "bbb",
+		OldContent:  largeContent,
+		NewContent:  largeContent + "extra",
+	}}
+	o.DisplayPlan(tasks, false)
+	out := buf.String()
+
+	if !strings.Contains(out, "(file too large for diff)") {
+		t.Error("expected '(file too large for diff)' for oversized content")
+	}
+}
+
+func TestDisplayPlan_NoDiffFlag(t *testing.T) {
+	var buf bytes.Buffer
+	o := New(&buf)
+	o.SetColor(false)
+	// Neither diff nor verbose set
+
+	tasks := []PlannedTask{{
+		Name:        "Copy config",
+		Module:      "copy",
+		Status:      "will_change",
+		Params:      map[string]any{"dest": "/etc/app.conf"},
+		OldChecksum: "aaa",
+		NewChecksum: "bbb",
+		OldContent:  "old\n",
+		NewContent:  "new\n",
+	}}
+	o.DisplayPlan(tasks, false)
+	out := buf.String()
+
+	// Should show checksums, not diff
+	if strings.Contains(out, "---") {
+		t.Error("expected no diff headers without --diff or --verbose")
+	}
+	if !strings.Contains(out, "old: aaa") {
+		t.Error("expected old checksum in output")
+	}
+	if !strings.Contains(out, "new: bbb") {
+		t.Error("expected new checksum in output")
+	}
+}
+
+func TestIsBinary(t *testing.T) {
+	if !isBinary("hello\x00world") {
+		t.Error("expected binary detection for null byte")
+	}
+	if isBinary("hello world") {
+		t.Error("expected non-binary for plain text")
+	}
+	if isBinary("") {
+		t.Error("expected non-binary for empty string")
+	}
+}
+
 func TestIsApproval(t *testing.T) {
 	accepted := []string{"y", "Y", "yes", "Yes", "YES", "yEs"}
 	for _, input := range accepted {

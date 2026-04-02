@@ -216,7 +216,8 @@ func (m *Module) Check(ctx context.Context, conn connector.Connector, params map
 		return module.NoChange("destination exists and force=false"), nil
 	}
 
-	return module.CheckDeployFile(ctx, conn, srcContent, dest, mode, owner, group)
+	diffEnabled, _ := params["_diff_enabled"].(bool)
+	return module.CheckDeployFile(ctx, conn, srcContent, dest, mode, owner, group, module.CheckOptions{DiffEnabled: diffEnabled})
 }
 
 // Ensure Module implements the module.Module interface.

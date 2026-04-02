@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/eugenetaranov/bolt/internal/playbook"
+	"github.com/pmezard/go-difflib/difflib"
 )
 
 // Colors for terminal output.
@@ -42,6 +43,7 @@ type Output struct {
 	useColor bool
 	debug    bool
 	verbose  bool
+	diff     bool
 }
 
 // New creates a new output handler.
@@ -70,6 +72,16 @@ func (o *Output) SetDebug(enabled bool) {
 // SetVerbose enables or disables verbose output (full diffs in plan).
 func (o *Output) SetVerbose(enabled bool) {
 	o.verbose = enabled
+}
+
+// SetDiff enables or disables diff display in plan output.
+func (o *Output) SetDiff(enabled bool) {
+	o.diff = enabled
+}
+
+// DiffEnabled returns true if diff or verbose mode is active.
+func (o *Output) DiffEnabled() bool {
+	return o.diff || o.verbose
 }
 
 // color returns the string wrapped in color codes if enabled.
@@ -279,25 +291,22 @@ func (o *Output) DisplayPlan(tasks []PlannedTask, dryRun bool) {
 		}
 
 		// Show checksums or diff when content differs
+		showDiff := o.verbose || o.diff
+		destPath := extractDestPath(t.Module, t.Params)
+
 		if t.OldChecksum != "" && t.NewChecksum != "" && t.OldChecksum != t.NewChecksum {
-			if o.verbose && t.OldContent != "" && t.NewContent != "" {
-				for _, diffLine := range unifiedDiff(t.OldContent, t.NewContent) {
-					var diffColor string
-					if strings.HasPrefix(diffLine, "+ ") {
-						diffColor = colorGreen
-					} else if strings.HasPrefix(diffLine, "- ") {
-						diffColor = colorRed
-					} else {
-						diffColor = colorGray
-					}
-					o.printf("      %s\n", o.color(diffColor, diffLine))
-				}
+			if showDiff && t.OldContent != "" && t.NewContent != "" {
+				o.printDiff(destPath, destPath, t.OldContent, t.NewContent)
 			} else {
 				o.printf("      %s\n", o.color(colorRed, "old: "+t.OldChecksum))
 				o.printf("      %s\n", o.color(colorGreen, "new: "+t.NewChecksum))
 			}
 		} else if t.OldChecksum == "" && t.NewChecksum != "" {
-			o.printf("      %s\n", o.color(colorYellow, "new: "+t.NewChecksum))
+			if showDiff && t.NewContent != "" {
+				o.printDiff("/dev/null", destPath, "", t.NewContent)
+			} else {
+				o.printf("      %s\n", o.color(colorYellow, "new: "+t.NewChecksum))
+			}
 		}
 	}
 
@@ -378,75 +387,84 @@ func truncateParamValue(v any) string {
 	return s
 }
 
-// unifiedDiff produces a simple unified-diff-style output comparing old and new content.
-func unifiedDiff(old, new string) []string {
-	oldLines := strings.Split(old, "\n")
-	newLines := strings.Split(new, "\n")
+const maxDiffSize = 64 * 1024 // 64KB threshold for diff display
 
-	// Trim trailing empty line from final newline split
-	if len(oldLines) > 0 && oldLines[len(oldLines)-1] == "" {
-		oldLines = oldLines[:len(oldLines)-1]
+// isBinary returns true if content appears to be a binary file (contains null bytes in first 8KB).
+func isBinary(content string) bool {
+	limit := 8192
+	if len(content) < limit {
+		limit = len(content)
 	}
-	if len(newLines) > 0 && newLines[len(newLines)-1] == "" {
-		newLines = newLines[:len(newLines)-1]
+	return strings.Contains(content[:limit], "\x00")
+}
+
+// extractDestPath returns the destination file path from task params.
+func extractDestPath(module string, params map[string]any) string {
+	for _, key := range []string{"dest", "path"} {
+		if v, ok := params[key]; ok {
+			if s, ok := v.(string); ok && s != "" {
+				return s
+			}
+		}
+	}
+	return module + " target"
+}
+
+// printDiff renders a colored unified diff with file path headers.
+// Falls back to a summary for binary or oversized files.
+func (o *Output) printDiff(oldPath, newPath, oldContent, newContent string) {
+	// Binary detection
+	if isBinary(oldContent) || isBinary(newContent) {
+		o.printf("      %s\n", o.color(colorYellow, "Binary files differ"))
+		return
+	}
+
+	// Size threshold
+	if len(oldContent) > maxDiffSize || len(newContent) > maxDiffSize {
+		o.printf("      %s\n", o.color(colorYellow, "(file too large for diff)"))
+		return
+	}
+
+	o.printf("      %s\n", o.color(colorRed, "--- "+oldPath))
+	o.printf("      %s\n", o.color(colorGreen, "+++ "+newPath))
+	for _, diffLine := range unifiedDiff(oldContent, newContent) {
+		var diffColor string
+		switch {
+		case strings.HasPrefix(diffLine, "+"):
+			diffColor = colorGreen
+		case strings.HasPrefix(diffLine, "-"):
+			diffColor = colorRed
+		case strings.HasPrefix(diffLine, "@@"):
+			diffColor = colorCyan
+		default:
+			diffColor = colorGray
+		}
+		o.printf("      %s\n", o.color(diffColor, diffLine))
+	}
+}
+
+// unifiedDiff produces unified diff output with ±3 lines of context using Myers diff.
+func unifiedDiff(old, new string) []string {
+	diff := difflib.UnifiedDiff{
+		A:        difflib.SplitLines(old),
+		B:        difflib.SplitLines(new),
+		Context:  3,
+	}
+
+	text, err := difflib.GetUnifiedDiffString(diff)
+	if err != nil || text == "" {
+		return nil
 	}
 
 	var result []string
-
-	// Simple line-by-line diff: walk both slices with a basic LCS approach.
-	// For brevity we use a two-pointer approach that handles common prefixes/suffixes
-	// and shows removed/added blocks in between.
-	i, j := 0, 0
-	for i < len(oldLines) && j < len(newLines) {
-		if oldLines[i] == newLines[j] {
-			result = append(result, "  "+oldLines[i])
-			i++
-			j++
-		} else {
-			// Find next matching line
-			matchI, matchJ := findNextMatch(oldLines, newLines, i, j)
-			for ; i < matchI; i++ {
-				result = append(result, "- "+oldLines[i])
-			}
-			for ; j < matchJ; j++ {
-				result = append(result, "+ "+newLines[j])
-			}
+	for _, line := range strings.Split(strings.TrimRight(text, "\n"), "\n") {
+		// Skip the --- and +++ headers (we add our own)
+		if strings.HasPrefix(line, "--- ") || strings.HasPrefix(line, "+++ ") {
+			continue
 		}
+		result = append(result, line)
 	}
-	for ; i < len(oldLines); i++ {
-		result = append(result, "- "+oldLines[i])
-	}
-	for ; j < len(newLines); j++ {
-		result = append(result, "+ "+newLines[j])
-	}
-
 	return result
-}
-
-// findNextMatch finds the nearest matching line pair starting from positions oi and nj.
-func findNextMatch(old, new []string, oi, nj int) (int, int) {
-	// Look ahead up to 50 lines for a match
-	limit := 50
-	for dist := 1; dist < limit; dist++ {
-		// Check if old[oi+dist] matches any new[nj..nj+dist]
-		if oi+dist < len(old) {
-			for k := nj; k < len(new) && k <= nj+dist; k++ {
-				if old[oi+dist] == new[k] {
-					return oi + dist, k
-				}
-			}
-		}
-		// Check if new[nj+dist] matches any old[oi..oi+dist]
-		if nj+dist < len(new) {
-			for k := oi; k < len(old) && k <= oi+dist; k++ {
-				if old[k] == new[nj+dist] {
-					return k, nj + dist
-				}
-			}
-		}
-	}
-	// No match found within limit — dump everything remaining
-	return len(old), len(new)
 }
 
 // IsApproval returns true if the input matches an accepted approval response

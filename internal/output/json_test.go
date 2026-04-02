@@ -140,6 +140,71 @@ func TestTextEmitter_Unchanged(t *testing.T) {
 	}
 }
 
+func TestJSONEmitter_PlanTaskChecksums(t *testing.T) {
+	var buf bytes.Buffer
+	j := NewJSONEmitter(&buf, &bytes.Buffer{})
+	j.DisplayPlan([]PlannedTask{
+		{
+			Name:        "Copy config",
+			Module:      "copy",
+			Status:      "will_change",
+			OldChecksum: "abc123",
+			NewChecksum: "def456",
+		},
+	}, false)
+	m := parseJSONLine(t, strings.TrimSpace(buf.String()))
+	if m["old_checksum"] != "abc123" {
+		t.Errorf("expected old_checksum=abc123, got %v", m["old_checksum"])
+	}
+	if m["new_checksum"] != "def456" {
+		t.Errorf("expected new_checksum=def456, got %v", m["new_checksum"])
+	}
+}
+
+func TestJSONEmitter_PlanTaskDiffContent(t *testing.T) {
+	var buf bytes.Buffer
+	j := NewJSONEmitter(&buf, &bytes.Buffer{})
+	j.SetDiff(true)
+	j.DisplayPlan([]PlannedTask{
+		{
+			Name:       "Copy config",
+			Module:     "copy",
+			Status:     "will_change",
+			OldContent: "old line",
+			NewContent: "new line",
+		},
+	}, false)
+	m := parseJSONLine(t, strings.TrimSpace(buf.String()))
+	if m["old_content"] != "old line" {
+		t.Errorf("expected old_content with --diff, got %v", m["old_content"])
+	}
+	if m["new_content"] != "new line" {
+		t.Errorf("expected new_content with --diff, got %v", m["new_content"])
+	}
+}
+
+func TestJSONEmitter_PlanTaskNoDiffContent(t *testing.T) {
+	var buf bytes.Buffer
+	j := NewJSONEmitter(&buf, &bytes.Buffer{})
+	// diff NOT set
+	j.DisplayPlan([]PlannedTask{
+		{
+			Name:       "Copy config",
+			Module:     "copy",
+			Status:     "will_change",
+			OldContent: "old line",
+			NewContent: "new line",
+		},
+	}, false)
+	m := parseJSONLine(t, strings.TrimSpace(buf.String()))
+	if _, exists := m["old_content"]; exists {
+		t.Error("expected no old_content without --diff flag")
+	}
+	if _, exists := m["new_content"]; exists {
+		t.Error("expected no new_content without --diff flag")
+	}
+}
+
 func TestNewEmitter_InvalidMode(t *testing.T) {
 	_, err := NewEmitter("xml")
 	if err == nil {

@@ -154,7 +154,8 @@ func (m *Module) Check(ctx context.Context, conn connector.Connector, params map
 		return nil, fmt.Errorf("failed to render template: %w", err)
 	}
 
-	return module.CheckDeployFile(ctx, conn, renderedContent, dest, mode, owner, group)
+	diffEnabled, _ := params["_diff_enabled"].(bool)
+	return module.CheckDeployFile(ctx, conn, renderedContent, dest, mode, owner, group, module.CheckOptions{DiffEnabled: diffEnabled})
 }
 
 // Ensure Module implements the module.Module interface.
