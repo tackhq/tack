@@ -45,6 +45,7 @@ tasks:
 - **Multiple connectors** -- Local, Docker, SSH, AWS SSM with tag-based discovery
 - **Plan/apply workflow** -- preview changes before applying, `--auto-approve` for CI
 - **Parallel execution** -- `--forks N` for concurrent multi-host runs
+- **Block/rescue/always** -- structured error handling with rollback and guaranteed cleanup
 - **Task inclusion** -- `include_tasks` with scoped `vars:`, `loop:`, conditional `when:`, circular detection
 - **Variable system** -- interpolation, filters, registered outputs, vars_files, vault encryption
 - **JSON output** -- `--output json` for machine-readable output in CI pipelines
@@ -174,6 +175,50 @@ Variables passed via `vars:` are scoped to the included tasks and do not persist
 Circular includes are detected and reported with a clear error chain. Maximum nesting depth is 64.
 
 See [`examples/include-tasks/`](examples/include-tasks/) for a complete example.
+
+## Block / Rescue / Always
+
+Group tasks with structured error handling -- attempt a block, run rescue on failure, and always run cleanup:
+
+```yaml
+tasks:
+  - name: Deploy with rollback
+    block:
+      - name: Pull latest code
+        command:
+          cmd: git -C /opt/app pull origin main
+      - name: Run migrations
+        command:
+          cmd: /opt/app/migrate.sh
+      - name: Restart service
+        command:
+          cmd: systemctl restart app
+    rescue:
+      - name: Rollback code
+        command:
+          cmd: git -C /opt/app reset --hard HEAD~1
+      - name: Restart previous version
+        command:
+          cmd: systemctl restart app
+    always:
+      - name: Send deploy notification
+        command:
+          cmd: /opt/app/notify.sh
+```
+
+**Execution flow:**
+1. `block:` tasks run sequentially. If all succeed, `rescue:` is skipped.
+2. If any `block:` task fails, remaining block tasks stop and `rescue:` runs.
+3. `always:` runs regardless of block/rescue outcome.
+4. If `rescue:` succeeds, the block is considered recovered (no error propagated).
+
+**Block-level directives:**
+- `when:` gates the entire block (including rescue and always)
+- `sudo:` is inherited by all tasks within block/rescue/always unless overridden
+- `name:` provides descriptive output in plan and execution
+- Blocks can be nested (block within rescue, etc.)
+
+See [`examples/block-rescue/`](examples/block-rescue/) for a complete example.
 
 ## Inventory Files
 

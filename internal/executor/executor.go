@@ -611,6 +611,17 @@ func (e *Executor) runPlayOnHost(ctx context.Context, play *playbook.Play, stats
 
 	// --- Apply phase ---
 	for _, task := range allTasks {
+		// Handle block directive
+		if task.IsBlock() {
+			if err := e.runBlock(ctx, pctx, task, stats, nil); err != nil {
+				if !task.IgnoreErrors {
+					return err
+				}
+				emitter.TaskResult(task.String(), "failed (ignored)", false, err.Error())
+			}
+			continue
+		}
+
 		// Handle include directive
 		if task.Include != "" {
 			if err := e.runInclude(ctx, pctx, task, stats, nil); err != nil {
@@ -851,6 +862,127 @@ func (e *Executor) runHandlersExpanded(ctx context.Context, pctx *PlayContext, s
 		stats.RecordResult(result.Status)
 	}
 
+	return nil
+}
+
+// runBlock executes a block/rescue/always task group.
+func (e *Executor) runBlock(ctx context.Context, pctx *PlayContext, task *playbook.Task, stats *Stats, visitedPaths []string) error {
+	blockName := task.String()
+
+	// Check block-level 'when' condition — skip entire block if false
+	if task.When != "" {
+		shouldRun, err := e.evaluateCondition(task.When, pctx)
+		if err != nil {
+			return fmt.Errorf("failed to evaluate block 'when' condition: %w", err)
+		}
+		if !shouldRun {
+			pctx.Output.TaskResult(blockName, "skipped", false, "when condition not met")
+			stats.Tasks++
+			stats.Skipped++
+			return nil
+		}
+	}
+
+	pctx.Output.Section("BLOCK: " + blockName)
+
+	// Handle block-level sudo inheritance: apply to child tasks that don't override
+	var restoreSudo func()
+	if task.Sudo != nil {
+		blockSudo := *task.Sudo
+		origPlaySudo := pctx.Play.Sudo
+		pctx.Play.Sudo = blockSudo
+		restoreSudo = func() {
+			pctx.Play.Sudo = origPlaySudo
+		}
+	}
+
+	// Execute block tasks
+	var blockErr error
+	for _, bt := range task.Block {
+		if err := e.runBlockTask(ctx, pctx, bt, stats, visitedPaths); err != nil {
+			blockErr = err
+			stats.Failed++
+			break
+		}
+	}
+
+	// Execute rescue tasks if block failed and rescue exists
+	var rescueErr error
+	if blockErr != nil && len(task.Rescue) > 0 {
+		pctx.Output.Section("RESCUE: " + blockName)
+		for _, rt := range task.Rescue {
+			if err := e.runBlockTask(ctx, pctx, rt, stats, visitedPaths); err != nil {
+				rescueErr = err
+				stats.Failed++
+				break
+			}
+		}
+	}
+
+	// Execute always tasks regardless
+	var alwaysErr error
+	if len(task.Always) > 0 {
+		pctx.Output.Section("ALWAYS: " + blockName)
+		for _, at := range task.Always {
+			if err := e.runBlockTask(ctx, pctx, at, stats, visitedPaths); err != nil {
+				alwaysErr = err
+				stats.Failed++
+				break
+			}
+		}
+	}
+
+	// Restore play-level sudo
+	if restoreSudo != nil {
+		restoreSudo()
+	}
+
+	// Determine final error:
+	// - If rescue succeeded, block is recovered (no error)
+	// - If rescue failed or was absent and block failed, propagate error
+	// - Always errors are propagated regardless
+	if alwaysErr != nil {
+		return alwaysErr
+	}
+	if blockErr != nil {
+		if len(task.Rescue) > 0 && rescueErr == nil {
+			// Rescue succeeded — recovered
+			return nil
+		}
+		if rescueErr != nil {
+			return rescueErr
+		}
+		return blockErr
+	}
+	return nil
+}
+
+// runBlockTask executes a single task within a block/rescue/always section.
+// It handles includes, nested blocks, and regular tasks.
+func (e *Executor) runBlockTask(ctx context.Context, pctx *PlayContext, task *playbook.Task, stats *Stats, visitedPaths []string) error {
+	if task.IsBlock() {
+		return e.runBlock(ctx, pctx, task, stats, visitedPaths)
+	}
+	if task.Include != "" {
+		if err := e.runInclude(ctx, pctx, task, stats, visitedPaths); err != nil {
+			if !task.IgnoreErrors {
+				return err
+			}
+			pctx.Output.TaskResult(task.String(), "failed (ignored)", false, err.Error())
+		}
+		return nil
+	}
+
+	stats.Tasks++
+	taskResult, err := e.runTask(ctx, pctx, task)
+	if err != nil {
+		if !task.IgnoreErrors {
+			return err
+		}
+		pctx.Output.TaskResult(task.String(), "failed (ignored)", false, err.Error())
+		return nil
+	}
+	stats.RecordResult(taskResult.Status)
 	return nil
 }
 
@@ -1115,6 +1247,12 @@ func (e *Executor) planTasks(ctx context.Context, pctx *PlayContext, tasks []*pl
 			continue
 		}
 
+		// Handle block tasks in plan phase
+		if task.IsBlock() {
+			plan = append(plan, e.planBlock(ctx, pctx, task, 0, registeredNames)...)
+			continue
+		}
+
 		pt := output.PlannedTask{
 			Name:   task.String(),
 			Module: task.Module,
@@ -1239,6 +1377,95 @@ func (e *Executor) planTasks(ctx context.Context, pctx *PlayContext, tasks []*pl
 		}
 
 		plan = append(plan, pt)
+	}
+
+	return plan
+}
+
+// planBlock generates plan entries for a block/rescue/always task group.
+func (e *Executor) planBlock(ctx context.Context, pctx *PlayContext, task *playbook.Task, indent int, registeredNames map[string]bool) []output.PlannedTask {
+	var plan []output.PlannedTask
+
+	blockName := task.String()
+	blockStatus := "will_run"
+
+	// Check block-level when condition
+	if task.When != "" {
+		if e.conditionReferencesRegistered(task.When, registeredNames) {
+			blockStatus = "conditional"
+		} else {
+			shouldRun, err := e.evaluateCondition(task.When, pctx)
+			if err != nil || !shouldRun {
+				blockStatus = "will_skip"
+			}
+		}
+	}
+
+	// Block header
+	plan = append(plan, output.PlannedTask{
+		Name:      "BLOCK: " + blockName,
+		Status:    blockStatus,
+		Indent:    indent,
+		IsSection: true,
+	})
+
+	if blockStatus == "will_skip" {
+		return plan
+	}
+
+	// Plan block tasks
+	for _, bt := range task.Block {
+		if bt.IsBlock() {
+			plan = append(plan, e.planBlock(ctx, pctx, bt, indent+1, registeredNames)...)
+		} else {
+			pts := e.planTasks(ctx, pctx, []*playbook.Task{bt}, pctx.Output)
+			for i := range pts {
+				pts[i].Indent = indent + 1
+			}
+			plan = append(plan, pts...)
+		}
+	}
+
+	// Plan rescue tasks if present
+	if len(task.Rescue) > 0 {
+		plan = append(plan, output.PlannedTask{
+			Name:      "RESCUE: " + blockName,
+			Status:    "conditional",
+			Indent:    indent,
+			IsSection: true,
+		})
+		for _, rt := range task.Rescue {
+			if rt.IsBlock() {
+				plan = append(plan, e.planBlock(ctx, pctx, rt, indent+1, registeredNames)...)
+			} else {
+				pts := e.planTasks(ctx, pctx, []*playbook.Task{rt}, pctx.Output)
+				for i := range pts {
+					pts[i].Indent = indent + 1
+				}
+				plan = append(plan, pts...)
+			}
+		}
+	}
+
+	// Plan always tasks if present
+	if len(task.Always) > 0 {
+		plan = append(plan, output.PlannedTask{
+			Name:      "ALWAYS: " + blockName,
+			Status:    "will_run",
+			Indent:    indent,
+			IsSection: true,
+		})
+		for _, at := range task.Always {
+			if at.IsBlock() {
+				plan = append(plan, e.planBlock(ctx, pctx, at, indent+1, registeredNames)...)
+			} else {
+				pts := e.planTasks(ctx, pctx, []*playbook.Task{at}, pctx.Output)
+				for i := range pts {
+					pts[i].Indent = indent + 1
+				}
+				plan = append(plan, pts...)
+			}
+		}
 	}
 
 	return plan
@@ -1504,6 +1731,9 @@ func getEnvMap() map[string]string {
 // allNoChange returns true if every planned task has status "no_change" or "will_skip".
 func allNoChange(tasks []output.PlannedTask) bool {
 	for _, t := range tasks {
+		if t.IsSection {
+			continue
+		}
 		if t.Status != "no_change" && t.Status != "will_skip" {
 			return false
 		}

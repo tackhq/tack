@@ -156,6 +156,15 @@ type Task struct {
 
 	// Failed controls when the task reports as failed.
 	FailedWhen string `yaml:"failed_when"`
+
+	// Block is a list of tasks to execute as a unit for structured error handling.
+	Block []*Task `yaml:"-"`
+
+	// Rescue is a list of tasks to execute if a block task fails.
+	Rescue []*Task `yaml:"-"`
+
+	// Always is a list of tasks that run regardless of block/rescue outcome.
+	Always []*Task `yaml:"-"`
 }
 
 // Role represents an Ansible-compatible role with tasks, handlers, and variables.
@@ -193,6 +202,11 @@ func (p *Play) GetConnection() string {
 		return "local"
 	}
 	return p.Connection
+}
+
+// IsBlock returns true if this task is a block (has nested block tasks).
+func (t *Task) IsBlock() bool {
+	return len(t.Block) > 0
 }
 
 // ShouldSudo returns whether privilege escalation is enabled for this task.
@@ -249,6 +263,32 @@ func (p *Play) Validate() error {
 
 // Validate checks the task for common errors.
 func (t *Task) Validate() error {
+	if t.IsBlock() {
+		if t.Module != "" {
+			return fmt.Errorf("block task cannot also specify a module (%s)", t.Module)
+		}
+		for i, bt := range t.Block {
+			if err := bt.Validate(); err != nil {
+				return fmt.Errorf("block task %d: %w", i+1, err)
+			}
+		}
+		for i, rt := range t.Rescue {
+			if err := rt.Validate(); err != nil {
+				return fmt.Errorf("rescue task %d: %w", i+1, err)
+			}
+		}
+		for i, at := range t.Always {
+			if err := at.Validate(); err != nil {
+				return fmt.Errorf("always task %d: %w", i+1, err)
+			}
+		}
+		return nil
+	}
+
+	if len(t.Rescue) > 0 || len(t.Always) > 0 {
+		return fmt.Errorf("rescue/always require a block directive")
+	}
+
 	if t.Module == "" && t.Include == "" {
 		return fmt.Errorf("task has no module specified")
 	}
@@ -268,6 +308,9 @@ func (t *Task) Validate() error {
 func (t *Task) String() string {
 	if t.Name != "" {
 		return t.Name
+	}
+	if t.IsBlock() {
+		return "block"
 	}
 	return fmt.Sprintf("%s: %v", t.Module, summarizeParams(t.Params))
 }
