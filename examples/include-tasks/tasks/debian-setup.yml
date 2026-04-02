@@ -1,0 +1,9 @@
+# Debian/Ubuntu-specific setup tasks
+- name: Update apt cache
+  command:
+    cmd: apt-get update -qq
+
+- name: Install common tools
+  apt:
+    name: curl
+    state: present

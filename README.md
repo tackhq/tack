@@ -45,6 +45,7 @@ tasks:
 - **Multiple connectors** -- Local, Docker, SSH, AWS SSM with tag-based discovery
 - **Plan/apply workflow** -- preview changes before applying, `--auto-approve` for CI
 - **Parallel execution** -- `--forks N` for concurrent multi-host runs
+- **Task inclusion** -- `include_tasks` with scoped `vars:`, `loop:`, conditional `when:`, circular detection
 - **Variable system** -- interpolation, filters, registered outputs, vars_files, vault encryption
 - **JSON output** -- `--output json` for machine-readable output in CI pipelines
 - **System facts** -- OS, arch, network, EC2 metadata (via IMDSv2)
@@ -133,6 +134,46 @@ bolt run git@github.com:user/repo.git//path/to/playbook.yaml
 bolt run https://github.com/user/repo.git@v1.0//playbook.yaml
 bolt run s3://bucket/path/to/playbook.yaml
 ```
+
+## Task Inclusion
+
+Use `include_tasks` to include shared task files from your playbooks. This eliminates YAML duplication and enables reusable task libraries.
+
+```yaml
+tasks:
+  # Basic include
+  - name: Setup common packages
+    include_tasks: tasks/common.yml
+
+  # Include with scoped variables
+  - name: Install nginx
+    include_tasks: tasks/install-package.yml
+    vars:
+      package_name: nginx
+      version: "1.24"
+
+  # Conditional include
+  - name: Debian-specific setup
+    include_tasks: "{{ facts.os_family }}/packages.yml"
+    when: facts.os_family == "Debian"
+
+  # Loop-driven include
+  - name: Configure services
+    include_tasks: tasks/configure-service.yml
+    loop:
+      - nginx
+      - redis
+      - postgres
+    loop_var: service_name
+```
+
+`include:` and `include_tasks:` are equivalent -- `include_tasks:` is the preferred form for consistency with Ansible conventions. Tasks are loaded and executed at runtime, supporting `when:` conditions, variable-interpolated paths, and `loop:` iteration.
+
+Variables passed via `vars:` are scoped to the included tasks and do not persist after the include completes. Registered variables from included tasks do persist.
+
+Circular includes are detected and reported with a clear error chain. Maximum nesting depth is 64.
+
+See [`examples/include-tasks/`](examples/include-tasks/) for a complete example.
 
 ## Inventory Files
 

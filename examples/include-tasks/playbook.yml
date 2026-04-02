@@ -1,0 +1,43 @@
+# Example: include_tasks with vars, when, and loop patterns
+#
+# Run: bolt run examples/include-tasks/playbook.yml
+---
+- name: Include Tasks Demo
+  hosts: localhost
+  connection: local
+  vars:
+    app_user: deploy
+    services:
+      - nginx
+      - redis
+
+  tasks:
+    # Basic include -- pulls in a shared task file
+    - name: Run common setup
+      include_tasks: tasks/common-setup.yml
+
+    # Include with vars -- pass scoped variables
+    - name: Install nginx
+      include_tasks: tasks/install-package.yml
+      vars:
+        package_name: nginx
+        package_state: present
+
+    - name: Install redis
+      include_tasks: tasks/install-package.yml
+      vars:
+        package_name: redis
+        package_state: present
+
+    # Conditional include -- only on Debian/Ubuntu
+    - name: Debian-specific setup
+      include_tasks: tasks/debian-setup.yml
+      when: facts.os_family == "Debian"
+
+    # Loop-driven include -- iterate over a list of services
+    - name: Configure services
+      include_tasks: tasks/configure-service.yml
+      loop:
+        - nginx
+        - redis
+      loop_var: service_name

@@ -489,3 +489,139 @@ tasks:
 		t.Errorf("task 2: expected module 'command', got %q", tasks[2].Module)
 	}
 }
+
+func TestParseIncludeTasks(t *testing.T) {
+	tests := []struct {
+		name        string
+		yaml        string
+		wantInclude string
+		wantVars    map[string]any
+		wantWhen    string
+	}{
+		{
+			name: "include_tasks basic",
+			yaml: `
+hosts: localhost
+tasks:
+  - name: Setup
+    include_tasks: common/setup.yml
+`,
+			wantInclude: "common/setup.yml",
+		},
+		{
+			name: "include_tasks with vars",
+			yaml: `
+hosts: localhost
+tasks:
+  - name: Install package
+    include_tasks: install.yml
+    vars:
+      package_name: nginx
+      version: "1.24"
+`,
+			wantInclude: "install.yml",
+			wantVars:    map[string]any{"package_name": "nginx", "version": "1.24"},
+		},
+		{
+			name: "include_tasks with when",
+			yaml: `
+hosts: localhost
+tasks:
+  - name: Debian setup
+    include_tasks: debian.yml
+    when: facts.os == "debian"
+`,
+			wantInclude: "debian.yml",
+			wantWhen:    `facts.os == "debian"`,
+		},
+		{
+			name: "include with vars (bare include)",
+			yaml: `
+hosts: localhost
+tasks:
+  - name: Install package
+    include: install.yml
+    vars:
+      package_name: redis
+`,
+			wantInclude: "install.yml",
+			wantVars:    map[string]any{"package_name": "redis"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pb, err := ParseRaw([]byte(tt.yaml), "test.yaml")
+			if err != nil {
+				t.Fatalf("parse error: %v", err)
+			}
+			task := pb.Plays[0].Tasks[0]
+			if task.Include != tt.wantInclude {
+				t.Errorf("expected include %q, got %q", tt.wantInclude, task.Include)
+			}
+			if task.Module != "" {
+				t.Errorf("expected empty module for include task, got %q", task.Module)
+			}
+			if tt.wantWhen != "" && task.When != tt.wantWhen {
+				t.Errorf("expected when %q, got %q", tt.wantWhen, task.When)
+			}
+			if tt.wantVars != nil {
+				if task.IncludeVars == nil {
+					t.Fatal("expected IncludeVars to be set, got nil")
+				}
+				for k, v := range tt.wantVars {
+					if task.IncludeVars[k] != v {
+						t.Errorf("IncludeVars[%q]: expected %v, got %v", k, v, task.IncludeVars[k])
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestIncludeAndIncludeTasksProduceIdenticalTasks(t *testing.T) {
+	includeYAML := `
+hosts: localhost
+tasks:
+  - name: Setup
+    include: common/setup.yml
+    vars:
+      pkg: nginx
+    when: facts.os == "debian"
+`
+	includeTasksYAML := `
+hosts: localhost
+tasks:
+  - name: Setup
+    include_tasks: common/setup.yml
+    vars:
+      pkg: nginx
+    when: facts.os == "debian"
+`
+	pb1, err := ParseRaw([]byte(includeYAML), "test.yaml")
+	if err != nil {
+		t.Fatalf("parse include: %v", err)
+	}
+	pb2, err := ParseRaw([]byte(includeTasksYAML), "test.yaml")
+	if err != nil {
+		t.Fatalf("parse include_tasks: %v", err)
+	}
+
+	t1 := pb1.Plays[0].Tasks[0]
+	t2 := pb2.Plays[0].Tasks[0]
+
+	if t1.Include != t2.Include {
+		t.Errorf("Include mismatch: %q vs %q", t1.Include, t2.Include)
+	}
+	if t1.When != t2.When {
+		t.Errorf("When mismatch: %q vs %q", t1.When, t2.When)
+	}
+	if len(t1.IncludeVars) != len(t2.IncludeVars) {
+		t.Errorf("IncludeVars length mismatch: %d vs %d", len(t1.IncludeVars), len(t2.IncludeVars))
+	}
+	for k, v := range t1.IncludeVars {
+		if t2.IncludeVars[k] != v {
+			t.Errorf("IncludeVars[%q]: %v vs %v", k, v, t2.IncludeVars[k])
+		}
+	}
+}

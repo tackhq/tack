@@ -111,7 +111,11 @@ type Task struct {
 	Params map[string]any `yaml:"-"`
 
 	// Include is a path/URL to an external tasks file to include.
+	// Set by both "include:" and "include_tasks:" directives.
 	Include string `yaml:"-"`
+
+	// IncludeVars are scoped variables passed to the included tasks file via "vars:".
+	IncludeVars map[string]any `yaml:"-"`
 
 	// RolePath is the path to the role this task belongs to (empty for play tasks).
 	RolePath string `yaml:"-"`

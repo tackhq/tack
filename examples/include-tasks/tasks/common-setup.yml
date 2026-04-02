@@ -1,0 +1,9 @@
+# Shared tasks for common system setup
+- name: Ensure /opt/app directory exists
+  file:
+    path: /opt/app
+    state: directory
+
+- name: Show system info
+  command:
+    cmd: uname -a

@@ -1,0 +1,10 @@
+# Configure a service. Used with loop: loop_var is "service_name"
+- name: "Ensure {{ service_name }} config directory"
+  file:
+    path: "/etc/{{ service_name }}"
+    state: directory
+
+- name: "Check {{ service_name }} status"
+  command:
+    cmd: "systemctl is-active {{ service_name }}"
+  ignore_errors: true
