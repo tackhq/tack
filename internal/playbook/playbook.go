@@ -65,8 +65,11 @@ type Play struct {
 	// Vars defines variables available to all tasks in the play.
 	Vars map[string]any `yaml:"vars"`
 
+	// Tags are play-level tags inherited by all tasks in the play.
+	Tags []string `yaml:"-"`
+
 	// Roles is the list of roles to include in the play.
-	Roles []string `yaml:"roles"`
+	Roles []RoleRef `yaml:"-"`
 
 	// Tasks is the list of tasks to execute.
 	Tasks []*Task `yaml:"tasks"`
@@ -157,6 +160,9 @@ type Task struct {
 	// Failed controls when the task reports as failed.
 	FailedWhen string `yaml:"failed_when"`
 
+	// Tags are labels used for selective task execution via --tags/--skip-tags.
+	Tags []string `yaml:"-"`
+
 	// Block is a list of tasks to execute as a unit for structured error handling.
 	Block []*Task `yaml:"-"`
 
@@ -165,6 +171,15 @@ type Task struct {
 
 	// Always is a list of tasks that run regardless of block/rescue outcome.
 	Always []*Task `yaml:"-"`
+}
+
+// RoleRef is a reference to a role in a play, optionally with tags.
+type RoleRef struct {
+	// Name is the role name or path.
+	Name string
+
+	// Tags are role-level tags inherited by all tasks in the role.
+	Tags []string
 }
 
 // Role represents an Ansible-compatible role with tasks, handlers, and variables.

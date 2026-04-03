@@ -59,7 +59,8 @@ critical ways.
 | vars           | map[string]any    | {}        | Play-level variables                     |
 | vars_files     | []string          | []        | YAML files to load as variables          |
 | vault_file     | string            | ""        | Encrypted vault file path                |
-| roles          | []string          | []        | Roles to include                         |
+| tags           | string or []string| []        | Play-level tags inherited by all tasks   |
+| roles          | []string or []map | []        | Roles to include (string or {role:, tags:}) |
 | tasks          | []Task            | []        | Tasks to execute                         |
 | handlers       | []Task            | []        | Handlers triggered by notify             |
 | ssh            | SSHConfig         | null      | SSH connection settings                  |
@@ -83,6 +84,9 @@ critical ways.
 | sudo           | *bool             | null      | Override play-level sudo (null=inherit)  |
 | changed_when   | string            | ""        | Expression to override change detection  |
 | failed_when    | string            | ""        | Expression to override failure detection |
+| tags           | string or []string| []        | Tags for selective execution via --tags/--skip-tags |
+
+Tags can also be set on plays, blocks, and role references. Tag inheritance: play > role > block > task (additive union). Special tags: `always` (runs even when --tags active), `never` (skipped unless explicitly --tags'd). Handlers ignore --tags but respect --skip-tags.
 
 ### Task shorthand syntax
 

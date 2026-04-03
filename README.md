@@ -47,6 +47,7 @@ tasks:
 - **Parallel execution** -- `--forks N` for concurrent multi-host runs
 - **Block/rescue/always** -- structured error handling with rollback and guaranteed cleanup
 - **Task inclusion** -- `include_tasks` with scoped `vars:`, `loop:`, conditional `when:`, circular detection
+- **Tag-based filtering** -- `--tags` and `--skip-tags` for selective task execution, with `always`/`never` special tags
 - **Variable system** -- interpolation, filters, registered outputs, vars_files, vault encryption
 - **JSON output** -- `--output json` for machine-readable output in CI pipelines
 - **System facts** -- OS, arch, network, EC2 metadata (via IMDSv2)
@@ -219,6 +220,55 @@ tasks:
 - Blocks can be nested (block within rescue, etc.)
 
 See [`examples/block-rescue/`](examples/block-rescue/) for a complete example.
+
+## Tags
+
+Selectively run or skip tasks using tags:
+
+```bash
+bolt run deploy.yaml --tags deploy          # only deploy-tagged tasks
+bolt run deploy.yaml --skip-tags debug      # skip debug tasks
+bolt run deploy.yaml --tags deploy,config   # OR logic: deploy or config
+bolt run deploy.yaml --check --tags deploy  # plan mode respects tags
+```
+
+Tags can be applied to tasks, blocks, plays, and role references:
+
+```yaml
+name: Deploy
+hosts: webservers
+tags: [infra]  # play-level: inherited by all tasks
+
+roles:
+  - role: webserver
+    tags: [web]  # role-level: inherited by all role tasks
+
+tasks:
+  - name: Install nginx
+    apt:
+      name: nginx
+    tags: [packages, web]
+
+  - name: Deploy block
+    tags: deploy  # block-level: inherited by child tasks
+    block:
+      - name: Pull code
+        command:
+          cmd: git pull
+      - name: Restart
+        command:
+          cmd: systemctl restart app
+```
+
+**Special tags:**
+- `always` -- task runs even when `--tags` filter is active (unless explicitly in `--skip-tags`)
+- `never` -- task is skipped by default, runs only when explicitly included via `--tags`
+
+**Tag inheritance:** A task's effective tags are the union of its own tags plus inherited tags from its play, role, and enclosing block(s). Tags are additive.
+
+**Handlers:** Notified handlers always run regardless of `--tags`, but respect `--skip-tags`.
+
+See [`examples/playbooks/tags-demo.yaml`](examples/playbooks/tags-demo.yaml) for a complete example.
 
 ## Inventory Files
 

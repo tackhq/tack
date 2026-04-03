@@ -752,3 +752,212 @@ tasks:
 		t.Fatal("expected error for rescue without block, got nil")
 	}
 }
+
+func TestParseTagsOnTask(t *testing.T) {
+	tests := []struct {
+		name     string
+		yaml     string
+		wantTags []string
+	}{
+		{
+			name: "single tag string",
+			yaml: `
+hosts: localhost
+tasks:
+  - name: Deploy
+    command:
+      cmd: deploy.sh
+    tags: deploy
+`,
+			wantTags: []string{"deploy"},
+		},
+		{
+			name: "tag list",
+			yaml: `
+hosts: localhost
+tasks:
+  - name: Setup
+    command:
+      cmd: setup.sh
+    tags: [deploy, config]
+`,
+			wantTags: []string{"deploy", "config"},
+		},
+		{
+			name: "tag list block style",
+			yaml: `
+hosts: localhost
+tasks:
+  - name: Setup
+    command:
+      cmd: setup.sh
+    tags:
+      - web
+      - deploy
+`,
+			wantTags: []string{"web", "deploy"},
+		},
+		{
+			name: "no tags",
+			yaml: `
+hosts: localhost
+tasks:
+  - name: Setup
+    command:
+      cmd: setup.sh
+`,
+			wantTags: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pb, err := ParseRaw([]byte(tt.yaml), "test.yaml")
+			if err != nil {
+				t.Fatalf("parse error: %v", err)
+			}
+			task := pb.Plays[0].Tasks[0]
+			if len(task.Tags) != len(tt.wantTags) {
+				t.Fatalf("expected %d tags, got %d: %v", len(tt.wantTags), len(task.Tags), task.Tags)
+			}
+			for i, tag := range tt.wantTags {
+				if task.Tags[i] != tag {
+					t.Errorf("tags[%d]: expected %q, got %q", i, tag, task.Tags[i])
+				}
+			}
+		})
+	}
+}
+
+func TestParseTagsOnPlay(t *testing.T) {
+	yaml := `
+name: Setup
+hosts: localhost
+tags: [infra, setup]
+tasks:
+  - command:
+      cmd: echo hello
+`
+	pb, err := ParseRaw([]byte(yaml), "test.yaml")
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	play := pb.Plays[0]
+	expected := []string{"infra", "setup"}
+	if len(play.Tags) != len(expected) {
+		t.Fatalf("expected %d play tags, got %d: %v", len(expected), len(play.Tags), play.Tags)
+	}
+	for i, tag := range expected {
+		if play.Tags[i] != tag {
+			t.Errorf("play.Tags[%d]: expected %q, got %q", i, tag, play.Tags[i])
+		}
+	}
+}
+
+func TestParseTagsOnBlock(t *testing.T) {
+	yaml := `
+hosts: localhost
+tasks:
+  - name: Deploy block
+    tags: [deploy]
+    block:
+      - name: Pull code
+        command:
+          cmd: git pull
+        tags: config
+`
+	pb, err := ParseRaw([]byte(yaml), "test.yaml")
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	block := pb.Plays[0].Tasks[0]
+	if !block.IsBlock() {
+		t.Fatal("expected block")
+	}
+	if len(block.Tags) != 1 || block.Tags[0] != "deploy" {
+		t.Errorf("expected block tags [deploy], got %v", block.Tags)
+	}
+	child := block.Block[0]
+	if len(child.Tags) != 1 || child.Tags[0] != "config" {
+		t.Errorf("expected child tags [config], got %v", child.Tags)
+	}
+}
+
+func TestParseTagsOnRoleReference(t *testing.T) {
+	tests := []struct {
+		name     string
+		yaml     string
+		wantRefs []RoleRef
+	}{
+		{
+			name: "string role (no tags)",
+			yaml: `
+hosts: localhost
+roles:
+  - webserver
+tasks:
+  - command:
+      cmd: echo hi
+`,
+			wantRefs: []RoleRef{{Name: "webserver"}},
+		},
+		{
+			name: "map role with tags",
+			yaml: `
+hosts: localhost
+roles:
+  - role: webserver
+    tags: [web, deploy]
+tasks:
+  - command:
+      cmd: echo hi
+`,
+			wantRefs: []RoleRef{{Name: "webserver", Tags: []string{"web", "deploy"}}},
+		},
+		{
+			name: "mixed string and map roles",
+			yaml: `
+hosts: localhost
+roles:
+  - common
+  - role: webserver
+    tags: web
+tasks:
+  - command:
+      cmd: echo hi
+`,
+			wantRefs: []RoleRef{
+				{Name: "common"},
+				{Name: "webserver", Tags: []string{"web"}},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pb, err := ParseRaw([]byte(tt.yaml), "test.yaml")
+			if err != nil {
+				t.Fatalf("parse error: %v", err)
+			}
+			play := pb.Plays[0]
+			if len(play.Roles) != len(tt.wantRefs) {
+				t.Fatalf("expected %d role refs, got %d: %v", len(tt.wantRefs), len(play.Roles), play.Roles)
+			}
+			for i, want := range tt.wantRefs {
+				got := play.Roles[i]
+				if got.Name != want.Name {
+					t.Errorf("role[%d].Name: expected %q, got %q", i, want.Name, got.Name)
+				}
+				if len(got.Tags) != len(want.Tags) {
+					t.Errorf("role[%d].Tags: expected %v, got %v", i, want.Tags, got.Tags)
+					continue
+				}
+				for j, tag := range want.Tags {
+					if got.Tags[j] != tag {
+						t.Errorf("role[%d].Tags[%d]: expected %q, got %q", i, j, tag, got.Tags[j])
+					}
+				}
+			}
+		})
+	}
+}

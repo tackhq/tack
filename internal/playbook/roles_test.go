@@ -111,7 +111,7 @@ func TestLoadRoles(t *testing.T) {
 		require.NoError(t, os.WriteFile(filepath.Join(roleDir, "tasks", "main.yaml"), []byte(tasksContent), 0644))
 	}
 
-	roles, err := LoadRoles([]string{"role1", "role2"}, rolesDir)
+	roles, err := LoadRoles([]RoleRef{{Name: "role1"}, {Name: "role2"}}, rolesDir)
 	require.NoError(t, err)
 	require.Len(t, roles, 2)
 
@@ -267,7 +267,7 @@ tasks:
 	require.Len(t, pb.Plays, 1)
 
 	play := pb.Plays[0]
-	assert.Equal(t, []string{"webserver", "database"}, play.Roles)
+	assert.Equal(t, []RoleRef{{Name: "webserver"}, {Name: "database"}}, play.Roles)
 	require.Len(t, play.Tasks, 1)
 	assert.Equal(t, "Final task", play.Tasks[0].Name)
 }

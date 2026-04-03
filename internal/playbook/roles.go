@@ -148,16 +148,25 @@ func loadRoleVarsFile(path string) (map[string]any, error) {
 
 // LoadRoles loads all roles specified in the play.
 // rolesDir is the base directory to search for roles (typically ./roles relative to playbook).
-func LoadRoles(roleNames []string, rolesDir string) ([]*Role, error) {
-	if len(roleNames) == 0 {
+func LoadRoles(refs []RoleRef, rolesDir string) ([]*Role, error) {
+	if len(refs) == 0 {
 		return nil, nil
 	}
 
-	roles := make([]*Role, 0, len(roleNames))
-	for _, name := range roleNames {
-		role, err := LoadRole(name, rolesDir)
+	roles := make([]*Role, 0, len(refs))
+	for _, ref := range refs {
+		role, err := LoadRole(ref.Name, rolesDir)
 		if err != nil {
 			return nil, err
+		}
+		// Apply role-level tags to all tasks and handlers in the role
+		if len(ref.Tags) > 0 {
+			for _, task := range role.Tasks {
+				task.Tags = append(ref.Tags, task.Tags...)
+			}
+			for _, handler := range role.Handlers {
+				handler.Tags = append(ref.Tags, handler.Tags...)
+			}
 		}
 		roles = append(roles, role)
 	}
