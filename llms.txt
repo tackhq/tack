@@ -22,9 +22,9 @@ critical ways.
 3. Playbook variable interpolation uses `{{ var }}`, NOT `{{ .var }}`.
    - In YAML playbooks: `{{ my_var }}` (no dot prefix)
    - In .tmpl template files: `{{ .my_var }}` (dot prefix, Go template syntax)
-4. There is no `apt_repository`, `pip`, `docker_container`, `user`, `group`,
-   `cron`, `git`, `service`, `lineinfile`, `blockinfile`, `uri`, or `shell`
-   module. Only the 9 modules listed below exist.
+4. There is no `apt_repository`, `pip`, `docker_container`,
+   `cron`, `git`, `service`, `uri`, or `shell`
+   module. Only the 13 modules listed below exist.
 5. There is no `become_user`, `become_method`, `environment`, `timeout`,
    `delegate_to`, `run_once`, `serial`, `strategy`, `any_errors_fatal`,
    `max_fail_percentage`, or `collections` directive.
@@ -154,7 +154,7 @@ Tasks can specify the module as a top-level key:
 
 ## MODULES
 
-Bolt has exactly 9 modules. Do not hallucinate others.
+Bolt has exactly 13 modules. Do not hallucinate others.
 
 ### apt
 
@@ -406,6 +406,115 @@ Result data: `elapsed`, `attempts`, plus `stdout`/`stderr` (command) or `status_
     type: path
     path: /var/lock/deploy.lock
     state: stopped
+```
+
+### lineinfile
+
+Ensure a specific line is present or absent in a file.
+
+| Param        | Type   | Required | Default   | Description                                    |
+|--------------|--------|----------|-----------|------------------------------------------------|
+| path         | string | yes      | -         | Path to the target file                        |
+| line         | string | no*      | -         | Line to ensure (*required when state=present)  |
+| regexp       | string | no       | ""        | Regex to match lines for replacement/removal   |
+| state        | string | no       | "present" | present, absent                                |
+| insertafter  | string | no       | "EOF"     | Insert after this regex match or EOF           |
+| insertbefore | string | no       | ""        | Insert before this regex match or BOF          |
+| create       | bool   | no       | false     | Create file if it does not exist               |
+| backup       | bool   | no       | false     | Create backup before modifying                 |
+
+```yaml
+- name: Ensure sysctl setting
+  lineinfile:
+    path: /etc/sysctl.conf
+    regexp: "^net.ipv4.ip_forward"
+    line: "net.ipv4.ip_forward = 1"
+```
+
+### blockinfile
+
+Manage a block of text between marker lines in a file.
+
+| Param        | Type   | Required | Default                       | Description                          |
+|--------------|--------|----------|-------------------------------|--------------------------------------|
+| path         | string | yes      | -                             | Path to the target file              |
+| block        | string | no       | ""                            | Multi-line content between markers   |
+| marker       | string | no       | "# {mark} BOLT MANAGED BLOCK"| Marker format with {mark} placeholder|
+| marker_begin | string | no       | "BEGIN"                       | Text for {mark} in begin marker      |
+| marker_end   | string | no       | "END"                         | Text for {mark} in end marker        |
+| state        | string | no       | "present"                     | present, absent                      |
+| insertafter  | string | no       | ""                            | Insert after this regex or EOF       |
+| insertbefore | string | no       | ""                            | Insert before this regex or BOF      |
+| create       | bool   | no       | false                         | Create file if it does not exist     |
+| backup       | bool   | no       | false                         | Create backup before modifying       |
+
+```yaml
+- name: Add SSH config block
+  blockinfile:
+    path: /etc/ssh/sshd_config
+    block: |
+      Match Group sftp
+        ForceCommand internal-sftp
+        ChrootDirectory /home/%u
+```
+
+### user
+
+Manage system users on Linux using useradd/usermod/userdel.
+
+| Param    | Type           | Required | Default   | Description                                  |
+|----------|----------------|----------|-----------|----------------------------------------------|
+| name     | string         | yes      | -         | Username                                     |
+| state    | string         | no       | "present" | present, absent                              |
+| uid      | int            | no       | -         | User ID                                      |
+| shell    | string         | no       | ""        | Login shell (e.g., /bin/bash)                |
+| home     | string         | no       | ""        | Home directory path                          |
+| groups   | []string       | no       | []        | Supplementary groups (appended)              |
+| system   | bool           | no       | false     | Create a system user                         |
+| password | string         | no       | ""        | Pre-hashed password (SHA-512 crypt format)   |
+| remove   | bool           | no       | false     | Remove home dir when state=absent            |
+
+Linux only. Passwords must be pre-hashed. Groups are appended via `usermod -aG`.
+
+```yaml
+- name: Create deploy user
+  user:
+    name: deploy
+    shell: /bin/bash
+    groups:
+      - docker
+      - wheel
+
+- name: Remove old user
+  user:
+    name: olduser
+    state: absent
+    remove: true
+```
+
+### group
+
+Manage system groups on Linux using groupadd/groupmod/groupdel.
+
+| Param  | Type   | Required | Default   | Description              |
+|--------|--------|----------|-----------|--------------------------|
+| name   | string | yes      | -         | Group name               |
+| state  | string | no       | "present" | present, absent          |
+| gid    | int    | no       | -         | Group ID                 |
+| system | bool   | no       | false     | Create a system group    |
+
+Linux only.
+
+```yaml
+- name: Create deploy group
+  group:
+    name: deploy
+    gid: 1500
+
+- name: Remove old group
+  group:
+    name: oldgroup
+    state: absent
 ```
 
 ---
