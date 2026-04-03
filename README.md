@@ -309,6 +309,8 @@ See [`examples/inventory.yaml`](examples/inventory.yaml) for a complete sample.
 | `blockinfile` | Manage a block of text between marker lines in a file |
 | `systemd` | Manage systemd services (start, stop, enable, mask, daemon-reload) |
 | `template` | Render Go templates with variable substitution |
+| `user` | Manage system users on Linux (create, modify, remove) |
+| `group` | Manage system groups on Linux (create, modify, remove) |
 | `wait_for` | Wait for port, path, command, or URL before proceeding |
 
 Run `bolt module <name>` for detailed parameter docs.

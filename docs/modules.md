@@ -14,6 +14,8 @@ Modules are the units of work in Bolt. Each module performs a specific action li
 | [file](#file) | Manage files and directories |
 | [systemd](#systemd) | Manage systemd services |
 | [template](#template) | Render templates to targets |
+| [user](#user) | Manage system users on Linux |
+| [group](#group) | Manage system groups on Linux |
 | [wait_for](#wait_for) | Wait for a condition before proceeding |
 
 ---
@@ -616,6 +618,122 @@ The template module uses SHA256 checksums to detect changes. It will:
 - Render the template and compare checksum with destination
 - Skip if rendered content matches existing file
 - Only update attributes if content is same but mode/owner differs
+
+---
+
+## user
+
+Manage system users on Linux using useradd/usermod/userdel.
+
+### Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `name` | string | **yes** | - | Username |
+| `state` | string | no | `present` | `present`, `absent` |
+| `uid` | int | no | - | User ID |
+| `shell` | string | no | - | Login shell (e.g., `/bin/bash`) |
+| `home` | string | no | - | Home directory path |
+| `groups` | list | no | - | Supplementary groups (appended to existing) |
+| `system` | bool | no | `false` | Create a system user |
+| `password` | string | no | - | Pre-hashed password (e.g., SHA-512 crypt format) |
+| `remove` | bool | no | `false` | Remove home directory when `state: absent` |
+
+### Examples
+
+```yaml
+# Create a user with defaults
+- name: Create deploy user
+  user:
+    name: deploy
+
+# Create user with full options
+- name: Create app user
+  user:
+    name: app
+    shell: /bin/bash
+    home: /opt/app
+    uid: 1500
+    groups:
+      - docker
+      - wheel
+    system: true
+
+# Set user password (pre-hashed)
+- name: Set deploy password
+  user:
+    name: deploy
+    password: "$6$rounds=100000$salt$hash..."
+
+# Remove user and home directory
+- name: Remove old user
+  user:
+    name: olduser
+    state: absent
+    remove: true
+```
+
+### Idempotency
+
+The module queries current state via `getent passwd` and `id -Gn` before acting. It will:
+- Skip if user already exists with matching attributes
+- Only modify attributes that differ from current state
+- Supplementary groups are always appended (`usermod -aG`), never replaced
+
+### Notes
+
+- Linux only — macOS (`dscl`) is not supported
+- Passwords must be provided pre-hashed; the module does not hash plaintext
+- The password hash is briefly visible in `ps` output (same as Ansible)
+- `groups` are appended to existing supplementary groups, not replaced
+
+---
+
+## group
+
+Manage system groups on Linux using groupadd/groupmod/groupdel.
+
+### Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `name` | string | **yes** | - | Group name |
+| `state` | string | no | `present` | `present`, `absent` |
+| `gid` | int | no | - | Group ID |
+| `system` | bool | no | `false` | Create a system group |
+
+### Examples
+
+```yaml
+# Create a group
+- name: Create deploy group
+  group:
+    name: deploy
+
+# Create group with specific GID
+- name: Create app group
+  group:
+    name: app
+    gid: 1500
+
+# Create system group
+- name: Create service group
+  group:
+    name: myservice
+    system: true
+
+# Remove a group
+- name: Remove old group
+  group:
+    name: oldgroup
+    state: absent
+```
+
+### Idempotency
+
+The module queries current state via `getent group` before acting. It will:
+- Skip if group already exists with matching attributes
+- Only modify GID if it differs from current state
 
 ---
 
