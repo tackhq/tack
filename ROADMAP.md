@@ -19,7 +19,7 @@ Feature roadmap based on team discussion covering PM, DevOps (senior/mid/junior)
 | Status | Feature | Description | Details |
 |--------|---------|-------------|---------|
 | [x] | Tags | Selective task execution via `--tags` / `--skip-tags` | Tags on tasks, blocks, plays, and role references with inheritance. Special `always`/`never` tags. Handlers ignore `--tags` but respect `--skip-tags` |
-| [ ] | `user` + `group` modules | Idempotent user and group provisioning | `user`: name, state, groups, shell, home, uid, password (hashed), system, remove. `group`: name, state, gid, system. Optional `ssh_authorized_keys` management |
+| [x] | `user` + `group` modules | Idempotent user and group provisioning | `user`: name, state, groups, shell, home, uid, password (hashed), system, remove. `group`: name, state, gid, system. Optional `ssh_authorized_keys` management |
 | [x] | `lineinfile` / `blockinfile` | Surgical file edits without full template management | `lineinfile`: regexp, line, state, insertafter/insertbefore, backup. `blockinfile`: marker, block, state, insertafter/insertbefore, backup |
 | [ ] | Dynamic inventory | External inventory sources beyond static YAML | Script/binary plugin (run command, parse JSON), built-in AWS EC2 plugin, generic HTTP source. Static YAML doesn't scale for cloud fleets |
 
