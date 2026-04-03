@@ -1,0 +1,49 @@
+# Tags Demo
+# Demonstrates selective task execution with --tags and --skip-tags.
+#
+# Run examples:
+#   bolt run examples/playbooks/tags-demo.yaml                    # runs all (except 'never' tasks)
+#   bolt run examples/playbooks/tags-demo.yaml --tags deploy      # only deploy-tagged tasks
+#   bolt run examples/playbooks/tags-demo.yaml --skip-tags debug  # skip debug tasks
+#   bolt run examples/playbooks/tags-demo.yaml --tags debug       # includes 'never' debug task
+#   bolt run examples/playbooks/tags-demo.yaml --check --tags deploy  # plan mode with tag filter
+
+name: Tags demonstration
+hosts: localhost
+gather_facts: false
+tags: [demo]
+
+tasks:
+  # Simple task-level tags
+  - name: Install packages
+    command:
+      cmd: echo "Installing packages..."
+    tags: [setup, packages]
+
+  - name: Deploy application
+    command:
+      cmd: echo "Deploying..."
+    tags: deploy
+
+  - name: Configure services
+    command:
+      cmd: echo "Configuring..."
+    tags: config
+
+  # 'always' tag — runs regardless of --tags filter
+  - name: Show status (always)
+    command:
+      cmd: echo "Status check — this always runs"
+    tags: always
+
+  # 'never' tag — skipped by default, runs only when explicitly requested
+  - name: Debug output (never by default)
+    command:
+      cmd: echo "Debug info — only runs with --tags debug"
+    tags: [never, debug]
+
+  # Multiple tags on a single task
+  - name: Verify deployment
+    command:
+      cmd: echo "Verifying deployment..."
+    tags: [deploy, verify]

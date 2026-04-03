@@ -49,11 +49,31 @@ var knownTaskFields = map[string]bool{
 	"block":  true,
 	"rescue": true,
 	"always": true,
+	// Tags
+	"tags": true,
 	// Module argument keys that Ansible allows at task level
 	"args":    true,
 	"creates": true,
 	"removes": true,
 	"chdir":   true,
+}
+
+// parseStringOrList converts a YAML value to a string slice.
+// Accepts a single string or a list of strings; returns nil for other types.
+func parseStringOrList(v any) []string {
+	switch val := v.(type) {
+	case string:
+		return []string{val}
+	case []any:
+		var result []string
+		for _, item := range val {
+			if s, ok := item.(string); ok {
+				result = append(result, s)
+			}
+		}
+		return result
+	}
+	return nil
 }
 
 // ParseFileRaw parses a playbook with proper module detection.
@@ -159,11 +179,22 @@ func parseRawPlay(raw map[string]any) (*Play, error) {
 		play.VaultFile = v
 	}
 
-	// Parse roles
+	// Parse tags on play
+	play.Tags = parseStringOrList(raw["tags"])
+
+	// Parse roles (string or map form)
 	if roles, ok := raw["roles"].([]any); ok {
 		for _, role := range roles {
-			if roleName, ok := role.(string); ok {
-				play.Roles = append(play.Roles, roleName)
+			switch r := role.(type) {
+			case string:
+				play.Roles = append(play.Roles, RoleRef{Name: r})
+			case map[string]any:
+				ref := RoleRef{}
+				if name, ok := r["role"].(string); ok {
+					ref.Name = name
+				}
+				ref.Tags = parseStringOrList(r["tags"])
+				play.Roles = append(play.Roles, ref)
 			}
 		}
 	}
@@ -249,6 +280,9 @@ func parseRawTask(raw map[string]any) (*Task, error) {
 	if v, ok := raw["include_tasks"].(string); ok {
 		task.Include = v
 	}
+
+	// Parse tags on task/block
+	task.Tags = parseStringOrList(raw["tags"])
 
 	// Parse block/rescue/always
 	if blockRaw, ok := raw["block"].([]any); ok {

@@ -93,6 +93,12 @@ type Executor struct {
 	// the same vault file.
 	vaultVarCache map[string]map[string]any
 
+	// Tags filters execution to only run tasks matching these tags.
+	Tags []string
+
+	// SkipTags filters execution to skip tasks matching these tags.
+	SkipTags []string
+
 	// Inventory holds the loaded inventory (optional). When set, group names
 	// in play.Hosts are expanded and per-host vars/SSH config are applied.
 	Inventory *inventory.Inventory
@@ -610,10 +616,11 @@ func (e *Executor) runPlayOnHost(ctx context.Context, play *playbook.Play, stats
 	}
 
 	// --- Apply phase ---
+	playTags := play.Tags
 	for _, task := range allTasks {
 		// Handle block directive
 		if task.IsBlock() {
-			if err := e.runBlock(ctx, pctx, task, stats, nil); err != nil {
+			if err := e.runBlock(ctx, pctx, task, stats, nil, playTags, nil); err != nil {
 				if !task.IgnoreErrors {
 					return err
 				}
@@ -624,12 +631,29 @@ func (e *Executor) runPlayOnHost(ctx context.Context, play *playbook.Play, stats
 
 		// Handle include directive
 		if task.Include != "" {
+			// Tag filtering for include tasks
+			eTags := effectiveTags(task, playTags, nil)
+			if !shouldRunTask(eTags, e.Tags, e.SkipTags) {
+				emitter.TaskResult(task.String(), "skipped", false, "skipped (tag)")
+				stats.Tasks++
+				stats.Skipped++
+				continue
+			}
 			if err := e.runInclude(ctx, pctx, task, stats, nil); err != nil {
 				if !task.IgnoreErrors {
 					return err
 				}
 				emitter.TaskResult(task.String(), "failed (ignored)", false, err.Error())
 			}
+			continue
+		}
+
+		// Tag filtering
+		eTags := effectiveTags(task, playTags, nil)
+		if !shouldRunTask(eTags, e.Tags, e.SkipTags) {
+			emitter.TaskResult(task.String(), "skipped", false, "skipped (tag)")
+			stats.Tasks++
+			stats.Skipped++
 			continue
 		}
 
@@ -851,6 +875,17 @@ func (e *Executor) runHandlersExpanded(ctx context.Context, pctx *PlayContext, s
 			continue
 		}
 
+		// Handlers ignore --tags but respect --skip-tags
+		if len(e.SkipTags) > 0 {
+			eTags := effectiveTags(handler, pctx.Play.Tags, nil)
+			if !shouldRunTask(eTags, nil, e.SkipTags) {
+				pctx.Output.TaskResult(handler.String(), "skipped", false, "skipped (tag)")
+				stats.Tasks++
+				stats.Skipped++
+				continue
+			}
+		}
+
 		stats.Tasks++
 
 		result, err := e.runSingleTask(ctx, pctx, handler)
@@ -866,8 +901,17 @@ func (e *Executor) runHandlersExpanded(ctx context.Context, pctx *PlayContext, s
 }
 
 // runBlock executes a block/rescue/always task group.
-func (e *Executor) runBlock(ctx context.Context, pctx *PlayContext, task *playbook.Task, stats *Stats, visitedPaths []string) error {
+func (e *Executor) runBlock(ctx context.Context, pctx *PlayContext, task *playbook.Task, stats *Stats, visitedPaths []string, playTags []string, inheritedBlockTags []string) error {
 	blockName := task.String()
+
+	// Compute block-level effective tags for the block itself
+	blockETags := effectiveTags(task, playTags, inheritedBlockTags)
+	if !shouldRunTask(blockETags, e.Tags, e.SkipTags) {
+		pctx.Output.TaskResult(blockName, "skipped", false, "skipped (tag)")
+		stats.Tasks++
+		stats.Skipped++
+		return nil
+	}
 
 	// Check block-level 'when' condition — skip entire block if false
 	if task.When != "" {
@@ -885,6 +929,9 @@ func (e *Executor) runBlock(ctx context.Context, pctx *PlayContext, task *playbo
 
 	pctx.Output.Section("BLOCK: " + blockName)
 
+	// Merge block tags into inherited tags for child tasks
+	childBlockTags := mergeBlockTags(inheritedBlockTags, task.Tags)
+
 	// Handle block-level sudo inheritance: apply to child tasks that don't override
 	var restoreSudo func()
 	if task.Sudo != nil {
@@ -899,7 +946,7 @@ func (e *Executor) runBlock(ctx context.Context, pctx *PlayContext, task *playbo
 	// Execute block tasks
 	var blockErr error
 	for _, bt := range task.Block {
-		if err := e.runBlockTask(ctx, pctx, bt, stats, visitedPaths); err != nil {
+		if err := e.runBlockTask(ctx, pctx, bt, stats, visitedPaths, playTags, childBlockTags); err != nil {
 			blockErr = err
 			stats.Failed++
 			break
@@ -911,7 +958,7 @@ func (e *Executor) runBlock(ctx context.Context, pctx *PlayContext, task *playbo
 	if blockErr != nil && len(task.Rescue) > 0 {
 		pctx.Output.Section("RESCUE: " + blockName)
 		for _, rt := range task.Rescue {
-			if err := e.runBlockTask(ctx, pctx, rt, stats, visitedPaths); err != nil {
+			if err := e.runBlockTask(ctx, pctx, rt, stats, visitedPaths, playTags, childBlockTags); err != nil {
 				rescueErr = err
 				stats.Failed++
 				break
@@ -924,7 +971,7 @@ func (e *Executor) runBlock(ctx context.Context, pctx *PlayContext, task *playbo
 	if len(task.Always) > 0 {
 		pctx.Output.Section("ALWAYS: " + blockName)
 		for _, at := range task.Always {
-			if err := e.runBlockTask(ctx, pctx, at, stats, visitedPaths); err != nil {
+			if err := e.runBlockTask(ctx, pctx, at, stats, visitedPaths, playTags, childBlockTags); err != nil {
 				alwaysErr = err
 				stats.Failed++
 				break
@@ -957,12 +1004,44 @@ func (e *Executor) runBlock(ctx context.Context, pctx *PlayContext, task *playbo
 	return nil
 }
 
+// mergeBlockTags combines inherited block tags with a block's own tags.
+func mergeBlockTags(inherited, own []string) []string {
+	if len(inherited) == 0 {
+		return own
+	}
+	if len(own) == 0 {
+		return inherited
+	}
+	seen := make(map[string]bool, len(inherited))
+	result := make([]string, len(inherited))
+	copy(result, inherited)
+	for _, t := range inherited {
+		seen[t] = true
+	}
+	for _, t := range own {
+		if !seen[t] {
+			result = append(result, t)
+		}
+	}
+	return result
+}
+
 // runBlockTask executes a single task within a block/rescue/always section.
 // It handles includes, nested blocks, and regular tasks.
-func (e *Executor) runBlockTask(ctx context.Context, pctx *PlayContext, task *playbook.Task, stats *Stats, visitedPaths []string) error {
+func (e *Executor) runBlockTask(ctx context.Context, pctx *PlayContext, task *playbook.Task, stats *Stats, visitedPaths []string, playTags []string, blockTags []string) error {
 	if task.IsBlock() {
-		return e.runBlock(ctx, pctx, task, stats, visitedPaths)
+		return e.runBlock(ctx, pctx, task, stats, visitedPaths, playTags, blockTags)
 	}
+
+	// Tag filtering for block child tasks
+	eTags := effectiveTags(task, playTags, blockTags)
+	if !shouldRunTask(eTags, e.Tags, e.SkipTags) {
+		pctx.Output.TaskResult(task.String(), "skipped", false, "skipped (tag)")
+		stats.Tasks++
+		stats.Skipped++
+		return nil
+	}
+
 	if task.Include != "" {
 		if err := e.runInclude(ctx, pctx, task, stats, visitedPaths); err != nil {
 			if !task.IgnoreErrors {
@@ -1212,7 +1291,11 @@ func (e *Executor) resolveIncludePath(includePath, rolePath, playbookDir string)
 }
 
 // planTasks evaluates tasks without executing them and returns a plan.
-func (e *Executor) planTasks(ctx context.Context, pctx *PlayContext, tasks []*playbook.Task, emitter output.Emitter) []output.PlannedTask {
+func (e *Executor) planTasks(ctx context.Context, pctx *PlayContext, tasks []*playbook.Task, emitter output.Emitter, blockTags ...[]string) []output.PlannedTask {
+	var inheritedBlockTags []string
+	if len(blockTags) > 0 {
+		inheritedBlockTags = blockTags[0]
+	}
 	var plan []output.PlannedTask
 
 	// Track which variable names are registered by preceding tasks,
@@ -1222,7 +1305,27 @@ func (e *Executor) planTasks(ctx context.Context, pctx *PlayContext, tasks []*pl
 		registeredNames[k] = true
 	}
 
+	var playTags []string
+	if pctx.Play != nil {
+		playTags = pctx.Play.Tags
+	}
+
 	for _, task := range tasks {
+		// Tag filtering in plan phase
+		eTags := effectiveTags(task, playTags, inheritedBlockTags)
+		if !shouldRunTask(eTags, e.Tags, e.SkipTags) {
+			plan = append(plan, output.PlannedTask{
+				Name:   task.String(),
+				Module: task.Module,
+				Status: "will_skip",
+				Reason: "skipped (tag)",
+			})
+			if task.Register != "" {
+				registeredNames[task.Register] = true
+			}
+			continue
+		}
+
 		// Handle include tasks in plan phase
 		if task.Include != "" {
 			pt := output.PlannedTask{
@@ -1383,14 +1486,25 @@ func (e *Executor) planTasks(ctx context.Context, pctx *PlayContext, tasks []*pl
 }
 
 // planBlock generates plan entries for a block/rescue/always task group.
-func (e *Executor) planBlock(ctx context.Context, pctx *PlayContext, task *playbook.Task, indent int, registeredNames map[string]bool) []output.PlannedTask {
+func (e *Executor) planBlock(ctx context.Context, pctx *PlayContext, task *playbook.Task, indent int, registeredNames map[string]bool, inheritedBlockTags ...[]string) []output.PlannedTask {
+	var parentBlockTags []string
+	if len(inheritedBlockTags) > 0 {
+		parentBlockTags = inheritedBlockTags[0]
+	}
+
 	var plan []output.PlannedTask
 
 	blockName := task.String()
 	blockStatus := "will_run"
 
+	// Check block-level tag filtering
+	blockETags := effectiveTags(task, pctx.Play.Tags, parentBlockTags)
+	if !shouldRunTask(blockETags, e.Tags, e.SkipTags) {
+		blockStatus = "will_skip"
+	}
+
 	// Check block-level when condition
-	if task.When != "" {
+	if blockStatus == "will_run" && task.When != "" {
 		if e.conditionReferencesRegistered(task.When, registeredNames) {
 			blockStatus = "conditional"
 		} else {
@@ -1413,12 +1527,15 @@ func (e *Executor) planBlock(ctx context.Context, pctx *PlayContext, task *playb
 		return plan
 	}
 
+	// Merge block tags for child tasks
+	childBlockTags := mergeBlockTags(parentBlockTags, task.Tags)
+
 	// Plan block tasks
 	for _, bt := range task.Block {
 		if bt.IsBlock() {
-			plan = append(plan, e.planBlock(ctx, pctx, bt, indent+1, registeredNames)...)
+			plan = append(plan, e.planBlock(ctx, pctx, bt, indent+1, registeredNames, childBlockTags)...)
 		} else {
-			pts := e.planTasks(ctx, pctx, []*playbook.Task{bt}, pctx.Output)
+			pts := e.planTasks(ctx, pctx, []*playbook.Task{bt}, pctx.Output, childBlockTags)
 			for i := range pts {
 				pts[i].Indent = indent + 1
 			}
@@ -1436,9 +1553,9 @@ func (e *Executor) planBlock(ctx context.Context, pctx *PlayContext, task *playb
 		})
 		for _, rt := range task.Rescue {
 			if rt.IsBlock() {
-				plan = append(plan, e.planBlock(ctx, pctx, rt, indent+1, registeredNames)...)
+				plan = append(plan, e.planBlock(ctx, pctx, rt, indent+1, registeredNames, childBlockTags)...)
 			} else {
-				pts := e.planTasks(ctx, pctx, []*playbook.Task{rt}, pctx.Output)
+				pts := e.planTasks(ctx, pctx, []*playbook.Task{rt}, pctx.Output, childBlockTags)
 				for i := range pts {
 					pts[i].Indent = indent + 1
 				}
@@ -1457,9 +1574,9 @@ func (e *Executor) planBlock(ctx context.Context, pctx *PlayContext, task *playb
 		})
 		for _, at := range task.Always {
 			if at.IsBlock() {
-				plan = append(plan, e.planBlock(ctx, pctx, at, indent+1, registeredNames)...)
+				plan = append(plan, e.planBlock(ctx, pctx, at, indent+1, registeredNames, childBlockTags)...)
 			} else {
-				pts := e.planTasks(ctx, pctx, []*playbook.Task{at}, pctx.Output)
+				pts := e.planTasks(ctx, pctx, []*playbook.Task{at}, pctx.Output, childBlockTags)
 				for i := range pts {
 					pts[i].Indent = indent + 1
 				}

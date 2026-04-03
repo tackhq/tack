@@ -223,7 +223,7 @@ func runPlaybook(cmd *cobra.Command, args []string) error {
 				Name:       fmt.Sprintf("Run role: %s", filepath.Base(absRole)),
 				Hosts:      []string{"localhost"},
 				Connection: "local",
-				Roles:      []string{absRole},
+				Roles:      []playbook.RoleRef{{Name: absRole}},
 				Vars:       make(map[string]any),
 			}},
 		}
@@ -319,6 +319,14 @@ func runPlaybook(cmd *cobra.Command, args []string) error {
 			return passBytes, err
 		}
 	}
+	// Wire tag filters
+	if tags, _ := cmd.Flags().GetStringSlice("tags"); len(tags) > 0 {
+		exec.Tags = tags
+	}
+	if skipTags, _ := cmd.Flags().GetStringSlice("skip-tags"); len(skipTags) > 0 {
+		exec.SkipTags = skipTags
+	}
+
 	exec.Output.SetColor(!noColor)
 	exec.Output.SetDebug(debug)
 	exec.Output.SetVerbose(verbose)
