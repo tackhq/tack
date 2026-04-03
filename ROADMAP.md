@@ -18,7 +18,7 @@ Feature roadmap based on team discussion covering PM, DevOps (senior/mid/junior)
 
 | Status | Feature | Description | Details |
 |--------|---------|-------------|---------|
-| [ ] | Tags | Selective task execution via `--tags` / `--skip-tags` | Tags on tasks and roles with inheritance through blocks/roles. Large playbooks become unusable without selective execution |
+| [x] | Tags | Selective task execution via `--tags` / `--skip-tags` | Tags on tasks, blocks, plays, and role references with inheritance. Special `always`/`never` tags. Handlers ignore `--tags` but respect `--skip-tags` |
 | [ ] | `user` + `group` modules | Idempotent user and group provisioning | `user`: name, state, groups, shell, home, uid, password (hashed), system, remove. `group`: name, state, gid, system. Optional `ssh_authorized_keys` management |
 | [x] | `lineinfile` / `blockinfile` | Surgical file edits without full template management | `lineinfile`: regexp, line, state, insertafter/insertbefore, backup. `blockinfile`: marker, block, state, insertafter/insertbefore, backup |
 | [ ] | Dynamic inventory | External inventory sources beyond static YAML | Script/binary plugin (run command, parse JSON), built-in AWS EC2 plugin, generic HTTP source. Static YAML doesn't scale for cloud fleets |
@@ -28,7 +28,7 @@ Feature roadmap based on team discussion covering PM, DevOps (senior/mid/junior)
 | Status | Feature | Description | Details |
 |--------|---------|-------------|---------|
 | [ ] | `bolt export` | Compile playbook to standalone shell script | Captures shell commands Bolt would send through a connector. Resolves variables, templates, conditionals. Useful for security audits, air-gapped hosts, debugging |
-| [ ] | `--diff` mode | Show file content diffs before applying | Works with `--dry-run` for `copy`, `template`, `file` modules. Colored unified diff output |
+| [x] | `--diff` mode | Show file content diffs before applying | Works with `--dry-run` for `copy`, `template`, `file` modules. Colored unified diff output |
 | [x] | `wait_for` module | Poll for conditions before proceeding | Params: type (port/path/command/url), host, port, path, cmd, url, timeout, interval, state (started/stopped). Replaces fragile shell loops |
 | [ ] | `assert` module | Validate preconditions and fail fast | Params: that (list of conditions), fail_msg, success_msg. Catch misconfigurations early |
 | [ ] | `cron` module | Manage scheduled jobs idempotently | Params: name, job, minute/hour/day/month/weekday, state, user. Managed comment markers in crontab |
