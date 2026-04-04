@@ -34,7 +34,8 @@ critical ways.
 9. Filters use `{{ var | filter(arg) }}` syntax. Only the filters listed in
    the FILTERS section exist. There is no `regex_replace`, `map`, `select`,
    `reject`, `dict2items`, `combine`, or `to_json`/`from_json` filter.
-10. Inventory is a simple YAML file with host groups, not INI format.
+10. Inventory can be a static YAML file, an executable script (auto-detected),
+    or a plugin config file (plugin: http, plugin: ec2). Not INI format.
 11. Roles follow the same directory layout as Ansible roles but only support:
     tasks/, handlers/, vars/, defaults/, files/, templates/.
     There is no meta/, library/, module_utils/, or lookup_plugins/.
@@ -534,6 +535,7 @@ Linux only.
 | `bolt generate`        | Capture live system state as a playbook      |
 | `bolt vault init <f>`  | Create new encrypted vault file              |
 | `bolt vault edit <f>`  | Edit existing encrypted vault file           |
+| `bolt inventory`       | Inspect resolved inventory (--list, --host)  |
 | `bolt version`         | Show version information                     |
 
 Target can be a playbook YAML file or a role directory path.
@@ -557,7 +559,8 @@ Target can be a playbook YAML file or a role directory path.
 | --hosts              |       | string | ""      | BOLT_HOSTS           |
 | --sudo               | -s    | bool   | false   | -                    |
 | --sudo-password      |       | string | ""      | BOLT_SUDO_PASSWORD   |
-| --inventory          | -i    | string | ""      | -                    |
+| --inventory          | -i    | string | ""      | -  (repeatable)      |
+| --inventory-timeout  |       | int    | 30      | -                    |
 | --extra-vars         | -e    | string | ""      | -                    |
 | --tags               |       | string | ""      | -                    |
 | --skip-tags          |       | string | ""      | -                    |
@@ -822,6 +825,101 @@ roles:
 Variable precedence: role vars/ > play vars > role defaults/
 
 Run a role directly: `bolt run roles/myrole`
+
+---
+
+## INVENTORY
+
+Inventory defines hosts, groups, connection settings, and per-host variables.
+Bolt supports three inventory source types.
+
+### Static YAML
+
+```yaml
+# hosts.yml
+hosts:
+  web1:
+    ssh: { user: deploy, key: ~/.ssh/id_deploy }
+    vars: { region: us-east-1 }
+groups:
+  webservers:
+    hosts: [web1, web2]
+    connection: ssh
+    vars: { app_port: 8080 }
+```
+
+### Script (executable)
+
+Any executable file passed via `-i` is auto-detected and run with `--list`.
+Output must be JSON or YAML in Bolt inventory format (same schema as static YAML).
+
+```bash
+bolt run deploy.yaml -i ./my-inventory.sh    # auto-detected as executable
+bolt inventory --list -i ./my-inventory.sh    # inspect output
+```
+
+Scripts receive `--list` as the sole argument. Stdout is parsed; stderr is
+captured for error messages. Non-zero exit is an error.
+
+### Plugin configs
+
+YAML files with a `plugin:` key dispatch to a built-in plugin.
+
+**HTTP plugin** — fetch from REST API:
+```yaml
+plugin: http
+url: https://cmdb.example.com/api/inventory
+headers:
+  Authorization: "Bearer {{ env.CMDB_TOKEN }}"
+params:
+  env: production
+timeout: 10
+tls:
+  ca_cert: /etc/ssl/custom-ca.pem
+  insecure_skip_verify: false
+auth:
+  basic:
+    username: "{{ env.USER }}"
+    password: "{{ env.PASS }}"
+```
+
+**EC2 plugin** — discover AWS instances by tags:
+```yaml
+plugin: ec2
+regions: [us-east-1, us-west-2]
+filters:
+  tag:env: production
+group_by: [tag:role, tag:env]
+host_key: private_ip   # private_ip (default, ssh), public_ip (ssh), instance_id (ssm)
+```
+
+Auto-groups by tag values: `tag_role_worker`, `tag_env_production`. All instance
+tags become host vars. Uses standard AWS credential chain.
+
+### Multiple sources
+
+Multiple `-i` flags merge inventories in order. Later sources override scalar
+values; group host lists are unioned (deduplicated).
+
+```bash
+bolt run deploy.yaml -i ec2.yml -i overrides.yml
+```
+
+### Inspect inventory
+
+```bash
+bolt inventory --list -i hosts.yml           # dump full inventory as JSON
+bolt inventory --host web1 -i hosts.yml      # single host detail with group memberships
+```
+
+### Inventory flags
+
+| Flag                 | Short | Default | Description                              |
+|----------------------|-------|---------|------------------------------------------|
+| --inventory          | -i    | ""      | Inventory source (repeatable)            |
+| --inventory-timeout  |       | 30      | Plugin execution timeout in seconds      |
+
+Config values in plugin YAML support `{{ env.VAR_NAME }}` interpolation.
 
 ---
 

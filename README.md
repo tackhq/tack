@@ -270,7 +270,7 @@ tasks:
 
 See [`examples/playbooks/tags-demo.yaml`](examples/playbooks/tags-demo.yaml) for a complete example.
 
-## Inventory Files
+## Inventory
 
 Define hosts, groups, SSH config, and variables in a reusable file:
 
@@ -293,7 +293,47 @@ groups:
 bolt run deploy.yaml -i inventory.yaml --hosts webservers
 ```
 
-See [`examples/inventory.yaml`](examples/inventory.yaml) for a complete sample.
+### Dynamic Inventory
+
+Bolt supports dynamic inventory sources beyond static YAML files. If `-i` points to an executable, Bolt runs it with `--list` and parses the JSON/YAML output. Plugin-based sources are configured via YAML files with a `plugin:` key.
+
+**Script inventory** -- any executable that outputs Bolt inventory format:
+```bash
+bolt run deploy.yaml -i ./my-inventory-script.sh
+```
+
+**HTTP inventory** -- fetch from a REST API:
+```yaml
+# cmdb-inventory.yml
+plugin: http
+url: https://cmdb.example.com/api/inventory
+headers:
+  Authorization: "Bearer {{ env.CMDB_TOKEN }}"
+```
+
+**EC2 inventory** -- discover AWS instances by tags:
+```yaml
+# ec2-inventory.yml
+plugin: ec2
+regions: [us-east-1, us-west-2]
+filters:
+  tag:env: production
+group_by: [tag:role, tag:env]
+host_key: private_ip  # or instance_id (for SSM), public_ip
+```
+
+**Multiple sources** -- merge inventories with multiple `-i` flags:
+```bash
+bolt run deploy.yaml -i ec2-inventory.yml -i overrides.yml
+```
+
+**Inspect inventory** -- debug resolved hosts and groups:
+```bash
+bolt inventory --list -i ec2-inventory.yml
+bolt inventory --host web1 -i inventory.yaml
+```
+
+See [`examples/dynamic-inventory/`](examples/dynamic-inventory/) for complete samples and [`examples/inventory.yaml`](examples/inventory.yaml) for a static inventory sample.
 
 ## Available Modules
 

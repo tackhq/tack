@@ -90,7 +90,8 @@ bolt vault edit <file>      Edit an existing encrypted vault file
 | `--forks N` | `-f` | Parallel host execution (default: 1) |
 | `--output json` | | Machine-readable JSON output |
 | `--no-color` | | Disable colored output |
-| `--inventory` | `-i` | Inventory file |
+| `--inventory` | `-i` | Inventory source (YAML, executable, or plugin config; repeatable) |
+| `--inventory-timeout` | | Timeout in seconds for dynamic inventory plugins (default: 30) |
 | `--extra-vars` | `-e` | Extra variables (key=value) |
 | `--connection` | `-c` | Connection URI (e.g. `ssh://user@host`) |
 
