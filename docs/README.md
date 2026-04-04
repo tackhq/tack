@@ -10,7 +10,7 @@
 
 - [Modules](modules.md) - All modules: apt, brew, yum, command, copy, file, systemd, template
 - [Variables & Facts](variables.md) - Interpolation, filters, system/network/EC2 facts
-- [Connectors](connectors.md) - Local, Docker, SSH, SSM connection methods
+- [Connectors](connectors.md) - Local, Docker, SSH, SSM connection methods, dynamic inventory
 
 ## Contributing
 

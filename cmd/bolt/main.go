@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"os"
@@ -11,9 +12,15 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
+
+	// Import inventory plugins to register them
+	_ "github.com/eugenetaranov/bolt/internal/inventory/ec2"
+	_ "github.com/eugenetaranov/bolt/internal/inventory/http"
+	_ "github.com/eugenetaranov/bolt/internal/inventory/script"
 
 	// Import modules to register them
 	_ "github.com/eugenetaranov/bolt/internal/module/apt"
@@ -130,6 +137,7 @@ func init() {
 	rootCmd.AddCommand(scaffoldCmd)
 	rootCmd.AddCommand(testCmd)
 	rootCmd.AddCommand(vaultCmd)
+	rootCmd.AddCommand(inventoryCmd)
 }
 
 // runCmd executes a playbook
@@ -177,7 +185,7 @@ Examples:
 
 func init() {
 	// Run-specific flags can be added here
-	runCmd.Flags().StringP("inventory", "i", "", "Inventory file (YAML)")
+	runCmd.Flags().StringArrayP("inventory", "i", nil, "Inventory source (YAML, executable, or plugin config). Can be specified multiple times.")
 	runCmd.Flags().StringSliceP("extra-vars", "e", nil, "Extra variables (key=value)")
 	runCmd.Flags().StringSlice("tags", nil, "Only run tasks with these tags")
 	runCmd.Flags().StringSlice("skip-tags", nil, "Skip tasks with these tags")
@@ -185,6 +193,9 @@ func init() {
 	addConnectionFlags(runCmd)
 	runCmd.Flags().BoolVar(&autoApprove, "auto-approve", false, "Skip interactive approval prompt (for CI/scripting)")
 	runCmd.Flags().IntP("forks", "f", 1, "Number of hosts to execute concurrently")
+
+	// Inventory flags
+	runCmd.Flags().Int("inventory-timeout", 30, "Timeout in seconds for dynamic inventory plugins")
 
 	// Vault flags
 	runCmd.Flags().String("vault-password-file", "", "Path to file containing vault password (first line used)")
@@ -243,13 +254,24 @@ func runPlaybook(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Load inventory file if provided
+	// Load inventory sources if provided
 	var inv *inventory.Inventory
-	if inventoryPath, _ := cmd.Flags().GetString("inventory"); inventoryPath != "" {
-		var err error
-		inv, err = inventory.Load(inventoryPath)
-		if err != nil {
-			return fmt.Errorf("failed to load inventory: %w", err)
+	if inventoryPaths, _ := cmd.Flags().GetStringArray("inventory"); len(inventoryPaths) > 0 {
+		invTimeout, _ := cmd.Flags().GetInt("inventory-timeout")
+		var inventories []*inventory.Inventory
+		for _, invPath := range inventoryPaths {
+			invCtx, invCancel := context.WithTimeout(ctx, time.Duration(invTimeout)*time.Second)
+			loaded, loadErr := inventory.LoadWithContext(invCtx, invPath)
+			invCancel()
+			if loadErr != nil {
+				return fmt.Errorf("failed to load inventory %s: %w", invPath, loadErr)
+			}
+			inventories = append(inventories, loaded)
+		}
+		if len(inventories) == 1 {
+			inv = inventories[0]
+		} else {
+			inv = inventory.MergeInventories(inventories)
 		}
 	}
 
@@ -833,6 +855,87 @@ func buildConnOverrides(cmd *cobra.Command) (*executor.ConnOverrides, error) {
 	}
 
 	return o, nil
+}
+
+// inventoryCmd inspects resolved inventory for debugging.
+var inventoryCmd = &cobra.Command{
+	Use:   "inventory",
+	Short: "Inspect resolved inventory",
+	Long: `Load an inventory source (static YAML, script, or plugin) and display the
+resolved hosts, groups, and variables as JSON.
+
+Use --list to dump the full inventory, or --host <name> for a single host.
+
+Examples:
+  bolt inventory --list -i hosts.yml
+  bolt inventory --list -i ./ec2-inventory.sh
+  bolt inventory --host web1 -i hosts.yml`,
+	RunE: runInventory,
+}
+
+func init() {
+	inventoryCmd.Flags().StringP("inventory", "i", "", "Inventory source (YAML file, executable, or plugin config)")
+	inventoryCmd.Flags().Bool("list", false, "List all hosts and groups")
+	inventoryCmd.Flags().String("host", "", "Show details for a specific host")
+	inventoryCmd.Flags().Int("inventory-timeout", 30, "Timeout in seconds for dynamic inventory plugins")
+}
+
+func runInventory(cmd *cobra.Command, args []string) error {
+	inventoryPath, _ := cmd.Flags().GetString("inventory")
+	if inventoryPath == "" {
+		return fmt.Errorf("inventory source is required: use -i <path>")
+	}
+
+	listFlag, _ := cmd.Flags().GetBool("list")
+	hostFlag, _ := cmd.Flags().GetString("host")
+
+	if !listFlag && hostFlag == "" {
+		return fmt.Errorf("specify --list to dump all inventory or --host <name> for a single host")
+	}
+
+	ctx, cancel := signalContext(context.Background())
+	defer cancel()
+
+	invTimeout, _ := cmd.Flags().GetInt("inventory-timeout")
+	invCtx, invCancel := context.WithTimeout(ctx, time.Duration(invTimeout)*time.Second)
+	defer invCancel()
+
+	inv, err := inventory.LoadWithContext(invCtx, inventoryPath)
+	if err != nil {
+		return fmt.Errorf("failed to load inventory: %w", err)
+	}
+
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+
+	if hostFlag != "" {
+		host := inv.GetHost(hostFlag)
+		if host == nil {
+			return fmt.Errorf("host %q not found in inventory", hostFlag)
+		}
+		// Include group memberships
+		type hostDetail struct {
+			Vars   map[string]any `json:"vars,omitempty"`
+			SSH    any            `json:"ssh,omitempty"`
+			Groups []string       `json:"groups,omitempty"`
+		}
+		var groupNames []string
+		for name, g := range inv.Groups {
+			for _, h := range g.Hosts {
+				if h == hostFlag {
+					groupNames = append(groupNames, name)
+					break
+				}
+			}
+		}
+		return enc.Encode(hostDetail{
+			Vars:   host.Vars,
+			SSH:    host.SSH,
+			Groups: groupNames,
+		})
+	}
+
+	return enc.Encode(inv)
 }
 
 // isLocalHost returns true when every entry in hosts resolves to localhost.

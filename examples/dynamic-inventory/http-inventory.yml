@@ -1,0 +1,25 @@
+# Example: HTTP-based dynamic inventory
+# Fetches inventory from a REST API endpoint.
+# Usage: bolt run playbook.yaml -i http-inventory.yml
+
+plugin: http
+url: https://cmdb.example.com/api/inventory
+headers:
+  Authorization: "Bearer {{ env.CMDB_TOKEN }}"
+  Accept: application/json
+params:
+  env: production
+timeout: 10
+
+# Optional TLS configuration for corporate environments:
+# tls:
+#   ca_cert: /etc/ssl/custom-ca.pem
+#   client_cert: /etc/ssl/client.pem
+#   client_key: /etc/ssl/client-key.pem
+#   insecure_skip_verify: false
+
+# Optional basic auth (alternative to bearer token):
+# auth:
+#   basic:
+#     username: "{{ env.CMDB_USER }}"
+#     password: "{{ env.CMDB_PASS }}"

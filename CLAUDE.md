@@ -14,13 +14,17 @@ Bolt is a Go-based configuration management and system bootstrapping tool inspir
 - `internal/connector/` - Connection backends (local, SSH, SSM)
 - `internal/module/` - Task modules (apt, brew, file, copy, command)
 - `internal/playbook/` - YAML playbook parsing and execution
-- `internal/inventory/` - Host inventory management
+- `internal/inventory/` - Host inventory management (static YAML, plugin framework)
+- `internal/inventory/script/` - Script/executable inventory plugin
+- `internal/inventory/http/` - HTTP REST API inventory plugin
+- `internal/inventory/ec2/` - AWS EC2 tag-based inventory plugin
 - `internal/executor/` - Task orchestration
 - `pkg/facts/` - System fact gathering (OS, arch, etc.)
 
 ## Key Interfaces
 - `Connector` - Abstraction for executing commands on targets
 - `Module` - Abstraction for idempotent system operations
+- `inventory.Plugin` - Abstraction for dynamic inventory sources (script, http, ec2)
 
 ## Design Principles
 1. **Idempotency** - All modules must be idempotent

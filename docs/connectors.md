@@ -176,6 +176,47 @@ bolt run patch.yaml --ssm-instances i-0abc123,i-0def456 --ssm-region us-east-1 -
 
 AWS credentials use the standard SDK credential chain (env vars, shared config, IAM roles).
 
+## Dynamic Inventory
+
+In addition to static YAML inventory files, Bolt supports dynamic inventory sources via a plugin architecture. Pass any source with `-i`:
+
+**Executable scripts** — auto-detected by file permissions, run with `--list`:
+```bash
+bolt run deploy.yaml -i ./my-inventory-script.sh
+```
+
+**Plugin configs** — YAML files with a `plugin:` key:
+```yaml
+# HTTP: fetch from REST API
+plugin: http
+url: https://cmdb.example.com/api/inventory
+headers:
+  Authorization: "Bearer {{ env.CMDB_TOKEN }}"
+
+# EC2: discover AWS instances by tags
+plugin: ec2
+regions: [us-east-1]
+filters:
+  tag:env: production
+group_by: [tag:role]
+host_key: private_ip
+```
+
+**Multiple sources** merge in order (later wins on conflicts):
+```bash
+bolt run deploy.yaml -i ec2.yml -i overrides.yml
+```
+
+**Inspect resolved inventory** for debugging:
+```bash
+bolt inventory --list -i ec2.yml
+bolt inventory --host web1 -i hosts.yml
+```
+
+Use `--inventory-timeout` to control plugin execution timeout (default: 30s).
+
+See [`examples/dynamic-inventory/`](../examples/dynamic-inventory/) for complete samples.
+
 ## Auto-Detection
 
 When no `connection:` is specified, Bolt infers the type from flags:

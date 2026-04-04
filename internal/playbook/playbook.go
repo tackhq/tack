@@ -19,20 +19,20 @@ type Playbook struct {
 // SSHConfig holds SSH connection parameters for a play.
 type SSHConfig struct {
 	// User is the SSH username.
-	User string `yaml:"user"`
+	User string `yaml:"user" json:"user,omitempty"`
 
 	// Port is the SSH port (default: 22).
-	Port int `yaml:"port"`
+	Port int `yaml:"port" json:"port,omitempty"`
 
 	// Key is the path to the SSH private key file.
-	Key string `yaml:"key"`
+	Key string `yaml:"key" json:"key,omitempty"`
 
 	// Password is the SSH password (if not using key auth).
-	Password string `yaml:"password"`
+	Password string `yaml:"password" json:"password,omitempty"`
 
 	// HostKeyChecking controls whether the host key is verified.
 	// nil means use the default (true / strict). Set to false to disable.
-	HostKeyChecking *bool `yaml:"host_key_checking"`
+	HostKeyChecking *bool `yaml:"host_key_checking" json:"host_key_checking,omitempty"`
 }
 
 // SSMConfig holds AWS Systems Manager connection parameters for a play.

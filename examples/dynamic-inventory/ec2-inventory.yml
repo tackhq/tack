@@ -1,0 +1,25 @@
+# Example: AWS EC2 dynamic inventory
+# Discovers instances via DescribeInstances and groups them by tags.
+# Usage: bolt run playbook.yaml -i ec2-inventory.yml
+
+plugin: ec2
+regions:
+  - us-east-1
+  - us-west-2
+
+# Filter instances by tags
+filters:
+  tag:env: production
+  tag:service: api
+
+# Create inventory groups based on tag values
+# e.g., tag:role=worker -> group "tag_role_worker"
+group_by:
+  - tag:role
+  - tag:env
+
+# What to use as the host identifier:
+#   private_ip (default) - for SSH access within VPC
+#   public_ip            - for SSH access from outside VPC
+#   instance_id          - for SSM access (sets connection to ssm)
+host_key: private_ip
