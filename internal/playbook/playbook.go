@@ -171,6 +171,27 @@ type Task struct {
 
 	// Always is a list of tasks that run regardless of block/rescue outcome.
 	Always []*Task `yaml:"-"`
+
+	// Assert, if non-nil, makes this task a built-in assert task that
+	// evaluates boolean expressions locally via the condition engine
+	// instead of dispatching to a module.
+	Assert *AssertSpec `yaml:"-"`
+}
+
+// AssertSpec holds the parameters for an `assert:` task.
+type AssertSpec struct {
+	// That is the list of boolean condition expressions to evaluate.
+	// A single string in YAML is normalized to a one-element slice.
+	That []string
+
+	// FailMsg is an optional custom failure message.
+	FailMsg string
+
+	// SuccessMsg is an optional message shown when all conditions pass.
+	SuccessMsg string
+
+	// Quiet suppresses per-condition output on success.
+	Quiet bool
 }
 
 // RoleRef is a reference to a role in a play, optionally with tags.
@@ -222,6 +243,11 @@ func (p *Play) GetConnection() string {
 // IsBlock returns true if this task is a block (has nested block tasks).
 func (t *Task) IsBlock() bool {
 	return len(t.Block) > 0
+}
+
+// IsAssert returns true if this task is a built-in assert task.
+func (t *Task) IsAssert() bool {
+	return t.Assert != nil
 }
 
 // ShouldSudo returns whether privilege escalation is enabled for this task.
@@ -304,6 +330,21 @@ func (t *Task) Validate() error {
 		return fmt.Errorf("rescue/always require a block directive")
 	}
 
+	if t.IsAssert() {
+		if t.Module != "" {
+			return fmt.Errorf("assert task cannot also specify a module (%s)", t.Module)
+		}
+		if len(t.Assert.That) == 0 {
+			return fmt.Errorf("assert task: 'that' is required and must contain at least one condition")
+		}
+		for i, expr := range t.Assert.That {
+			if strings.TrimSpace(expr) == "" {
+				return fmt.Errorf("assert task: condition %d is empty", i+1)
+			}
+		}
+		return nil
+	}
+
 	if t.Module == "" && t.Include == "" {
 		return fmt.Errorf("task has no module specified")
 	}
@@ -326,6 +367,9 @@ func (t *Task) String() string {
 	}
 	if t.IsBlock() {
 		return "block"
+	}
+	if t.IsAssert() {
+		return "assert"
 	}
 	return fmt.Sprintf("%s: %v", t.Module, summarizeParams(t.Params))
 }

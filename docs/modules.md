@@ -17,6 +17,7 @@ Modules are the units of work in Bolt. Each module performs a specific action li
 | [user](#user) | Manage system users on Linux |
 | [group](#group) | Manage system groups on Linux |
 | [wait_for](#wait_for) | Wait for a condition before proceeding |
+| [assert](#assert) | Fail fast on precondition expressions (built-in keyword) |
 
 ---
 
@@ -846,6 +847,71 @@ result:
 - Path and command checks execute on the **target** via the connector.
 - The `state` parameter only applies to `port` and `path` types. Use `started` (default) to wait for the condition to be true, or `stopped` to wait for it to become false.
 - On timeout, the module returns an error with a descriptive message.
+
+---
+
+## assert
+
+Validate preconditions at the top of a play and fail fast with a clear message. `assert` is a **built-in task keyword** (like `block:` and `include_tasks:`), not a registered module — it runs locally on the control host and never invokes the connector, so it works identically for every connection type.
+
+### Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `that` | string or list of strings | **yes** | - | One or more boolean expressions using the same syntax as `when:` |
+| `fail_msg` | string | no | - | Custom message emitted when any condition is false |
+| `success_msg` | string | no | - | Message emitted when all conditions pass |
+| `quiet` | bool | no | `false` | Suppress per-condition output on success |
+
+The `that:` expressions use the exact same engine as `when:`, so every supported operator is available: `==`, `!=`, `<`, `>`, `<=`, `>=`, `in`, `not in`, `is defined`, `is not defined`, `and`, `or`, `not`, and parenthesized grouping.
+
+### Examples
+
+```yaml
+# Single condition as string
+- name: OS must be Linux
+  assert:
+    that: "facts.os_type == 'Linux'"
+    fail_msg: "this playbook only supports Linux"
+
+# Multiple conditions
+- name: Preflight checks
+  assert:
+    that:
+      - "facts.os_family in ['Debian', 'RedHat']"
+      - "deploy_env is defined"
+      - "deploy_env in ['staging', 'prod']"
+    success_msg: "all preconditions satisfied"
+
+# Register the result and branch on it
+- register: chk
+  assert:
+    that:
+      - "version is defined"
+
+- name: Continue only if chk passed
+  when: "chk.failed == false"
+  command:
+    cmd: echo "proceeding"
+
+# Assert inside a block triggers rescue on failure
+- block:
+    - assert:
+        that:
+          - "facts.arch == 'x86_64'"
+  rescue:
+    - command:
+        cmd: echo "unsupported architecture — falling back"
+```
+
+### Behavior
+
+- A false condition fails the task. Block/rescue/always semantics apply normally.
+- `when:`, `tags:`, `register:`, and `--dry-run` all work on assert tasks.
+- Under `--dry-run`, asserts are still evaluated and failing asserts still fail the play (preconditions should fail fast regardless of mode).
+- `--diff` is a no-op for assert tasks.
+- Assert never reports `changed: true` — it only validates, it never mutates state.
+- The registered result contains `changed`, `failed`, `msg`, and `evaluated_conditions` (an array of `{expr, result}` entries).
 
 ---
 

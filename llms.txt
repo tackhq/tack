@@ -409,6 +409,36 @@ Result data: `elapsed`, `attempts`, plus `stdout`/`stderr` (command) or `status_
     state: stopped
 ```
 
+### assert
+
+Built-in task keyword (not a registered module). Validates preconditions on the control host using the same condition engine as `when:`. Never invokes the connector.
+
+| Param       | Type              | Required | Default | Description                                 |
+|-------------|-------------------|----------|---------|---------------------------------------------|
+| that        | string / []string | yes      | -       | One or more boolean expressions             |
+| fail_msg    | string            | no       | -       | Custom message on failure                   |
+| success_msg | string            | no       | -       | Message when all conditions pass            |
+| quiet       | bool              | no       | false   | Suppress per-condition output on success    |
+
+Operators: same as `when:` — `==`, `!=`, `<`, `>`, `<=`, `>=`, `in`, `not in`, `is defined`, `is not defined`, `and`, `or`, `not`, parens.
+
+Works with `when:`, `tags:`, `register:`, `block:`/`rescue:`/`always:`, and `--dry-run` (assert failures fail the play in dry-run too). `--diff` is a no-op. Task always reports `changed: false`.
+
+```yaml
+- name: preflight
+  assert:
+    that:
+      - "facts.os_type == 'Linux'"
+      - "deploy_env in ['staging', 'prod']"
+    fail_msg: "unsupported environment"
+```
+
+Registered result shape:
+```
+{changed: false, failed: bool, msg: string,
+ evaluated_conditions: [{expr: "...", result: true|false}, ...]}
+```
+
 ### lineinfile
 
 Ensure a specific line is present or absent in a file.

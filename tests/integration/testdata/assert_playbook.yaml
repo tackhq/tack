@@ -1,0 +1,46 @@
+---
+# Integration fixture for the assert built-in task keyword.
+# Exercises assert inside a block/rescue, registered results, and
+# downstream use of the registered value.
+- name: assert integration
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    deploy_env: staging
+    version: 2
+  tasks:
+    - name: preflight — happy path
+      register: pf
+      assert:
+        that:
+          - "deploy_env in ['staging', 'prod']"
+          - "version >= 1"
+        success_msg: "preflight ok"
+
+    - name: use registered result downstream
+      when: "pf.failed == false"
+      command:
+        cmd: echo downstream_ran
+
+    - name: block with failing assert and rescue
+      block:
+        - name: this assert fails
+          assert:
+            that:
+              - "version == 99"
+            fail_msg: "version must be 99"
+      rescue:
+        - name: rescue task
+          command:
+            cmd: echo rescued
+      always:
+        - name: always task
+          command:
+            cmd: echo always_ran
+
+    - name: quiet success
+      assert:
+        that:
+          - "version == 2"
+        quiet: true

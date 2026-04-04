@@ -40,7 +40,7 @@ tasks:
 ## Features
 
 - **Simple YAML playbooks** with Ansible-compatible role structure
-- **Idempotent modules** -- apt, brew, yum, file, copy, command, systemd, template, lineinfile, blockinfile, wait_for
+- **Idempotent modules** -- apt, brew, yum, file, copy, command, systemd, template, lineinfile, blockinfile, wait_for, assert
 - **Cross-platform** -- macOS (brew) and Linux (apt, yum, systemd)
 - **Multiple connectors** -- Local, Docker, SSH, AWS SSM with tag-based discovery
 - **Plan/apply workflow** -- preview changes before applying, `--auto-approve` for CI
@@ -352,6 +352,7 @@ See [`examples/dynamic-inventory/`](examples/dynamic-inventory/) for complete sa
 | `user` | Manage system users on Linux (create, modify, remove) |
 | `group` | Manage system groups on Linux (create, modify, remove) |
 | `wait_for` | Wait for port, path, command, or URL before proceeding |
+| `assert` | Validate preconditions (built-in keyword); fail fast with a clear message |
 
 Run `bolt module <name>` for detailed parameter docs.
 

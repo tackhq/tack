@@ -589,8 +589,12 @@ func (e *Executor) runPlayOnHost(ctx context.Context, play *playbook.Play, stats
 	}
 	emitter.DisplayPlan(planned, e.DryRun)
 
-	// Dry run stops after showing the plan
+	// Dry run stops after showing the plan, but assert failures still fail
+	// the play so preconditions fail-fast regardless of mode.
 	if e.DryRun {
+		if err := e.evaluateAssertsForDryRun(pctx, allTasks); err != nil {
+			return err
+		}
 		return nil
 	}
 
@@ -702,6 +706,11 @@ func (e *Executor) runTask(ctx context.Context, pctx *PlayContext, task *playboo
 			pctx.Output.TaskResult(taskName, "skipped", false, "when condition not met")
 			return &TaskResult{Status: "skipped"}, nil
 		}
+	}
+
+	// Assert built-in task keyword: evaluate locally, bypass connector/module.
+	if task.IsAssert() {
+		return e.executeAssert(ctx, pctx, task)
 	}
 
 	// Resolve loop expression (e.g. "{{ windmill_files }}") to a concrete list
@@ -1353,6 +1362,32 @@ func (e *Executor) planTasks(ctx context.Context, pctx *PlayContext, tasks []*pl
 		// Handle block tasks in plan phase
 		if task.IsBlock() {
 			plan = append(plan, e.planBlock(ctx, pctx, task, 0, registeredNames)...)
+			continue
+		}
+
+		// Handle assert built-in task in plan phase
+		if task.IsAssert() {
+			pt := output.PlannedTask{
+				Name:   task.String(),
+				Module: "assert",
+				Status: "will_run",
+			}
+			if task.When != "" {
+				if e.conditionReferencesRegistered(task.When, registeredNames) {
+					pt.Status = "conditional"
+					pt.Reason = task.When
+				} else {
+					shouldRun, err := e.evaluateCondition(task.When, pctx)
+					if err != nil || !shouldRun {
+						pt.Status = "will_skip"
+						pt.Reason = "when: " + task.When
+					}
+				}
+			}
+			if task.Register != "" {
+				registeredNames[task.Register] = true
+			}
+			plan = append(plan, pt)
 			continue
 		}
 

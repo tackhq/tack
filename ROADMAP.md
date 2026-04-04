@@ -30,7 +30,7 @@ Feature roadmap based on team discussion covering PM, DevOps (senior/mid/junior)
 | [ ] | `bolt export` | Compile playbook to standalone shell script | Captures shell commands Bolt would send through a connector. Resolves variables, templates, conditionals. Useful for security audits, air-gapped hosts, debugging |
 | [x] | `--diff` mode | Show file content diffs before applying | Works with `--dry-run` for `copy`, `template`, `file` modules. Colored unified diff output |
 | [x] | `wait_for` module | Poll for conditions before proceeding | Params: type (port/path/command/url), host, port, path, cmd, url, timeout, interval, state (started/stopped). Replaces fragile shell loops |
-| [ ] | `assert` module | Validate preconditions and fail fast | Params: that (list of conditions), fail_msg, success_msg. Catch misconfigurations early |
+| [x] | `assert` module | Validate preconditions and fail fast | Params: that (list of conditions), fail_msg, success_msg. Catch misconfigurations early |
 | [ ] | `cron` module | Manage scheduled jobs idempotently | Params: name, job, minute/hour/day/month/weekday, state, user. Managed comment markers in crontab |
 | [ ] | `git` module | Manage git repository checkouts on targets | Params: repo, dest, version/ref, force, depth, accept_hostkey. Idempotent: skip if already at desired ref |
 | [ ] | Event hooks / callbacks | Pluggable notifications on run events | Hooks: on_task_start, on_task_fail, on_play_complete. Webhook support. Quick-win: `--on-failure "cmd"` CLI flag |

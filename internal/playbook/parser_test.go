@@ -961,3 +961,177 @@ tasks:
 		})
 	}
 }
+
+func TestParseAssertTask(t *testing.T) {
+	tests := []struct {
+		name      string
+		yaml      string
+		wantErr   bool
+		errSubstr string
+		checkFn   func(t *testing.T, task *Task)
+	}{
+		{
+			name: "assert with single string condition",
+			yaml: `
+hosts: localhost
+tasks:
+  - name: check os
+    assert:
+      that: "facts.os_type == 'Linux'"
+`,
+			checkFn: func(t *testing.T, task *Task) {
+				if task.Assert == nil {
+					t.Fatal("expected Assert spec to be set")
+				}
+				if len(task.Assert.That) != 1 || task.Assert.That[0] != "facts.os_type == 'Linux'" {
+					t.Errorf("unexpected That: %+v", task.Assert.That)
+				}
+				if task.Module != "" {
+					t.Errorf("expected empty Module, got %q", task.Module)
+				}
+			},
+		},
+		{
+			name: "assert with list of conditions and messages",
+			yaml: `
+hosts: localhost
+tasks:
+  - assert:
+      that:
+        - "x == 1"
+        - "y == 2"
+      fail_msg: "preconditions failed"
+      success_msg: "all good"
+      quiet: true
+`,
+			checkFn: func(t *testing.T, task *Task) {
+				if task.Assert == nil {
+					t.Fatal("expected Assert spec")
+				}
+				if len(task.Assert.That) != 2 {
+					t.Errorf("expected 2 conditions, got %d", len(task.Assert.That))
+				}
+				if task.Assert.FailMsg != "preconditions failed" {
+					t.Errorf("unexpected FailMsg: %q", task.Assert.FailMsg)
+				}
+				if task.Assert.SuccessMsg != "all good" {
+					t.Errorf("unexpected SuccessMsg: %q", task.Assert.SuccessMsg)
+				}
+				if !task.Assert.Quiet {
+					t.Error("expected Quiet=true")
+				}
+			},
+		},
+		{
+			name: "assert missing that is error",
+			yaml: `
+hosts: localhost
+tasks:
+  - assert:
+      fail_msg: nope
+`,
+			wantErr:   true,
+			errSubstr: "'that' is required",
+		},
+		{
+			name: "assert empty list is error",
+			yaml: `
+hosts: localhost
+tasks:
+  - assert:
+      that: []
+`,
+			wantErr:   true,
+			errSubstr: "'that' list is empty",
+		},
+		{
+			name: "assert non-string element is error",
+			yaml: `
+hosts: localhost
+tasks:
+  - assert:
+      that:
+        - "x == 1"
+        - 42
+`,
+			wantErr:   true,
+			errSubstr: "is not a string",
+		},
+		{
+			name: "assert cannot coexist with module",
+			yaml: `
+hosts: localhost
+tasks:
+  - assert:
+      that: "x == 1"
+    command:
+      cmd: echo
+`,
+			wantErr:   true,
+			errSubstr: "cannot also specify a module",
+		},
+		{
+			name: "assert with register and when",
+			yaml: `
+hosts: localhost
+tasks:
+  - name: guarded assert
+    when: "run_checks == 'yes'"
+    register: my_assert
+    assert:
+      that:
+        - "v is defined"
+`,
+			checkFn: func(t *testing.T, task *Task) {
+				if task.Assert == nil {
+					t.Fatal("expected Assert spec")
+				}
+				if task.Register != "my_assert" {
+					t.Errorf("expected Register=my_assert, got %q", task.Register)
+				}
+				if task.When != "run_checks == 'yes'" {
+					t.Errorf("unexpected When: %q", task.When)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pb, err := ParseRaw([]byte(tt.yaml), "test.yaml")
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected error containing %q, got nil", tt.errSubstr)
+				}
+				if tt.errSubstr != "" && !contains(err.Error(), tt.errSubstr) {
+					t.Errorf("expected error containing %q, got %q", tt.errSubstr, err.Error())
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(pb.Plays) != 1 || len(pb.Plays[0].Tasks) != 1 {
+				t.Fatalf("expected 1 play with 1 task")
+			}
+			if tt.checkFn != nil {
+				tt.checkFn(t, pb.Plays[0].Tasks[0])
+			}
+		})
+	}
+}
+
+func TestExpandShorthandLeavesAssert(t *testing.T) {
+	task := &Task{
+		Assert: &AssertSpec{That: []string{"x == 1"}},
+		Params: map[string]any{},
+	}
+	ExpandShorthand(task)
+	if task.Assert == nil {
+		t.Error("ExpandShorthand should not clear Assert")
+	}
+	if task.Module != "" {
+		t.Errorf("ExpandShorthand should not set Module on assert task, got %q", task.Module)
+	}
+}
+
