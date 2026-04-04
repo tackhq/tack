@@ -49,6 +49,8 @@ var knownTaskFields = map[string]bool{
 	"block":  true,
 	"rescue": true,
 	"always": true,
+	// Assert built-in task keyword
+	"assert": true,
 	// Tags
 	"tags": true,
 	// Module argument keys that Ansible allows at task level
@@ -307,6 +309,15 @@ func parseRawTask(raw map[string]any) (*Task, error) {
 		task.Always = alwaysTasks
 	}
 
+	// Parse assert built-in task keyword
+	if assertRaw, ok := raw["assert"]; ok {
+		spec, err := parseAssertSpec(assertRaw)
+		if err != nil {
+			return nil, fmt.Errorf("assert: %w", err)
+		}
+		task.Assert = spec
+	}
+
 	// Parse vars on include/include_tasks directives
 	if vars, ok := raw["vars"].(map[string]any); ok {
 		task.IncludeVars = vars
@@ -389,6 +400,51 @@ func parseRawTask(raw map[string]any) (*Task, error) {
 	}
 
 	return task, nil
+}
+
+// parseAssertSpec parses the `assert:` task block into an AssertSpec.
+// It accepts a mapping with `that`, `fail_msg`, `success_msg`, `quiet` keys.
+func parseAssertSpec(raw any) (*AssertSpec, error) {
+	m, ok := raw.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("expected mapping with 'that' key")
+	}
+	spec := &AssertSpec{}
+
+	that, ok := m["that"]
+	if !ok {
+		return nil, fmt.Errorf("'that' is required")
+	}
+	switch v := that.(type) {
+	case string:
+		spec.That = []string{v}
+	case []any:
+		if len(v) == 0 {
+			return nil, fmt.Errorf("'that' list is empty")
+		}
+		spec.That = make([]string, 0, len(v))
+		for i, item := range v {
+			s, ok := item.(string)
+			if !ok {
+				return nil, fmt.Errorf("'that' element %d is not a string (got %T)", i+1, item)
+			}
+			spec.That = append(spec.That, s)
+		}
+	default:
+		return nil, fmt.Errorf("'that' must be a string or list of strings (got %T)", that)
+	}
+
+	if v, ok := m["fail_msg"].(string); ok {
+		spec.FailMsg = v
+	}
+	if v, ok := m["success_msg"].(string); ok {
+		spec.SuccessMsg = v
+	}
+	if v, ok := asBool(m["quiet"]); ok {
+		spec.Quiet = v
+	}
+
+	return spec, nil
 }
 
 // parseSSHConfig parses a raw SSH config block from a play.
@@ -495,7 +551,12 @@ func ExpandShorthand(task *Task) {
 }
 
 // ResolveModule checks if the task's module exists in the registry.
+// Built-in task keywords (assert, block, include_tasks) have no module and
+// are always valid at this layer.
 func ResolveModule(task *Task) error {
+	if task.IsAssert() || task.IsBlock() || task.Include != "" {
+		return nil
+	}
 	if task.Module == "" {
 		return fmt.Errorf("no module specified")
 	}

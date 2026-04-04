@@ -1,0 +1,48 @@
+---
+# Example: use `assert:` to validate preconditions at the top of a play.
+# A failing assert fails the play fast — before any system changes happen.
+#
+# Run:   bolt run examples/assert-preflight.yaml
+# Or:    bolt run examples/assert-preflight.yaml -e deploy_env=prod
+- name: Preflight checks
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  vars:
+    deploy_env: staging
+    required_version: 2
+  tasks:
+    - name: Verify supported OS
+      assert:
+        that:
+          - "facts.os_type in ['Linux', 'Darwin']"
+        fail_msg: "this playbook only runs on Linux or macOS"
+
+    - name: Verify deploy environment is set and valid
+      assert:
+        that:
+          - "deploy_env is defined"
+          - "deploy_env in ['staging', 'prod']"
+        fail_msg: "deploy_env must be 'staging' or 'prod'"
+        success_msg: "deploy_env = {{ deploy_env }}"
+
+    - name: Assert can be registered and branched on
+      register: preflight
+      assert:
+        that:
+          - "required_version >= 2"
+
+    - name: Continue only if preflight passed
+      when: "preflight.failed == false"
+      command:
+        cmd: echo "preflight OK — proceeding with deploy"
+
+    - name: Assert inside a block recovers via rescue
+      block:
+        - assert:
+            that:
+              - "facts.arch == 'x86_64'"
+            fail_msg: "non-x86_64 host"
+      rescue:
+        - command:
+            cmd: echo "falling back for this architecture"
