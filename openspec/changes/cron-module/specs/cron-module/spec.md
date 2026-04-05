@@ -12,7 +12,7 @@ The system SHALL register a `cron` module in the module registry, invokable via 
 - **THEN** the executor SHALL dispatch it to the cron module
 
 ### Requirement: Required and mutually-exclusive parameters
-The cron module SHALL enforce parameter rules: `name` is always required; `job` is required when `state=present` and `env=false`; `special_time` and time fields (`minute`/`hour`/`day`/`month`/`weekday`) are mutually exclusive; `user` and `cron_file` are mutually exclusive.
+The cron module SHALL enforce parameter rules: `name` is always required; `job` is required when `state=present` and `env=false`; `special_time` and time fields (`minute`/`hour`/`day`/`month`/`weekday`) are mutually exclusive. The `user` parameter has two compatible meanings based on context: when `cron_file` is unset it names whose crontab to edit via `crontab -u`; when `cron_file` is set it names the execution user written into the drop-in line.
 
 #### Scenario: Missing name
 - **WHEN** task omits `name`
@@ -26,9 +26,9 @@ The cron module SHALL enforce parameter rules: `name` is always required; `job` 
 - **WHEN** `special_time: daily` and `hour: 3` are both set
 - **THEN** the task SHALL fail with a validation error
 
-#### Scenario: Both user and cron_file
+#### Scenario: user with cron_file names the execution user
 - **WHEN** `user: alice` and `cron_file: /etc/cron.d/backup` are both set
-- **THEN** the task SHALL fail with a validation error
+- **THEN** validation SHALL pass and the written drop-in line SHALL use `alice` as the user field
 
 ### Requirement: Name validation
 The cron module SHALL validate that `name` is non-empty, contains no newlines, no `#` characters, no non-printable characters, and is at most 200 characters.
