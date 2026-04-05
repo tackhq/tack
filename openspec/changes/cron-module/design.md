@@ -27,10 +27,10 @@ The connector already supports `Execute`, `Upload`, `Download`, and sudo. No int
 
 ### Decision 1: Marker-based idempotency, not line-content hashing
 
-Each managed entry is preceded by a single-line marker comment: `# BOLT: <name>`. The module locates managed lines by scanning for the marker, then compares the following line (schedule + command) to the desired state. A mismatch triggers rewrite.
+Each managed entry is preceded by a single-line marker comment: `# TACK: <name>`. The module locates managed lines by scanning for the marker, then compares the following line (schedule + command) to the desired state. A mismatch triggers rewrite.
 
 **Alternatives considered:**
-- **Hash suffix in comment** (`# BOLT: name [hash]`): Cleaner conflict detection but surprises users who hand-edit the line. Rejected — humans need to be able to read and edit the managed line without breaking idempotency.
+- **Hash suffix in comment** (`# TACK: name [hash]`): Cleaner conflict detection but surprises users who hand-edit the line. Rejected — humans need to be able to read and edit the managed line without breaking idempotency.
 - **External state file on target**: Too much state. Rejected.
 
 **Rationale:** Matches Ansible's long-standing pattern; users already recognize it. The marker is the source of truth for "Tack manages this line."
@@ -55,13 +55,13 @@ Wait — this creates ambiguity. **Resolution:** When `cron_file` is set, `user`
 
 ### Decision 5: `disabled: true` comments the line, preserves marker
 
-Disabling prepends `#` to the schedule+command line while leaving the `# BOLT: <name>` marker in place. Re-enabling removes the leading `#`. This preserves idempotency and avoids destroying the entry.
+Disabling prepends `#` to the schedule+command line while leaving the `# TACK: <name>` marker in place. Re-enabling removes the leading `#`. This preserves idempotency and avoids destroying the entry.
 
 ### Decision 6: `env: true` manages environment lines
 
 When `env: true`, `job` must match `KEY=VALUE`. No schedule fields are required; validation rejects them. The module writes:
 ```
-# BOLT: <name>
+# TACK: <name>
 KEY=VALUE
 ```
 This supports setting `PATH=...`, `MAILTO=...`, etc. idempotently.

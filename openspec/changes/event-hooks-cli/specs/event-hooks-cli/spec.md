@@ -72,11 +72,15 @@ Each registered hook SHALL be executed as a subprocess via `/bin/sh -c "<cmd>"` 
 - **THEN** the subprocess env SHALL contain `TACK_RUN_ID`, `TACK_RUN_STATUS` (`success`/`failed`), and `TACK_PLAYBOOK` set to the playbook path
 
 ### Requirement: JSON payload on stdin
-The system SHALL write a JSON payload to each hook's stdin and close stdin after writing. The payload SHALL contain `schema_version` (integer, starting at 1), `run_id`, `status`, `playbook`, `started_at` (RFC3339), `ended_at` (RFC3339), `duration_ms`, `failed_task_count`, `changed_task_count`, `ok_task_count`, and `hosts` (array of per-host summaries including `name`, `status`, `ok_task_count`, `changed_task_count`, `failed_tasks`, `duration_ms`).
+The system SHALL write a JSON payload to each hook's stdin and close stdin after writing. The payload SHALL contain `schema_version` (integer, starting at 1), `tack_version` (string, the running tack binary version), `run_id`, `status`, `playbook`, `started_at` (RFC3339), `ended_at` (RFC3339), `duration_ms`, `failed_task_count`, `changed_task_count`, `ok_task_count`, and `hosts` (array of per-host summaries including `name`, `status`, `ok_task_count`, `changed_task_count`, `failed_tasks`, `duration_ms`).
 
 #### Scenario: Schema version present
 - **WHEN** any hook runs
 - **THEN** the JSON payload SHALL contain `"schema_version": 1`
+
+#### Scenario: Tack version present
+- **WHEN** any hook runs
+- **THEN** the JSON payload SHALL contain `"tack_version"` set to the running binary's version string
 
 #### Scenario: Run-level fields
 - **WHEN** a hook runs after a 2-host playbook

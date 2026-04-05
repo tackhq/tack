@@ -6,7 +6,7 @@ Scheduled jobs (backups, log rotation, health checks, periodic scripts) are a st
 
 - Add a `cron` module that manages individual cron entries idempotently on Linux targets.
 - Params: `name` (required, used as managed-comment marker), `job` (required when `state=present` and `env=false`), `minute`/`hour`/`day`/`month`/`weekday` (default `"*"`), `special_time` (shorthand: `reboot`/`yearly`/`annually`/`monthly`/`weekly`/`daily`/`hourly`; mutually exclusive with time fields), `user` (defaults to the connector's current user), `cron_file` (optional `/etc/cron.d/` drop-in path; mutually exclusive with `user`), `state` (`present`/`absent`, default `present`), `disabled` (bool — comment out the line without removing), `env` (bool — treat `job` as a `KEY=VALUE` environment line with no schedule).
-- Idempotency uses a managed comment marker `# BOLT: <name>` placed immediately above each managed line. The module finds, compares, updates, or removes lines by matching the marker.
+- Idempotency uses a managed comment marker `# TACK: <name>` placed immediately above each managed line. The module finds, compares, updates, or removes lines by matching the marker.
 - Supports both user crontabs (`crontab -l` / `crontab -` [`-u <user>`]) and system cron drop-in files in `/etc/cron.d/`.
 - Supports check mode (`--dry-run`) and `--diff` (emits a unified diff of the resulting crontab/drop-in contents).
 - Returns a clear error on macOS/BSD/Windows targets — Linux only in this iteration.

@@ -57,14 +57,14 @@ The cron module SHALL return an error when executed against a target whose `fact
 - **THEN** the module SHALL proceed normally
 
 ### Requirement: Managed-comment marker
-The cron module SHALL place a marker comment `# BOLT: <name>` on the line immediately preceding each managed entry. Managed entries SHALL be located on subsequent runs by scanning for this marker.
+The cron module SHALL place a marker comment `# TACK: <name>` on the line immediately preceding each managed entry. Managed entries SHALL be located on subsequent runs by scanning for this marker.
 
 #### Scenario: First-time creation writes marker
 - **WHEN** a new cron entry is added with `name: backup`
-- **THEN** the crontab SHALL contain `# BOLT: backup` followed by the schedule line
+- **THEN** the crontab SHALL contain `# TACK: backup` followed by the schedule line
 
 #### Scenario: Marker is used for identification
-- **WHEN** the module runs and finds `# BOLT: backup` in the crontab
+- **WHEN** the module runs and finds `# TACK: backup` in the crontab
 - **THEN** the module SHALL treat the next non-empty line as its managed entry
 
 ### Requirement: User crontab management
@@ -173,7 +173,7 @@ The cron module SHALL accept `special_time` values `reboot`, `yearly`, `annually
 - **THEN** the task SHALL fail with a validation error
 
 ### Requirement: Environment line mode
-When `env: true`, the cron module SHALL treat `job` as a `KEY=VALUE` environment line and SHALL reject configured time fields. The written managed block SHALL be `# BOLT: <name>\n<KEY=VALUE>`.
+When `env: true`, the cron module SHALL treat `job` as a `KEY=VALUE` environment line and SHALL reject configured time fields. The written managed block SHALL be `# TACK: <name>\n<KEY=VALUE>`.
 
 #### Scenario: Set PATH env line
 - **WHEN** `env: true`, `name: path`, `job: "PATH=/usr/local/bin:/usr/bin"`
