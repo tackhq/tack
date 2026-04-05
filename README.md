@@ -345,6 +345,7 @@ See [`examples/dynamic-inventory/`](examples/dynamic-inventory/) for complete sa
 | `command` | Execute shell commands |
 | `copy` | Copy files or write inline content |
 | `file` | Manage files, directories, and symlinks |
+| `git` | Check out git repositories idempotently by branch/tag/SHA |
 | `lineinfile` | Ensure a specific line is present or absent in a file |
 | `blockinfile` | Manage a block of text between marker lines in a file |
 | `systemd` | Manage systemd services (start, stop, enable, mask, daemon-reload) |

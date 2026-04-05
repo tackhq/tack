@@ -32,7 +32,7 @@ Feature roadmap based on team discussion covering PM, DevOps (senior/mid/junior)
 | [x] | `wait_for` module | Poll for conditions before proceeding | Params: type (port/path/command/url), host, port, path, cmd, url, timeout, interval, state (started/stopped). Replaces fragile shell loops |
 | [x] | `assert` module | Validate preconditions and fail fast | Params: that (list of conditions), fail_msg, success_msg. Catch misconfigurations early |
 | [x] | `cron` module | Manage scheduled jobs idempotently | Params: name, job, minute/hour/day/month/weekday, state, user. Managed comment markers in crontab |
-| [ ] | `git` module | Manage git repository checkouts on targets | Params: repo, dest, version/ref, force, depth, accept_hostkey. Idempotent: skip if already at desired ref |
+| [x] | `git` module | Manage git repository checkouts on targets | Params: repo, dest, version/ref, force, depth, accept_hostkey. Idempotent: skip if already at desired ref |
 | [ ] | Event hooks / callbacks | Pluggable notifications on run events | Hooks: on_task_start, on_task_fail, on_play_complete. Webhook support. Quick-win: `--on-failure "cmd"` CLI flag |
 
 ## P3 — Nice to Have

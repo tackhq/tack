@@ -12,6 +12,7 @@ Modules are the units of work in Tack. Each module performs a specific action li
 | [command](#command) | Execute shell commands |
 | [copy](#copy) | Copy files to targets |
 | [file](#file) | Manage files and directories |
+| [git](modules/git.md) | Check out git repositories idempotently by branch/tag/SHA |
 | [systemd](#systemd) | Manage systemd services |
 | [template](#template) | Render templates to targets |
 | [user](#user) | Manage system users on Linux |
