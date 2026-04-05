@@ -1,6 +1,6 @@
 # Example playbook: Deploy app with wait_for checks
 # Demonstrates all four wait_for condition types in a deployment workflow.
-# Run with: bolt run examples/playbooks/deploy-with-wait.yaml
+# Run with: tack run examples/playbooks/deploy-with-wait.yaml
 
 - name: Deploy application with health checks
   hosts: localhost

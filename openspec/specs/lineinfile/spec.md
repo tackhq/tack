@@ -101,6 +101,6 @@ The `lineinfile` module SHALL implement the `Checker` interface to support dry-r
 ### Requirement: Module self-description
 The `lineinfile` module SHALL implement the `Describer` interface, providing a description and parameter documentation for all supported parameters.
 
-#### Scenario: Module listed in bolt list-modules
-- **WHEN** a user runs `bolt list-modules`
+#### Scenario: Module listed in tack list-modules
+- **WHEN** a user runs `tack list-modules`
 - **THEN** the `lineinfile` module SHALL appear with its description and parameter list

@@ -7,7 +7,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/eugenetaranov/bolt/internal/connector"
+	"github.com/tackhq/tack/internal/connector"
 )
 
 // Result holds the outcome of a module execution.

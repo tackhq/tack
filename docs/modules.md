@@ -1,6 +1,6 @@
 # Modules Reference
 
-Modules are the units of work in Bolt. Each module performs a specific action like installing packages, managing files, or running commands.
+Modules are the units of work in Tack. Each module performs a specific action like installing packages, managing files, or running commands.
 
 ## Available Modules
 
@@ -843,7 +843,7 @@ result:
 
 ### Notes
 
-- Port and URL checks run from the **controller** (the machine running Bolt), not from the target. To check from the target's perspective, use `type: command` with tools like `nc` or `curl`.
+- Port and URL checks run from the **controller** (the machine running Tack), not from the target. To check from the target's perspective, use `type: command` with tools like `nc` or `curl`.
 - Path and command checks execute on the **target** via the connector.
 - The `state` parameter only applies to `port` and `path` types. Use `started` (default) to wait for the condition to be true, or `stopped` to wait for it to become false.
 - On timeout, the module returns an error with a descriptive message.

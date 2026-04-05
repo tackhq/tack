@@ -235,9 +235,9 @@ tasks:
     sudo: false
 ```
 
-Provide the sudo password via `--sudo-password` flag, `BOLT_SUDO_PASSWORD` env var, or the play-level `sudo_password` field.
+Provide the sudo password via `--sudo-password` flag, `TACK_SUDO_PASSWORD` env var, or the play-level `sudo_password` field.
 
-> **Note:** Bolt uses `sudo`, NOT `become`/`become_user` (those are Ansible-specific).
+> **Note:** Tack uses `sudo`, NOT `become`/`become_user` (those are Ansible-specific).
 
 ## Complete Example
 
@@ -307,4 +307,4 @@ handlers:
 4. **Use conditionals** - Make playbooks work across platforms
 5. **Group related tasks** - Keep playbooks organized
 6. **Use handlers** - For service restarts and similar actions
-7. **Validate first** - Run `bolt validate` before executing
+7. **Validate first** - Run `tack validate` before executing

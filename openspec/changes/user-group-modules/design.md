@@ -1,6 +1,6 @@
 ## Context
 
-Bolt modules follow a consistent pattern: a struct implementing `Module` (with `Name()` and `Run()`), auto-registered via `init()`, using the connector to execute OS commands on targets. Existing modules like `apt`, `brew`, and `systemd` demonstrate this pattern well.
+Tack modules follow a consistent pattern: a struct implementing `Module` (with `Name()` and `Run()`), auto-registered via `init()`, using the connector to execute OS commands on targets. Existing modules like `apt`, `brew`, and `systemd` demonstrate this pattern well.
 
 User and group management on Linux uses the standard `useradd`/`usermod`/`userdel` and `groupadd`/`groupmod`/`groupdel` commands. Current state can be queried by parsing `/etc/passwd` and `/etc/group` via the connector. macOS uses `dscl` for user/group management, but this design targets Linux first (macOS support is a non-goal for this iteration).
 
@@ -26,7 +26,7 @@ User and group management on Linux uses the standard `useradd`/`usermod`/`userde
 
 Parse `/etc/passwd` (for users) and `/etc/group` (for groups) to determine current state before making changes. This avoids relying on command exit codes for existence checks, which vary across distributions.
 
-**Alternative considered**: Using `getent passwd <name>` / `getent group <name>`. This would also work but parsing the output is equivalent to parsing `/etc/passwd` format. `getent` is slightly more correct when LDAP/NIS is in use, but Bolt targets local system accounts. We will use `getent` as it handles both local and networked sources.
+**Alternative considered**: Using `getent passwd <name>` / `getent group <name>`. This would also work but parsing the output is equivalent to parsing `/etc/passwd` format. `getent` is slightly more correct when LDAP/NIS is in use, but Tack targets local system accounts. We will use `getent` as it handles both local and networked sources.
 
 ### 2. Separate user and group modules
 
@@ -50,5 +50,5 @@ When `state: absent`, the `remove` parameter (default: false) controls whether t
 
 - **[Risk] Command availability**: `useradd`/`groupadd` may not exist on minimal container images. → Mitigation: Module returns a clear error if commands are not found, similar to how `apt` module checks for apt availability.
 - **[Risk] Password in process listing**: `useradd -p <hash>` exposes the hash in `ps` output briefly. → Mitigation: This is the standard approach (same as Ansible). The hash is not the plaintext password. For higher security, users can use `chpasswd` via a command task.
-- **[Risk] Concurrent modification**: If multiple Bolt runs modify users simultaneously, race conditions could occur. → Mitigation: Out of scope; Bolt does not provide distributed locking. Document as known limitation.
-- **[Trade-off] Linux-only**: No macOS support initially. This is acceptable because server provisioning (Bolt's primary use case) targets Linux almost exclusively.
+- **[Risk] Concurrent modification**: If multiple Tack runs modify users simultaneously, race conditions could occur. → Mitigation: Out of scope; Tack does not provide distributed locking. Document as known limitation.
+- **[Trade-off] Linux-only**: No macOS support initially. This is acceptable because server provisioning (Tack's primary use case) targets Linux almost exclusively.

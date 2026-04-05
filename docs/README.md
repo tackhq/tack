@@ -1,4 +1,4 @@
-# Bolt Documentation
+# Tack Documentation
 
 ## Guides
 

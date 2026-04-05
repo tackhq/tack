@@ -1,15 +1,15 @@
 ## Context
 
-Bolt's existing end-of-run path prints a summary (counts, failed hosts, duration). That data is already accumulated in the executor/output pipeline — the hooks feature needs to harvest the same state rather than re-deriving it.
+Tack's existing end-of-run path prints a summary (counts, failed hosts, duration). That data is already accumulated in the executor/output pipeline — the hooks feature needs to harvest the same state rather than re-deriving it.
 
-The design deliberately avoids in-process plugins and callback registries. Those require stability guarantees (plugin API, lifecycle semantics, versioning) that Bolt hasn't earned yet. A subprocess with stdin-JSON is the Unix-idiomatic, language-agnostic, low-commitment contract: users write Python, bash, Go, anything.
+The design deliberately avoids in-process plugins and callback registries. Those require stability guarantees (plugin API, lifecycle semantics, versioning) that Tack hasn't earned yet. A subprocess with stdin-JSON is the Unix-idiomatic, language-agnostic, low-commitment contract: users write Python, bash, Go, anything.
 
 ## Goals / Non-Goals
 
 **Goals:**
 - Zero playbook changes — hooks configured entirely at invocation time (CLI/env).
 - Simple contract: JSON on stdin, exit code 0/non-zero, timeout-bounded.
-- Doesn't affect bolt's exit code — hooks are observability, not policy.
+- Doesn't affect tack's exit code — hooks are observability, not policy.
 - Works in CI pipelines (no interactive terminals required).
 - Repeatable flags for multiple destinations (e.g., Slack + metrics + audit).
 
@@ -42,7 +42,7 @@ Order at end of run:
 1. Executor finishes all plays.
 2. Output/summary is flushed to stdout/stderr.
 3. Hooks run sequentially.
-4. Bolt exits with the playbook's exit code.
+4. Tack exits with the playbook's exit code.
 
 This ensures users see the normal summary before any hook side-effect delays (e.g., a 30s webhook timeout).
 
@@ -58,18 +58,18 @@ On timeout: send SIGTERM, wait 2 seconds, then SIGKILL. Record timeout as a warn
 
 Stdout + stderr are captured (combined) into a buffer, truncated at 64KB per hook. On non-verbose runs, only printed if the hook exits non-zero (as a warning). On `-v`/`-vv`, always printed. Truncation emits `... [truncated, exceeded 64KB]` suffix.
 
-### Decision 7: Hook failures never change bolt's exit code
+### Decision 7: Hook failures never change tack's exit code
 
 If a hook exits non-zero or times out:
-- Print warning `bolt: hook "<cmd>" failed: <reason>` to stderr.
+- Print warning `tack: hook "<cmd>" failed: <reason>` to stderr.
 - Continue to next hook.
-- Bolt exits with the run's original exit code.
+- Tack exits with the run's original exit code.
 
 Rationale: hooks are observability; making them affect exit codes creates a footgun where a broken notification breaks the pipeline.
 
 ### Decision 8: Flag/env precedence
 
-If both `--on-failure` flag(s) AND `BOLT_ON_FAILURE` env var are set → **flags take precedence** (env ignored). If only env is set → split on comma to allow multiple commands. Commas inside commands must be escaped via `\,` in env form. Document the env form as less expressive than repeated flags.
+If both `--on-failure` flag(s) AND `TACK_ON_FAILURE` env var are set → **flags take precedence** (env ignored). If only env is set → split on comma to allow multiple commands. Commas inside commands must be escaped via `\,` in env form. Document the env form as less expressive than repeated flags.
 
 ### Decision 9: Payload shape
 
@@ -98,7 +98,7 @@ If both `--on-failure` flag(s) AND `BOLT_ON_FAILURE` env var are set → **flags
 }
 ```
 
-`run_id` is a freshly generated UUIDv4 per bolt invocation.
+`run_id` is a freshly generated UUIDv4 per tack invocation.
 
 ### Decision 10: `status` semantics
 
@@ -110,17 +110,17 @@ Write payload → close stdin. Hooks that don't read stdin still work (their std
 
 ### Decision 12: Env passed to hook
 
-Hook inherits bolt's process env PLUS:
-- `BOLT_RUN_ID` — run_id
-- `BOLT_RUN_STATUS` — `success`/`failed`
-- `BOLT_PLAYBOOK` — playbook path
+Hook inherits tack's process env PLUS:
+- `TACK_RUN_ID` — run_id
+- `TACK_RUN_STATUS` — `success`/`failed`
+- `TACK_PLAYBOOK` — playbook path
 
-This lets trivial hooks avoid JSON parsing: `slack-notify "Run $BOLT_RUN_ID status: $BOLT_RUN_STATUS"`.
+This lets trivial hooks avoid JSON parsing: `slack-notify "Run $TACK_RUN_ID status: $TACK_RUN_STATUS"`.
 
 ## Risks / Trade-offs
 
 - **[Risk]** Users expect hooks to run on targets → **Mitigation:** Document clearly as control-host-only. Add a note in hook warnings when invoked.
-- **[Risk]** Long-running hooks delay bolt exit → **Mitigation:** Default 30s timeout + configurable. Document that CI timeouts need to account for hook time.
+- **[Risk]** Long-running hooks delay tack exit → **Mitigation:** Default 30s timeout + configurable. Document that CI timeouts need to account for hook time.
 - **[Risk]** Secret leakage: hook payload might include sensitive task output → **Mitigation:** `failed_tasks[].msg` SHALL respect `no_log:` / vault redaction already applied by the output layer. Tests verify.
 - **[Trade-off]** `sh -c` means injection via variable expansion is possible — but the user is supplying the command, so trust model is "user's own shell". Documented.
 - **[Trade-off]** No retry/backoff means flaky webhook notifications get lost → **Mitigation:** Recommend users wrap with `curl --retry` or similar.

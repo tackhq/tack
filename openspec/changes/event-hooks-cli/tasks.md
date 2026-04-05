@@ -21,21 +21,21 @@
 
 ## 4. CLI Flags & Env Resolution
 
-- [ ] 4.1 Add `--on-failure`, `--on-success`, `--on-complete` as repeatable string slice flags on the run command in `cmd/bolt/main.go`
+- [ ] 4.1 Add `--on-failure`, `--on-success`, `--on-complete` as repeatable string slice flags on the run command in `cmd/tack/main.go`
 - [ ] 4.2 Add `--hook-timeout` flag (time.Duration, default 30s)
-- [ ] 4.3 Implement env-var resolution in a helper: read `BOLT_ON_FAILURE` etc, split on unescaped commas, respect flag-precedence rules
+- [ ] 4.3 Implement env-var resolution in a helper: read `TACK_ON_FAILURE` etc, split on unescaped commas, respect flag-precedence rules
 - [ ] 4.4 Implement backslash-comma unescaping for env var values
-- [ ] 4.5 Parse and validate `BOLT_HOOK_TIMEOUT` as a duration; surface clear error on bad value
+- [ ] 4.5 Parse and validate `TACK_HOOK_TIMEOUT` as a duration; surface clear error on bad value
 
 ## 5. Runner
 
 - [ ] 5.1 Implement `Runner.Run(ctx, payload *Payload)` — sequentially runs matched hooks based on payload.status, then on_complete
 - [ ] 5.2 For each hook: spawn `/bin/sh -c <cmd>` with `exec.CommandContext`, pass payload JSON on stdin, close stdin after write
-- [ ] 5.3 Set hook env: inherit process env + add `BOLT_RUN_ID`, `BOLT_RUN_STATUS`, `BOLT_PLAYBOOK`
+- [ ] 5.3 Set hook env: inherit process env + add `TACK_RUN_ID`, `TACK_RUN_STATUS`, `TACK_PLAYBOOK`
 - [ ] 5.4 Capture combined stdout+stderr to a 64KB-bounded buffer with truncation suffix
 - [ ] 5.5 Enforce timeout via ctx with `WithTimeout`; on cancel, send SIGTERM, wait 2s, then SIGKILL
 - [ ] 5.6 Emit warning to stderr on hook failure/timeout (includes cmd + reason); show output when verbose OR when hook failed
-- [ ] 5.7 Never propagate hook errors to bolt's exit code — Runner.Run returns nil even on hook failures
+- [ ] 5.7 Never propagate hook errors to tack's exit code — Runner.Run returns nil even on hook failures
 
 ## 6. UUID & Run Identity
 
@@ -44,9 +44,9 @@
 
 ## 7. Wiring
 
-- [ ] 7.1 In `cmd/bolt/main.go` run command: after executor returns, build payload from summary, then call `hooks.Runner.Run`
+- [ ] 7.1 In `cmd/tack/main.go` run command: after executor returns, build payload from summary, then call `hooks.Runner.Run`
 - [ ] 7.2 Ensure summary output is flushed BEFORE hook runner starts
-- [ ] 7.3 Propagate run_id into bolt log output so users can correlate runs with hook payloads
+- [ ] 7.3 Propagate run_id into tack log output so users can correlate runs with hook payloads
 
 ## 8. Tests
 
@@ -54,10 +54,10 @@
 - [ ] 8.2 Unit test CLI flag+env precedence (flag wins, env-only, comma splitting, backslash-comma escape)
 - [ ] 8.3 Unit test timeout behavior with a sleep 5 command and a 100ms timeout
 - [ ] 8.4 Unit test output truncation at 64KB boundary
-- [ ] 8.5 Unit test env-var injection: hook script writes `$BOLT_RUN_ID` to a file; test verifies
-- [ ] 8.6 Unit test hook failure does not change bolt exit code
+- [ ] 8.5 Unit test env-var injection: hook script writes `$TACK_RUN_ID` to a file; test verifies
+- [ ] 8.6 Unit test hook failure does not change tack exit code
 - [ ] 8.7 Unit test redaction: no_log task message is redacted in payload
-- [ ] 8.8 Integration test: tiny bash script captures stdin to a tmp file, bolt invokes it via `--on-complete`, test parses the JSON and verifies schema_version + fields
+- [ ] 8.8 Integration test: tiny bash script captures stdin to a tmp file, tack invokes it via `--on-complete`, test parses the JSON and verifies schema_version + fields
 - [ ] 8.9 Integration test: multiple `--on-failure` flags run in registration order
 - [ ] 8.10 `go test -race ./...` passes
 
@@ -72,5 +72,5 @@
 ## 10. Release
 
 - [ ] 10.1 Run `make lint` and `make test`
-- [ ] 10.2 Manual smoke: invoke a failing playbook with `--on-failure "cat > /tmp/bolt-payload.json"` and verify payload
+- [ ] 10.2 Manual smoke: invoke a failing playbook with `--on-failure "cat > /tmp/tack-payload.json"` and verify payload
 - [ ] 10.3 Manual smoke: verify timeout kills a `sleep 60` hook with `--hook-timeout 1s`

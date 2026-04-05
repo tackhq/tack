@@ -1,6 +1,6 @@
 ## Why
 
-Bolt currently has no way to manage system users and groups. These are fundamental primitives for server provisioning -- nearly every playbook that sets up a system needs to create service accounts, manage group memberships, or ensure specific users exist. Without user/group modules, users must fall back to raw `command` tasks, losing idempotency guarantees and cross-platform portability.
+Tack currently has no way to manage system users and groups. These are fundamental primitives for server provisioning -- nearly every playbook that sets up a system needs to create service accounts, manage group memberships, or ensure specific users exist. Without user/group modules, users must fall back to raw `command` tasks, losing idempotency guarantees and cross-platform portability.
 
 ## What Changes
 

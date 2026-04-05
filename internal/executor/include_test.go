@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/eugenetaranov/bolt/internal/output"
-	"github.com/eugenetaranov/bolt/internal/playbook"
+	"github.com/tackhq/tack/internal/output"
+	"github.com/tackhq/tack/internal/playbook"
 )
 
 func TestResolveIncludePath(t *testing.T) {
@@ -22,9 +22,9 @@ func TestResolveIncludePath(t *testing.T) {
 	}{
 		{
 			name:        "absolute path unchanged",
-			includePath: "/etc/bolt/tasks.yml",
+			includePath: "/etc/tack/tasks.yml",
 			playbookDir: "/opt/playbooks",
-			want:        "/etc/bolt/tasks.yml",
+			want:        "/etc/tack/tasks.yml",
 		},
 		{
 			name:        "relative to playbook dir",

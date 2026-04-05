@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/eugenetaranov/bolt/internal/connector"
-	"github.com/eugenetaranov/bolt/internal/module"
+	"github.com/tackhq/tack/internal/connector"
+	"github.com/tackhq/tack/internal/module"
 )
 
 func init() {

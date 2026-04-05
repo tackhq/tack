@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/eugenetaranov/bolt/internal/playbook"
+	"github.com/tackhq/tack/internal/playbook"
 	"github.com/pmezard/go-difflib/difflib"
 )
 

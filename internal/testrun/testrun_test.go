@@ -31,7 +31,7 @@ func TestIsPlaybook(t *testing.T) {
 
 func TestIsPlaybookExistingFile(t *testing.T) {
 	// A file without .yaml/.yml extension that exists should be treated as a playbook
-	f, err := os.CreateTemp("", "bolt-test-playbook")
+	f, err := os.CreateTemp("", "tack-test-playbook")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,13 +48,13 @@ func TestStableContainerName(t *testing.T) {
 		target string
 		want   string
 	}{
-		{"webserver", "bolt-test-webserver"},
-		{"setup.yaml", "bolt-test-setup"},
-		{"deploy.yml", "bolt-test-deploy"},
-		{"/Users/e/projects/bolt/roles/webserver", "bolt-test-webserver"},
-		{"my role", "bolt-test-my-role"},
-		{"my@role!name", "bolt-test-my-role-name"},
-		{"Role_v1.2", "bolt-test-Role_v1.2"},
+		{"webserver", "tack-test-webserver"},
+		{"setup.yaml", "tack-test-setup"},
+		{"deploy.yml", "tack-test-deploy"},
+		{"/Users/e/projects/tack/roles/webserver", "tack-test-webserver"},
+		{"my role", "tack-test-my-role"},
+		{"my@role!name", "tack-test-my-role-name"},
+		{"Role_v1.2", "tack-test-Role_v1.2"},
 	}
 
 	for _, tt := range tests {
@@ -77,13 +77,13 @@ func TestStableContainerNameDeterministic(t *testing.T) {
 
 func TestStableContainerNamePrefix(t *testing.T) {
 	name := stableContainerName("anything")
-	if !strings.HasPrefix(name, "bolt-test-") {
-		t.Errorf("container name %q should have prefix bolt-test-", name)
+	if !strings.HasPrefix(name, "tack-test-") {
+		t.Errorf("container name %q should have prefix tack-test-", name)
 	}
 }
 
 func TestGenerateTempPlaybook(t *testing.T) {
-	path, cleanup, err := generateTempPlaybook("bolt-test-abc12345", "myrole")
+	path, cleanup, err := generateTempPlaybook("tack-test-abc12345", "myrole")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +99,7 @@ func TestGenerateTempPlaybook(t *testing.T) {
 	if !strings.Contains(content, "myrole") {
 		t.Error("temp playbook should reference the role name")
 	}
-	if !strings.Contains(content, "bolt-test-abc12345") {
+	if !strings.Contains(content, "tack-test-abc12345") {
 		t.Error("temp playbook should reference the container name")
 	}
 	if !strings.Contains(content, "connection: docker") {
@@ -116,7 +116,7 @@ func TestGenerateTempPlaybook(t *testing.T) {
 }
 
 func TestGenerateTempPlaybookCleanup(t *testing.T) {
-	path, cleanup, err := generateTempPlaybook("bolt-test-abc12345", "myrole")
+	path, cleanup, err := generateTempPlaybook("tack-test-abc12345", "myrole")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -5,7 +5,7 @@
   tasks:
     - name: Say hello
       command:
-        cmd: echo "Hello from Bolt over SSH!"
+        cmd: echo "Hello from Tack over SSH!"
 
     - name: Show hostname
       command:
@@ -17,9 +17,9 @@
 
     - name: Create a test file
       copy:
-        dest: /tmp/bolt-was-here.txt
-        content: "Bolt successfully reached this host via SSH!"
+        dest: /tmp/tack-was-here.txt
+        content: "Tack successfully reached this host via SSH!"
 
     - name: Verify test file
       command:
-        cmd: cat /tmp/bolt-was-here.txt
+        cmd: cat /tmp/tack-was-here.txt

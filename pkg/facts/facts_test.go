@@ -9,7 +9,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
-	"github.com/eugenetaranov/bolt/internal/connector"
+	"github.com/tackhq/tack/internal/connector"
 )
 
 // mockConnector returns canned stdout for Execute calls.
@@ -29,23 +29,23 @@ func (m *mockConnector) Execute(_ context.Context, _ string) (*connector.Result,
 
 func TestGather_Linux(t *testing.T) {
 	output := strings.Join([]string{
-		"BOLT_FACT os_type=Linux",
-		"BOLT_FACT architecture=x86_64",
-		"BOLT_FACT kernel=5.15.0-1020-aws",
-		"BOLT_FACT hostname=web1",
-		"BOLT_FACT user=ubuntu",
-		"BOLT_FACT home=/home/ubuntu",
-		"BOLT_FACT os_release_start",
+		"TACK_FACT os_type=Linux",
+		"TACK_FACT architecture=x86_64",
+		"TACK_FACT kernel=5.15.0-1020-aws",
+		"TACK_FACT hostname=web1",
+		"TACK_FACT user=ubuntu",
+		"TACK_FACT home=/home/ubuntu",
+		"TACK_FACT os_release_start",
 		`ID=ubuntu`,
 		`VERSION_ID="22.04"`,
 		`PRETTY_NAME="Ubuntu 22.04 LTS"`,
-		"BOLT_FACT os_release_end",
-		"BOLT_FACT env_PATH=/usr/local/bin:/usr/bin",
-		"BOLT_FACT env_SHELL=/bin/bash",
-		"BOLT_FACT default_interface=eth0",
-		"BOLT_FACT default_ipv4=10.0.0.5",
-		"BOLT_FACT all_ipv4=10.0.0.5,172.17.0.1",
-		"BOLT_FACT all_ipv6=2001:db8::1",
+		"TACK_FACT os_release_end",
+		"TACK_FACT env_PATH=/usr/local/bin:/usr/bin",
+		"TACK_FACT env_SHELL=/bin/bash",
+		"TACK_FACT default_interface=eth0",
+		"TACK_FACT default_ipv4=10.0.0.5",
+		"TACK_FACT all_ipv4=10.0.0.5,172.17.0.1",
+		"TACK_FACT all_ipv6=2001:db8::1",
 	}, "\n")
 
 	conn := &mockConnector{stdout: output}
@@ -113,15 +113,15 @@ func TestGather_Linux(t *testing.T) {
 
 func TestGather_Darwin(t *testing.T) {
 	output := strings.Join([]string{
-		"BOLT_FACT os_type=Darwin",
-		"BOLT_FACT architecture=arm64",
-		"BOLT_FACT kernel=24.1.0",
-		"BOLT_FACT hostname=macbook",
-		"BOLT_FACT user=dev",
-		"BOLT_FACT home=/Users/dev",
-		"BOLT_FACT os_version=15.1",
-		"BOLT_FACT os_name=macOS",
-		"BOLT_FACT env_SHELL=/bin/zsh",
+		"TACK_FACT os_type=Darwin",
+		"TACK_FACT architecture=arm64",
+		"TACK_FACT kernel=24.1.0",
+		"TACK_FACT hostname=macbook",
+		"TACK_FACT user=dev",
+		"TACK_FACT home=/Users/dev",
+		"TACK_FACT os_version=15.1",
+		"TACK_FACT os_name=macOS",
+		"TACK_FACT env_SHELL=/bin/zsh",
 	}, "\n")
 
 	conn := &mockConnector{stdout: output}
@@ -149,17 +149,17 @@ func TestGather_Darwin(t *testing.T) {
 
 func TestGather_RedHat(t *testing.T) {
 	output := strings.Join([]string{
-		"BOLT_FACT os_type=Linux",
-		"BOLT_FACT architecture=x86_64",
-		"BOLT_FACT kernel=5.14.0",
-		"BOLT_FACT hostname=rhel-host",
-		"BOLT_FACT user=ec2-user",
-		"BOLT_FACT home=/home/ec2-user",
-		"BOLT_FACT os_release_start",
+		"TACK_FACT os_type=Linux",
+		"TACK_FACT architecture=x86_64",
+		"TACK_FACT kernel=5.14.0",
+		"TACK_FACT hostname=rhel-host",
+		"TACK_FACT user=ec2-user",
+		"TACK_FACT home=/home/ec2-user",
+		"TACK_FACT os_release_start",
 		`ID="rhel"`,
 		`VERSION_ID="9.2"`,
 		`PRETTY_NAME="Red Hat Enterprise Linux 9.2"`,
-		"BOLT_FACT os_release_end",
+		"TACK_FACT os_release_end",
 	}, "\n")
 
 	conn := &mockConnector{stdout: output}
@@ -181,17 +181,17 @@ func TestGather_RedHat(t *testing.T) {
 
 func TestGather_Alpine(t *testing.T) {
 	output := strings.Join([]string{
-		"BOLT_FACT os_type=Linux",
-		"BOLT_FACT architecture=aarch64",
-		"BOLT_FACT kernel=6.1.0",
-		"BOLT_FACT hostname=alpine-box",
-		"BOLT_FACT user=root",
-		"BOLT_FACT home=/root",
-		"BOLT_FACT os_release_start",
+		"TACK_FACT os_type=Linux",
+		"TACK_FACT architecture=aarch64",
+		"TACK_FACT kernel=6.1.0",
+		"TACK_FACT hostname=alpine-box",
+		"TACK_FACT user=root",
+		"TACK_FACT home=/root",
+		"TACK_FACT os_release_start",
 		`ID=alpine`,
 		`VERSION_ID=3.19.0`,
 		`PRETTY_NAME="Alpine Linux v3.19"`,
-		"BOLT_FACT os_release_end",
+		"TACK_FACT os_release_end",
 	}, "\n")
 
 	conn := &mockConnector{stdout: output}
@@ -213,7 +213,7 @@ func TestGather_Alpine(t *testing.T) {
 
 func TestGather_MinimalOutput(t *testing.T) {
 	// Simulate a minimal system that only returns os_type and architecture
-	output := "BOLT_FACT os_type=Linux\nBOLT_FACT architecture=armv7l\n"
+	output := "TACK_FACT os_type=Linux\nTACK_FACT architecture=armv7l\n"
 
 	conn := &mockConnector{stdout: output}
 	facts, err := Gather(context.Background(), conn)
@@ -279,7 +279,7 @@ NAME="Ubuntu"
 }
 
 func TestGather_EmptyEnvSkipped(t *testing.T) {
-	output := "BOLT_FACT os_type=Linux\nBOLT_FACT env_PATH=/usr/bin\nBOLT_FACT env_EMPTY=\n"
+	output := "TACK_FACT os_type=Linux\nTACK_FACT env_PATH=/usr/bin\nTACK_FACT env_EMPTY=\n"
 
 	conn := &mockConnector{stdout: output}
 	facts, err := Gather(context.Background(), conn)
@@ -308,21 +308,21 @@ func TestGather_EC2WithIMDSTags(t *testing.T) {
 	}
 
 	output := strings.Join([]string{
-		"BOLT_FACT os_type=Linux",
-		"BOLT_FACT architecture=x86_64",
-		"BOLT_FACT hostname=web1",
-		"BOLT_FACT user=ec2-user",
-		"BOLT_FACT home=/home/ec2-user",
-		"BOLT_FACT ec2_instance_id=i-0abc123def456",
-		"BOLT_FACT ec2_region=us-east-1",
-		"BOLT_FACT ec2_az=us-east-1a",
-		"BOLT_FACT ec2_instance_type=t3.medium",
-		"BOLT_FACT ec2_ami_id=ami-0abcdef1234567890",
-		"BOLT_FACT ec2_tags_start",
+		"TACK_FACT os_type=Linux",
+		"TACK_FACT architecture=x86_64",
+		"TACK_FACT hostname=web1",
+		"TACK_FACT user=ec2-user",
+		"TACK_FACT home=/home/ec2-user",
+		"TACK_FACT ec2_instance_id=i-0abc123def456",
+		"TACK_FACT ec2_region=us-east-1",
+		"TACK_FACT ec2_az=us-east-1a",
+		"TACK_FACT ec2_instance_type=t3.medium",
+		"TACK_FACT ec2_ami_id=ami-0abcdef1234567890",
+		"TACK_FACT ec2_tags_start",
 		"Name=web-1",
 		"Env=prod",
 		"Role=frontend",
-		"BOLT_FACT ec2_tags_end",
+		"TACK_FACT ec2_tags_end",
 	}, "\n")
 
 	conn := &mockConnector{stdout: output}
@@ -381,9 +381,9 @@ func TestGather_EC2WithAPIFallback(t *testing.T) {
 	}
 
 	output := strings.Join([]string{
-		"BOLT_FACT os_type=Linux",
-		"BOLT_FACT ec2_instance_id=i-fallback123",
-		"BOLT_FACT ec2_region=us-west-2",
+		"TACK_FACT os_type=Linux",
+		"TACK_FACT ec2_instance_id=i-fallback123",
+		"TACK_FACT ec2_region=us-west-2",
 	}, "\n")
 
 	conn := &mockConnector{stdout: output}
@@ -406,7 +406,7 @@ func TestGather_EC2WithAPIFallback(t *testing.T) {
 
 func TestGather_NonEC2(t *testing.T) {
 	// No EC2 facts in output — should not set ec2_tags
-	output := "BOLT_FACT os_type=Linux\nBOLT_FACT hostname=dev-laptop\n"
+	output := "TACK_FACT os_type=Linux\nTACK_FACT hostname=dev-laptop\n"
 
 	conn := &mockConnector{stdout: output}
 	facts, err := Gather(context.Background(), conn)

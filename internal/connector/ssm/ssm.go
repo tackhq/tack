@@ -18,7 +18,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	ssmtypes "github.com/aws/aws-sdk-go-v2/service/ssm/types"
 
-	"github.com/eugenetaranov/bolt/internal/connector"
+	"github.com/tackhq/tack/internal/connector"
 )
 
 // Default settings.
@@ -26,7 +26,7 @@ const (
 	defaultTimeout  = 10 * time.Minute
 	pollInterval    = 2 * time.Second
 	maxBase64Bytes  = 24 * 1024 // 24 KB limit for base64 inline transfer
-	s3KeyPrefix     = "bolt-transfer/"
+	s3KeyPrefix     = "tack-transfer/"
 )
 
 // ssmAPI is the subset of the SSM client used by the connector.

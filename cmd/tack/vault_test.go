@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/eugenetaranov/bolt/internal/vault"
+	"github.com/tackhq/tack/internal/vault"
 	"github.com/spf13/cobra"
 )
 
@@ -46,9 +46,9 @@ func makeChildCmd(t *testing.T, flags map[string]string) *cobra.Command {
 	return child
 }
 
-// TestResolveVaultPassword_EnvVar tests that BOLT_VAULT_PASSWORD env var takes precedence.
+// TestResolveVaultPassword_EnvVar tests that TACK_VAULT_PASSWORD env var takes precedence.
 func TestResolveVaultPassword_EnvVar(t *testing.T) {
-	t.Setenv("BOLT_VAULT_PASSWORD", "env-secret")
+	t.Setenv("TACK_VAULT_PASSWORD", "env-secret")
 	cmd := makeChildCmd(t, nil)
 	got, err := resolveVaultPassword(cmd, false)
 	if err != nil {
@@ -107,13 +107,13 @@ func TestAtomicWrite_CleansUpOnFailure(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error writing to nonexistent dir")
 	}
-	// Verify no .bolt-vault-*.tmp files were left in /tmp or current dir
+	// Verify no .tack-vault-*.tmp files were left in /tmp or current dir
 	// (We can't check /nonexistent-dir since it doesn't exist, but we verify
 	// the function returned an error indicating cleanup occurred)
 	tmpDir := os.TempDir()
 	entries, _ := os.ReadDir(tmpDir)
 	for _, e := range entries {
-		if strings.HasPrefix(e.Name(), ".bolt-vault-") && strings.HasSuffix(e.Name(), ".tmp") {
+		if strings.HasPrefix(e.Name(), ".tack-vault-") && strings.HasSuffix(e.Name(), ".tmp") {
 			t.Errorf("temp file left behind: %s", filepath.Join(tmpDir, e.Name()))
 		}
 	}
@@ -121,7 +121,7 @@ func TestAtomicWrite_CleansUpOnFailure(t *testing.T) {
 
 // TestRunVaultInit_FileExists tests that runVaultInit refuses when target file exists.
 func TestRunVaultInit_FileExists(t *testing.T) {
-	t.Setenv("BOLT_VAULT_PASSWORD", "test-password")
+	t.Setenv("TACK_VAULT_PASSWORD", "test-password")
 	tmp := t.TempDir()
 	target := filepath.Join(tmp, "secrets.vault")
 	// Create file so it exists
@@ -144,7 +144,7 @@ func TestRunVaultInit_FileExists(t *testing.T) {
 
 // TestRunVaultEdit_NoOpDetection tests that unchanged content skips re-encryption.
 func TestRunVaultEdit_NoOpDetection(t *testing.T) {
-	t.Setenv("BOLT_VAULT_PASSWORD", "test-password")
+	t.Setenv("TACK_VAULT_PASSWORD", "test-password")
 	// Use 'cat' as EDITOR: cat reads the file to stdout, does NOT modify the temp file
 	// so the content remains unchanged.
 	t.Setenv("EDITOR", "cat")
@@ -198,7 +198,7 @@ func TestRunVaultEdit_NoOpDetection(t *testing.T) {
 
 // TestRunVaultEdit_ContentChanged tests that changed content is re-encrypted correctly.
 func TestRunVaultEdit_ContentChanged(t *testing.T) {
-	t.Setenv("BOLT_VAULT_PASSWORD", "test-password")
+	t.Setenv("TACK_VAULT_PASSWORD", "test-password")
 	// Use a shell one-liner as EDITOR that writes new content to the file path
 	t.Setenv("EDITOR", "sh")
 

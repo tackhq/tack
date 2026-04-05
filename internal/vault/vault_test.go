@@ -20,7 +20,7 @@ func TestEncrypt_HeaderFormat(t *testing.T) {
 	lines := strings.Split(strings.TrimRight(string(out), "\n"), "\n")
 	require.Equal(t, 2, len(lines), "vault file must have exactly 2 lines")
 
-	expectedHeader := "$BOLT_VAULT;1.0;AES256-GCM;t=3,m=65536,p=4"
+	expectedHeader := "$TACK_VAULT;1.0;AES256-GCM;t=3,m=65536,p=4"
 	assert.Equal(t, expectedHeader, lines[0], "header line must match exactly")
 }
 
@@ -70,7 +70,7 @@ func TestDecrypt_WrongPassword(t *testing.T) {
 
 func TestDecrypt_TruncatedCiphertext(t *testing.T) {
 	// Construct a vault with truncated base64 blob
-	header := "$BOLT_VAULT;1.0;AES256-GCM;t=3,m=65536,p=4\n"
+	header := "$TACK_VAULT;1.0;AES256-GCM;t=3,m=65536,p=4\n"
 	// Too-short blob: less than saltSize+nonceSize
 	tooShort := make([]byte, 5)
 	blob := base64.StdEncoding.EncodeToString(tooShort)
@@ -82,7 +82,7 @@ func TestDecrypt_TruncatedCiphertext(t *testing.T) {
 }
 
 func TestDecrypt_UnsupportedVersionHeader(t *testing.T) {
-	vaultData := []byte("$BOLT_VAULT;2.0;AES256-GCM;t=3,m=65536,p=4\nYWJj\n")
+	vaultData := []byte("$TACK_VAULT;2.0;AES256-GCM;t=3,m=65536,p=4\nYWJj\n")
 
 	_, err := Decrypt(vaultData, []byte("password"))
 	require.Error(t, err)
@@ -91,7 +91,7 @@ func TestDecrypt_UnsupportedVersionHeader(t *testing.T) {
 
 func TestDecrypt_MalformedHeaderMissingKDFParams(t *testing.T) {
 	// Valid magic but no KDF params
-	vaultData := []byte("$BOLT_VAULT;1.0;AES256-GCM\nYWJj\n")
+	vaultData := []byte("$TACK_VAULT;1.0;AES256-GCM\nYWJj\n")
 
 	_, err := Decrypt(vaultData, []byte("password"))
 	require.Error(t, err)

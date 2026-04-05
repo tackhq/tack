@@ -9,9 +9,9 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/eugenetaranov/bolt/internal/connector"
-	"github.com/eugenetaranov/bolt/internal/module"
-	"github.com/eugenetaranov/bolt/pkg/ssmparams"
+	"github.com/tackhq/tack/internal/connector"
+	"github.com/tackhq/tack/internal/module"
+	"github.com/tackhq/tack/pkg/ssmparams"
 )
 
 func init() {

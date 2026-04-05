@@ -7,7 +7,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/eugenetaranov/bolt/internal/module"
+	"github.com/tackhq/tack/internal/module"
 )
 
 // asBool converts a YAML value to a bool, handling both native booleans

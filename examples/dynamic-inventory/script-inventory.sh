@@ -1,9 +1,9 @@
 #!/bin/sh
 # Example: Script-based dynamic inventory
-# Make executable and pass as: bolt run playbook.yaml -i ./script-inventory.sh
+# Make executable and pass as: tack run playbook.yaml -i ./script-inventory.sh
 #
 # The script receives --list as its argument and should output JSON or YAML
-# in Bolt's inventory format.
+# in Tack's inventory format.
 
 cat <<'EOF'
 {

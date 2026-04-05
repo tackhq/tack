@@ -29,7 +29,7 @@ func parseS3Source(ref string) (*S3Source, error) {
 }
 
 func (s *S3Source) Fetch(ctx context.Context) (string, func(), error) {
-	tmpDir, err := os.MkdirTemp("", "bolt-s3-*")
+	tmpDir, err := os.MkdirTemp("", "tack-s3-*")
 	if err != nil {
 		return "", nil, fmt.Errorf("creating temp dir: %w", err)
 	}

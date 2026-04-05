@@ -6,7 +6,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/eugenetaranov/bolt/internal/connector"
+	"github.com/tackhq/tack/internal/connector"
 )
 
 // factsScript is a single shell script that gathers all system facts in one
@@ -16,73 +16,73 @@ import (
 // round-trip takes several seconds.
 const factsScript = `
 exec 2>/dev/null
-echo "BOLT_FACT os_type=$(uname -s)"
-echo "BOLT_FACT architecture=$(uname -m)"
-echo "BOLT_FACT kernel=$(uname -r)"
-echo "BOLT_FACT hostname=$(hostname)"
-echo "BOLT_FACT user=$(whoami)"
-echo "BOLT_FACT home=$HOME"
+echo "TACK_FACT os_type=$(uname -s)"
+echo "TACK_FACT architecture=$(uname -m)"
+echo "TACK_FACT kernel=$(uname -r)"
+echo "TACK_FACT hostname=$(hostname)"
+echo "TACK_FACT user=$(whoami)"
+echo "TACK_FACT home=$HOME"
 if [ "$(uname -s)" = "Darwin" ]; then
-  echo "BOLT_FACT os_version=$(sw_vers -productVersion)"
-  echo "BOLT_FACT os_name=$(sw_vers -productName)"
+  echo "TACK_FACT os_version=$(sw_vers -productVersion)"
+  echo "TACK_FACT os_name=$(sw_vers -productName)"
 fi
 if [ -f /etc/os-release ]; then
-  echo "BOLT_FACT os_release_start"
+  echo "TACK_FACT os_release_start"
   cat /etc/os-release
-  echo "BOLT_FACT os_release_end"
+  echo "TACK_FACT os_release_end"
 fi
 for v in PATH SHELL LANG LC_ALL TERM EDITOR; do
   eval val=\$$v
   if [ -n "$val" ]; then
-    echo "BOLT_FACT env_${v}=${val}"
+    echo "TACK_FACT env_${v}=${val}"
   fi
 done
 # Network facts
 if [ "$(uname -s)" = "Darwin" ]; then
   _def_iface=$(route -n get default 2>/dev/null | awk '/interface:/{print $2}')
   if [ -n "$_def_iface" ]; then
-    echo "BOLT_FACT default_interface=$_def_iface"
+    echo "TACK_FACT default_interface=$_def_iface"
     _def_ip=$(ifconfig "$_def_iface" 2>/dev/null | awk '/inet /{print $2; exit}')
-    [ -n "$_def_ip" ] && echo "BOLT_FACT default_ipv4=$_def_ip"
+    [ -n "$_def_ip" ] && echo "TACK_FACT default_ipv4=$_def_ip"
   fi
   _all4=$(ifconfig 2>/dev/null | awk '/inet /{if($2!="127.0.0.1")printf sep $2; sep=","}')
-  [ -n "$_all4" ] && echo "BOLT_FACT all_ipv4=$_all4"
+  [ -n "$_all4" ] && echo "TACK_FACT all_ipv4=$_all4"
   _all6=$(ifconfig 2>/dev/null | awk '/inet6 /{split($2,a,"%"); if(a[1]!="::1"&&a[1]!="fe80")printf sep a[1]; sep=","}')
-  [ -n "$_all6" ] && echo "BOLT_FACT all_ipv6=$_all6"
+  [ -n "$_all6" ] && echo "TACK_FACT all_ipv6=$_all6"
 else
   _route=$(ip route get 1 2>/dev/null | head -1)
   if [ -n "$_route" ]; then
     _def_iface=$(echo "$_route" | sed -n 's/.* dev \([^ ]*\).*/\1/p')
     _def_ip=$(echo "$_route" | sed -n 's/.* src \([^ ]*\).*/\1/p')
-    [ -n "$_def_iface" ] && echo "BOLT_FACT default_interface=$_def_iface"
-    [ -n "$_def_ip" ] && echo "BOLT_FACT default_ipv4=$_def_ip"
+    [ -n "$_def_iface" ] && echo "TACK_FACT default_interface=$_def_iface"
+    [ -n "$_def_ip" ] && echo "TACK_FACT default_ipv4=$_def_ip"
   fi
   _all4=$(ip -4 addr show 2>/dev/null | awk '/inet /{split($2,a,"/"); if(a[1]!="127.0.0.1")printf sep a[1]; sep=","}')
-  [ -n "$_all4" ] && echo "BOLT_FACT all_ipv4=$_all4"
+  [ -n "$_all4" ] && echo "TACK_FACT all_ipv4=$_all4"
   _all6=$(ip -6 addr show scope global 2>/dev/null | awk '/inet6 /{split($2,a,"/"); printf sep a[1]; sep=","}')
-  [ -n "$_all6" ] && echo "BOLT_FACT all_ipv6=$_all6"
+  [ -n "$_all6" ] && echo "TACK_FACT all_ipv6=$_all6"
 fi
 # EC2 detection via IMDSv2
 TOKEN=$(curl -sf -X PUT "http://169.254.169.254/latest/api/token" \
   -H "X-aws-ec2-metadata-token-ttl-seconds: 10" --connect-timeout 1 2>/dev/null)
 if [ -n "$TOKEN" ]; then
   HDR="X-aws-ec2-metadata-token: $TOKEN"
-  echo "BOLT_FACT ec2_instance_id=$(curl -sf -H "$HDR" http://169.254.169.254/latest/meta-data/instance-id)"
-  echo "BOLT_FACT ec2_region=$(curl -sf -H "$HDR" http://169.254.169.254/latest/meta-data/placement/region)"
-  echo "BOLT_FACT ec2_az=$(curl -sf -H "$HDR" http://169.254.169.254/latest/meta-data/placement/availability-zone)"
-  echo "BOLT_FACT ec2_instance_type=$(curl -sf -H "$HDR" http://169.254.169.254/latest/meta-data/instance-type)"
-  echo "BOLT_FACT ec2_ami_id=$(curl -sf -H "$HDR" http://169.254.169.254/latest/meta-data/ami-id)"
-  echo "BOLT_FACT ec2_private_ip=$(curl -sf -H "$HDR" http://169.254.169.254/latest/meta-data/local-ipv4)"
-  echo "BOLT_FACT ec2_public_ip=$(curl -sf -H "$HDR" http://169.254.169.254/latest/meta-data/public-ipv4)"
+  echo "TACK_FACT ec2_instance_id=$(curl -sf -H "$HDR" http://169.254.169.254/latest/meta-data/instance-id)"
+  echo "TACK_FACT ec2_region=$(curl -sf -H "$HDR" http://169.254.169.254/latest/meta-data/placement/region)"
+  echo "TACK_FACT ec2_az=$(curl -sf -H "$HDR" http://169.254.169.254/latest/meta-data/placement/availability-zone)"
+  echo "TACK_FACT ec2_instance_type=$(curl -sf -H "$HDR" http://169.254.169.254/latest/meta-data/instance-type)"
+  echo "TACK_FACT ec2_ami_id=$(curl -sf -H "$HDR" http://169.254.169.254/latest/meta-data/ami-id)"
+  echo "TACK_FACT ec2_private_ip=$(curl -sf -H "$HDR" http://169.254.169.254/latest/meta-data/local-ipv4)"
+  echo "TACK_FACT ec2_public_ip=$(curl -sf -H "$HDR" http://169.254.169.254/latest/meta-data/public-ipv4)"
   # Try IMDS tags (requires "allow tags in instance metadata" enabled)
   TAGS=$(curl -sf -H "$HDR" http://169.254.169.254/latest/meta-data/tags/instance/ 2>/dev/null)
   if [ -n "$TAGS" ]; then
-    echo "BOLT_FACT ec2_tags_start"
+    echo "TACK_FACT ec2_tags_start"
     for tag in $TAGS; do
       val=$(curl -sf -H "$HDR" "http://169.254.169.254/latest/meta-data/tags/instance/${tag}")
       echo "${tag}=${val}"
     done
-    echo "BOLT_FACT ec2_tags_end"
+    echo "TACK_FACT ec2_tags_end"
   fi
 fi
 `
@@ -111,11 +111,11 @@ func Gather(ctx context.Context, conn connector.Connector) (map[string]any, erro
 		line = strings.TrimSpace(line)
 
 		// Collect /etc/os-release block
-		if line == "BOLT_FACT os_release_start" {
+		if line == "TACK_FACT os_release_start" {
 			inOSRelease = true
 			continue
 		}
-		if line == "BOLT_FACT os_release_end" {
+		if line == "TACK_FACT os_release_end" {
 			inOSRelease = false
 			osRelease := parseOSRelease(strings.Join(osReleaseLines, "\n"))
 			applyOSRelease(facts, osRelease)
@@ -127,12 +127,12 @@ func Gather(ctx context.Context, conn connector.Connector) (map[string]any, erro
 		}
 
 		// Collect ec2_tags block
-		if line == "BOLT_FACT ec2_tags_start" {
+		if line == "TACK_FACT ec2_tags_start" {
 			inEC2Tags = true
 			gotIMDSTags = true
 			continue
 		}
-		if line == "BOLT_FACT ec2_tags_end" {
+		if line == "TACK_FACT ec2_tags_end" {
 			inEC2Tags = false
 			continue
 		}
@@ -143,11 +143,11 @@ func Gather(ctx context.Context, conn connector.Connector) (map[string]any, erro
 			continue
 		}
 
-		// Parse BOLT_FACT lines
-		if !strings.HasPrefix(line, "BOLT_FACT ") {
+		// Parse TACK_FACT lines
+		if !strings.HasPrefix(line, "TACK_FACT ") {
 			continue
 		}
-		kv := strings.TrimPrefix(line, "BOLT_FACT ")
+		kv := strings.TrimPrefix(line, "TACK_FACT ")
 		idx := strings.Index(kv, "=")
 		if idx < 0 {
 			continue

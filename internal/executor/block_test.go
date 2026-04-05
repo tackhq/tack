@@ -5,8 +5,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/eugenetaranov/bolt/internal/output"
-	"github.com/eugenetaranov/bolt/internal/playbook"
+	"github.com/tackhq/tack/internal/output"
+	"github.com/tackhq/tack/internal/playbook"
 )
 
 // runBlockPlaybook parses and runs a playbook YAML with auto-approve and returns success + output.

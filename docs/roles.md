@@ -92,7 +92,7 @@ nginx_user: www-data
 
 Static files that can be copied to targets using the `copy` module's `src` parameter.
 
-When a role task uses the `copy` module with a relative `src` path, Bolt automatically looks for the file in the role's `files/` directory:
+When a role task uses the `copy` module with a relative `src` path, Tack automatically looks for the file in the role's `files/` directory:
 
 ```yaml
 # In roles/webserver/tasks/main.yaml
@@ -118,7 +118,7 @@ roles/webserver/
 
 Template files that are rendered with variable substitution using the `template` module.
 
-When a role task uses the `template` module with a relative `src` path, Bolt automatically looks for the template in the role's `templates/` directory:
+When a role task uses the `template` module with a relative `src` path, Tack automatically looks for the template in the role's `templates/` directory:
 
 ```yaml
 # In roles/webserver/tasks/main.yaml
@@ -168,7 +168,7 @@ See `examples/roles-demo/` for a complete working example:
 
 ```bash
 # Run the roles demo
-./bin/bolt run examples/roles-demo/playbook.yaml --dry-run
+./bin/tack run examples/roles-demo/playbook.yaml --dry-run
 ```
 
 ## Role Search Path

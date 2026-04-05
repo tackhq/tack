@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/eugenetaranov/bolt/internal/module"
+	"github.com/tackhq/tack/internal/module"
 )
 
 func TestForksFlag_Present(t *testing.T) {

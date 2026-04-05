@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/eugenetaranov/bolt/internal/playbook"
-	"github.com/eugenetaranov/bolt/internal/vault"
+	"github.com/tackhq/tack/internal/playbook"
+	"github.com/tackhq/tack/internal/vault"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -64,7 +64,7 @@ func TestVaultIntegration_PasswordFileFirstLineOnly(t *testing.T) {
 	pwFile := filepath.Join(dir, "vault-password.txt")
 	require.NoError(t, os.WriteFile(pwFile, []byte("correctpass\nextra-line\n"), 0o600))
 
-	// Read first line only — same logic as cmd/bolt/main.go
+	// Read first line only — same logic as cmd/tack/main.go
 	data, err := os.ReadFile(pwFile)
 	require.NoError(t, err)
 	firstLine := string(data)
@@ -168,21 +168,21 @@ func TestVaultIntegration_PlayVarsWinOverVault(t *testing.T) {
 	assert.Equal(t, "secret", pctx.Vars["db_pass"], "vault var fills gap not in play vars")
 }
 
-// TestVaultIntegration_EnvVarPasswordSource tests that BOLT_VAULT_PASSWORD env var
+// TestVaultIntegration_EnvVarPasswordSource tests that TACK_VAULT_PASSWORD env var
 // is used as the password source without calling the ResolveVaultPassword prompt.
 func TestVaultIntegration_EnvVarPasswordSource(t *testing.T) {
 	dir := t.TempDir()
 	password := "env-test-password"
 	vaultPath := createTestVault(t, dir, "secrets.vault", "env_key: env_val\n", password)
 
-	// Simulate the env var resolution pattern from cmd/bolt/main.go
-	t.Setenv("BOLT_VAULT_PASSWORD", password)
+	// Simulate the env var resolution pattern from cmd/tack/main.go
+	t.Setenv("TACK_VAULT_PASSWORD", password)
 
 	promptCalled := false
 	e := New()
 
-	// Wire password resolution same as cmd/bolt/main.go
-	if envPw := os.Getenv("BOLT_VAULT_PASSWORD"); envPw != "" {
+	// Wire password resolution same as cmd/tack/main.go
+	if envPw := os.Getenv("TACK_VAULT_PASSWORD"); envPw != "" {
 		pw := []byte(envPw)
 		e.ResolveVaultPassword = func() ([]byte, error) { return pw, nil }
 	} else {

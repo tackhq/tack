@@ -4,11 +4,11 @@
 The script plugin SHALL execute the inventory file as a subprocess with `--list` as the sole argument. The child process SHALL inherit the parent's environment variables.
 
 #### Scenario: Script outputs valid JSON
-- **WHEN** the script exits 0 and stdout contains valid JSON in Bolt inventory format
+- **WHEN** the script exits 0 and stdout contains valid JSON in Tack inventory format
 - **THEN** the plugin SHALL parse it and return a populated `*Inventory`
 
 #### Scenario: Script outputs valid YAML
-- **WHEN** the script exits 0 and stdout contains valid YAML in Bolt inventory format
+- **WHEN** the script exits 0 and stdout contains valid YAML in Tack inventory format
 - **THEN** the plugin SHALL parse it and return a populated `*Inventory`
 
 #### Scenario: Script exits non-zero

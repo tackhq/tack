@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/eugenetaranov/bolt/internal/playbook"
+	"github.com/tackhq/tack/internal/playbook"
 )
 
 // evaluateAssertsForDryRun walks the task tree and evaluates any assert

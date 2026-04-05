@@ -1,5 +1,5 @@
 name: Integration Test
-hosts: bolt-integration-test
+hosts: tack-integration-test
 connection: docker
 
 roles:
@@ -11,7 +11,7 @@ tasks:
   # ============================================
   - name: Run simple echo command
     command:
-      cmd: echo "hello from bolt"
+      cmd: echo "hello from tack"
 
   - name: Create marker file via command
     command:
@@ -22,31 +22,31 @@ tasks:
   # ============================================
   - name: Create test directory
     file:
-      path: /tmp/bolt-test-dir
+      path: /tmp/tack-test-dir
       state: directory
       mode: "0755"
 
   - name: Create nested directories
     file:
-      path: /tmp/bolt-test-dir/nested/deep
+      path: /tmp/tack-test-dir/nested/deep
       state: directory
       mode: "0700"
 
   - name: Create empty file with touch
     file:
-      path: /tmp/bolt-test-dir/touched.txt
+      path: /tmp/tack-test-dir/touched.txt
       state: touch
       mode: "0644"
 
   - name: Create file for symlink target
     copy:
-      dest: /tmp/bolt-test-dir/link-target.txt
+      dest: /tmp/tack-test-dir/link-target.txt
       content: "symlink target content"
 
   - name: Create symlink
     file:
-      path: /tmp/bolt-test-dir/test-link
-      src: /tmp/bolt-test-dir/link-target.txt
+      path: /tmp/tack-test-dir/test-link
+      src: /tmp/tack-test-dir/link-target.txt
       state: link
 
   # ============================================
@@ -54,15 +54,15 @@ tasks:
   # ============================================
   - name: Copy content to file
     copy:
-      dest: /tmp/bolt-test-dir/copied.txt
+      dest: /tmp/tack-test-dir/copied.txt
       content: |
-        This file was created by bolt copy module.
+        This file was created by tack copy module.
         Line 2 of the file.
       mode: "0640"
 
   - name: Copy file with specific permissions
     copy:
-      dest: /tmp/bolt-test-dir/executable.sh
+      dest: /tmp/tack-test-dir/executable.sh
       content: |
         #!/bin/bash
         echo "I am executable"
@@ -70,7 +70,7 @@ tasks:
 
   - name: Create config file
     copy:
-      dest: /tmp/bolt-test-dir/config.yaml
+      dest: /tmp/tack-test-dir/config.yaml
       content: |
         server:
           port: 8080

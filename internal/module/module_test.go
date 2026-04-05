@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/eugenetaranov/bolt/internal/connector"
+	"github.com/tackhq/tack/internal/connector"
 )
 
 // mockModule is a simple module for testing

@@ -1,12 +1,12 @@
 #!/bin/bash
 #
-# Bolt Installer
-# Usage: curl -fsSL https://raw.githubusercontent.com/eugenetaranov/bolt/main/install.sh | bash
+# Tack Installer
+# Usage: curl -fsSL https://raw.githubusercontent.com/tackhq/tack/main/install.sh | bash
 #
 
 set -e
 
-GITHUB_REPO="eugenetaranov/bolt"
+GITHUB_REPO="tackhq/tack"
 INSTALL_DIR="/usr/local/bin"
 
 # Colors
@@ -61,7 +61,7 @@ get_latest_release() {
 main() {
     echo ""
     echo "  ╔══════════════════════════════════════╗"
-    echo "  ║         Bolt Installer               ║"
+    echo "  ║         Tack Installer               ║"
     echo "  ║   System Bootstrapping Tool          ║"
     echo "  ╚══════════════════════════════════════╝"
     echo ""
@@ -78,7 +78,7 @@ main() {
     fi
 
     # Download binary
-    local binary_name="bolt-${os}-${arch}"
+    local binary_name="tack-${os}-${arch}"
     local download_url="https://github.com/${GITHUB_REPO}/releases/download/${version}/${binary_name}"
 
     info "Downloading ${binary_name} ${version}..."
@@ -86,35 +86,35 @@ main() {
     local tmp_dir=$(mktemp -d)
     trap "rm -rf $tmp_dir" EXIT
 
-    if ! curl -fsSL -o "${tmp_dir}/bolt" "$download_url"; then
+    if ! curl -fsSL -o "${tmp_dir}/tack" "$download_url"; then
         error "Failed to download from ${download_url}"
     fi
 
-    chmod +x "${tmp_dir}/bolt"
+    chmod +x "${tmp_dir}/tack"
 
     # Install binary
     info "Installing to $INSTALL_DIR..."
 
     if [ -w "$INSTALL_DIR" ]; then
-        mv "$tmp_dir/bolt" "$INSTALL_DIR/bolt"
+        mv "$tmp_dir/tack" "$INSTALL_DIR/tack"
     else
-        sudo mv "$tmp_dir/bolt" "$INSTALL_DIR/bolt"
+        sudo mv "$tmp_dir/tack" "$INSTALL_DIR/tack"
     fi
 
     # Verify installation
-    if command -v bolt &> /dev/null; then
-        success "Bolt ${version} installed successfully!"
+    if command -v tack &> /dev/null; then
+        success "Tack ${version} installed successfully!"
         echo ""
-        bolt --version
+        tack --version
         echo ""
         echo "Get started:"
-        echo "  bolt --help              Show help"
-        echo "  bolt modules             List available modules"
-        echo "  bolt run playbook.yaml   Run a playbook"
+        echo "  tack --help              Show help"
+        echo "  tack modules             List available modules"
+        echo "  tack run playbook.yaml   Run a playbook"
         echo ""
         echo "Documentation: https://github.com/${GITHUB_REPO}/tree/main/docs"
     else
-        warn "Bolt was installed to $INSTALL_DIR but is not in your PATH"
+        warn "Tack was installed to $INSTALL_DIR but is not in your PATH"
         echo "Add this to your shell profile:"
         echo "  export PATH=\"$INSTALL_DIR:\$PATH\""
     fi

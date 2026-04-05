@@ -13,7 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 
-	"github.com/eugenetaranov/bolt/internal/inventory"
+	"github.com/tackhq/tack/internal/inventory"
 )
 
 func init() {

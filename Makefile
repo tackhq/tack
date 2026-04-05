@@ -3,7 +3,7 @@
 list: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*##' $(MAKEFILE_LIST) | sort | awk -F ':.*## ' '{printf "  %-24s %s\n", $$1, $$2}'
 
-BINARY=bolt
+BINARY=tack
 BUILD_DIR=bin
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "none")
@@ -13,19 +13,19 @@ LDFLAGS=-ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.da
 
 build: ## Build the binary
 	@mkdir -p $(BUILD_DIR)
-	go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY) ./cmd/bolt
+	go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY) ./cmd/tack
 
 build-all: build-linux build-darwin ## Build for all platforms
 
 build-linux: ## Build for Linux (amd64, arm64)
 	@mkdir -p $(BUILD_DIR)
-	GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY)-linux-amd64 ./cmd/bolt
-	GOOS=linux GOARCH=arm64 go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY)-linux-arm64 ./cmd/bolt
+	GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY)-linux-amd64 ./cmd/tack
+	GOOS=linux GOARCH=arm64 go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY)-linux-arm64 ./cmd/tack
 
 build-darwin: ## Build for macOS (amd64, arm64)
 	@mkdir -p $(BUILD_DIR)
-	GOOS=darwin GOARCH=amd64 go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY)-darwin-amd64 ./cmd/bolt
-	GOOS=darwin GOARCH=arm64 go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY)-darwin-arm64 ./cmd/bolt
+	GOOS=darwin GOARCH=amd64 go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY)-darwin-amd64 ./cmd/tack
+	GOOS=darwin GOARCH=arm64 go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY)-darwin-arm64 ./cmd/tack
 
 test: ## Run unit tests
 	go test -v -short ./...
@@ -44,7 +44,7 @@ test-docker-up: ## Start 3 SSH Docker containers
 	bash tests/setup-keys.sh
 
 test-docker-run: build ## Run playbook against Docker containers
-	./bin/bolt run tests/docker-playbook.yaml \
+	./bin/tack run tests/docker-playbook.yaml \
 		-c ssh://testuser@127.0.0.1:2201 \
 		-c ssh://testuser@127.0.0.1:2202 \
 		-c ssh://testuser@127.0.0.1:2203 \
@@ -62,8 +62,8 @@ clean: ## Remove build artifacts
 	rm -rf $(BUILD_DIR)
 	rm -f coverage.out coverage.html
 
-run: ## Run bolt directly via go run
-	go run ./cmd/bolt
+run: ## Run tack directly via go run
+	go run ./cmd/tack
 
 install: build ## Build and install to /usr/local/bin
 	cp $(BUILD_DIR)/$(BINARY) /usr/local/bin/
@@ -72,10 +72,10 @@ deps: ## Install dependencies
 	go mod tidy
 
 validate-examples: ## Validate example playbooks
-	go run ./cmd/bolt validate examples/playbooks/*.yaml
+	go run ./cmd/tack validate examples/playbooks/*.yaml
 
 example: ## Run example playbook (dry-run)
-	go run ./cmd/bolt run examples/playbooks/setup-dev.yaml --dry-run --debug
+	go run ./cmd/tack run examples/playbooks/setup-dev.yaml --dry-run --debug
 
 release: ## Create and push a release tag
 	@if [ -z "$(TAG)" ]; then \

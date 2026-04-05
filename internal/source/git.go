@@ -29,7 +29,7 @@ func parseGitSource(ref string) (*GitSource, error) {
 }
 
 func (s *GitSource) Fetch(ctx context.Context) (string, func(), error) {
-	tmpDir, err := os.MkdirTemp("", "bolt-git-*")
+	tmpDir, err := os.MkdirTemp("", "tack-git-*")
 	if err != nil {
 		return "", nil, fmt.Errorf("creating temp dir: %w", err)
 	}

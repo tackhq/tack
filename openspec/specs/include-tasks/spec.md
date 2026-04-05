@@ -94,7 +94,7 @@ The system SHALL resolve include paths using the following rules:
 - **THEN** the executor SHALL resolve the path as `roles/myrole/tasks/subtasks.yml`
 
 #### Scenario: Absolute path
-- **WHEN** a task specifies `include_tasks: /etc/bolt/shared/setup.yml`
+- **WHEN** a task specifies `include_tasks: /etc/tack/shared/setup.yml`
 - **THEN** the executor SHALL use the path as-is
 
 ### Requirement: Circular include detection

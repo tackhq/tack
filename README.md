@@ -1,21 +1,21 @@
-# Bolt
+# Tack
 
 A Go-based configuration management and system bootstrapping tool inspired by Ansible. Single binary, no dependencies.
 
 ## Installation
 
 ```bash
-brew install eugenetaranov/tap/bolt          # Homebrew
-go install github.com/eugenetaranov/bolt/cmd/bolt@latest  # Go
+brew install tackhq/tap/tack          # Homebrew
+go install github.com/tackhq/tack/cmd/tack@latest  # Go
 ```
 
-Or download from the [releases page](https://github.com/eugenetaranov/bolt/releases).
+Or download from the [releases page](https://github.com/tackhq/tack/releases).
 
 ## Quick Start
 
 ```bash
-bolt run examples/playbooks/setup-dev.yaml --check   # preview changes
-bolt run examples/playbooks/setup-dev.yaml            # apply
+tack run examples/playbooks/setup-dev.yaml --check   # preview changes
+tack run examples/playbooks/setup-dev.yaml            # apply
 ```
 
 ```yaml
@@ -69,16 +69,16 @@ Connection type is auto-detected from flags when not specified. See [Connectors 
 
 ```bash
 # Serial (default)
-bolt run deploy.yaml --hosts web1,web2,web3
+tack run deploy.yaml --hosts web1,web2,web3
 
 # Parallel -- up to 5 hosts at once
-bolt run deploy.yaml --hosts web1,web2,web3,web4,web5 --forks 5
+tack run deploy.yaml --hosts web1,web2,web3,web4,web5 --forks 5
 
 # With inventory groups
-bolt run deploy.yaml -i inventory.yaml --hosts webservers --forks 10
+tack run deploy.yaml -i inventory.yaml --hosts webservers --forks 10
 ```
 
-Output is buffered per-host and flushed in order. Errors on one host don't stop others. Use `BOLT_FORKS` env var for CI.
+Output is buffered per-host and flushed in order. Errors on one host don't stop others. Use `TACK_FORKS` env var for CI.
 
 ## Playbook Examples
 
@@ -106,8 +106,8 @@ tasks:
 ```
 
 ```bash
-bolt run server-setup.yaml
-bolt run server-setup.yaml --hosts web1,web2,web3 --forks 3
+tack run server-setup.yaml
+tack run server-setup.yaml --hosts web1,web2,web3 --forks 3
 ```
 
 ### AWS SSM with Tag-Based Discovery
@@ -132,9 +132,9 @@ tasks:
 ### Remote Playbook Sources
 
 ```bash
-bolt run git@github.com:user/repo.git//path/to/playbook.yaml
-bolt run https://github.com/user/repo.git@v1.0//playbook.yaml
-bolt run s3://bucket/path/to/playbook.yaml
+tack run git@github.com:user/repo.git//path/to/playbook.yaml
+tack run https://github.com/user/repo.git@v1.0//playbook.yaml
+tack run s3://bucket/path/to/playbook.yaml
 ```
 
 ## Task Inclusion
@@ -226,10 +226,10 @@ See [`examples/block-rescue/`](examples/block-rescue/) for a complete example.
 Selectively run or skip tasks using tags:
 
 ```bash
-bolt run deploy.yaml --tags deploy          # only deploy-tagged tasks
-bolt run deploy.yaml --skip-tags debug      # skip debug tasks
-bolt run deploy.yaml --tags deploy,config   # OR logic: deploy or config
-bolt run deploy.yaml --check --tags deploy  # plan mode respects tags
+tack run deploy.yaml --tags deploy          # only deploy-tagged tasks
+tack run deploy.yaml --skip-tags debug      # skip debug tasks
+tack run deploy.yaml --tags deploy,config   # OR logic: deploy or config
+tack run deploy.yaml --check --tags deploy  # plan mode respects tags
 ```
 
 Tags can be applied to tasks, blocks, plays, and role references:
@@ -290,16 +290,16 @@ groups:
 ```
 
 ```bash
-bolt run deploy.yaml -i inventory.yaml --hosts webservers
+tack run deploy.yaml -i inventory.yaml --hosts webservers
 ```
 
 ### Dynamic Inventory
 
-Bolt supports dynamic inventory sources beyond static YAML files. If `-i` points to an executable, Bolt runs it with `--list` and parses the JSON/YAML output. Plugin-based sources are configured via YAML files with a `plugin:` key.
+Tack supports dynamic inventory sources beyond static YAML files. If `-i` points to an executable, Tack runs it with `--list` and parses the JSON/YAML output. Plugin-based sources are configured via YAML files with a `plugin:` key.
 
-**Script inventory** -- any executable that outputs Bolt inventory format:
+**Script inventory** -- any executable that outputs Tack inventory format:
 ```bash
-bolt run deploy.yaml -i ./my-inventory-script.sh
+tack run deploy.yaml -i ./my-inventory-script.sh
 ```
 
 **HTTP inventory** -- fetch from a REST API:
@@ -324,13 +324,13 @@ host_key: private_ip  # or instance_id (for SSM), public_ip
 
 **Multiple sources** -- merge inventories with multiple `-i` flags:
 ```bash
-bolt run deploy.yaml -i ec2-inventory.yml -i overrides.yml
+tack run deploy.yaml -i ec2-inventory.yml -i overrides.yml
 ```
 
 **Inspect inventory** -- debug resolved hosts and groups:
 ```bash
-bolt inventory --list -i ec2-inventory.yml
-bolt inventory --host web1 -i inventory.yaml
+tack inventory --list -i ec2-inventory.yml
+tack inventory --host web1 -i inventory.yaml
 ```
 
 See [`examples/dynamic-inventory/`](examples/dynamic-inventory/) for complete samples and [`examples/inventory.yaml`](examples/inventory.yaml) for a static inventory sample.
@@ -354,16 +354,16 @@ See [`examples/dynamic-inventory/`](examples/dynamic-inventory/) for complete sa
 | `wait_for` | Wait for port, path, command, or URL before proceeding |
 | `assert` | Validate preconditions (built-in keyword); fail fast with a clear message |
 
-Run `bolt module <name>` for detailed parameter docs.
+Run `tack module <name>` for detailed parameter docs.
 
 ## Tooling
 
 ```bash
-bolt generate --packages nginx --files /etc/nginx/nginx.conf -c ssh://root@web1  # capture live state
-bolt scaffold myrole          # create role boilerplate
-bolt test myrole              # test in Docker container (reused for idempotency checks)
-bolt validate playbook.yaml   # syntax check
-bolt vault init secrets.yaml      # create encrypted vault file
+tack generate --packages nginx --files /etc/nginx/nginx.conf -c ssh://root@web1  # capture live state
+tack scaffold myrole          # create role boilerplate
+tack test myrole              # test in Docker container (reused for idempotency checks)
+tack validate playbook.yaml   # syntax check
+tack vault init secrets.yaml      # create encrypted vault file
 ```
 
 ## Documentation

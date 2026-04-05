@@ -1,6 +1,6 @@
 package executor
 
-import "github.com/eugenetaranov/bolt/internal/playbook"
+import "github.com/tackhq/tack/internal/playbook"
 
 // effectiveTags computes the union of a task's own tags and all inherited tags.
 func effectiveTags(task *playbook.Task, playTags, blockTags []string) []string {

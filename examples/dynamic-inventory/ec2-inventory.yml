@@ -1,6 +1,6 @@
 # Example: AWS EC2 dynamic inventory
 # Discovers instances via DescribeInstances and groups them by tags.
-# Usage: bolt run playbook.yaml -i ec2-inventory.yml
+# Usage: tack run playbook.yaml -i ec2-inventory.yml
 
 plugin: ec2
 regions:

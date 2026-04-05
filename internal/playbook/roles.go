@@ -18,7 +18,7 @@ func LoadRole(name, rolesDir string) (*Role, error) {
 	if filepath.IsAbs(name) {
 		rolePath = name
 	} else if name != filepath.Base(name) {
-		// Path-like name (e.g. "../bolt-roles/docker", "./custom/role")
+		// Path-like name (e.g. "../tack-roles/docker", "./custom/role")
 		rolePath = filepath.Join(filepath.Dir(rolesDir), name)
 	} else {
 		rolePath = filepath.Join(rolesDir, name)

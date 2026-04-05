@@ -1,8 +1,8 @@
 # Demonstrates block/rescue/always for a deploy-with-rollback pattern.
 #
 # Run:
-#   bolt run examples/block-rescue/playbook.yml --check   # preview
-#   bolt run examples/block-rescue/playbook.yml            # apply
+#   tack run examples/block-rescue/playbook.yml --check   # preview
+#   tack run examples/block-rescue/playbook.yml            # apply
 
 name: Deploy with rollback
 hosts: localhost
@@ -10,7 +10,7 @@ connection: local
 gather_facts: false
 
 vars:
-  app_dir: /tmp/bolt-block-demo
+  app_dir: /tmp/tack-block-demo
   version: "2.0"
 
 tasks:

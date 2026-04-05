@@ -28,7 +28,7 @@
 ## 5. /etc/cron.d Drop-in Backend
 
 - [ ] 5.1 Implement `readDropIn(ctx, conn, path)` using connector `Download` (treat missing file as empty)
-- [ ] 5.2 Implement `writeDropIn(ctx, conn, path, content)` — write to `<path>.bolt.tmp` then `mv` for atomicity, mode 0644
+- [ ] 5.2 Implement `writeDropIn(ctx, conn, path, content)` — write to `<path>.tack.tmp` then `mv` for atomicity, mode 0644
 - [ ] 5.3 Delete file when content is empty after edits
 
 ## 6. Crontab Editor (Core Logic)
@@ -78,5 +78,5 @@
 ## 12. Release
 
 - [ ] 12.1 Run `make lint` and `make test`
-- [ ] 12.2 Validate example playbooks with `bolt validate`
+- [ ] 12.2 Validate example playbooks with `tack validate`
 - [ ] 12.3 Manual smoke test against local Docker cron container

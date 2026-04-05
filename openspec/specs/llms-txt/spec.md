@@ -1,15 +1,15 @@
 ## ADDED Requirements
 
 ### Requirement: LLM-optimized documentation file
-The project SHALL include an `llms.txt` file at the repository root containing a self-contained reference for LLM agents to correctly generate Bolt playbooks, CLI commands, and configurations.
+The project SHALL include an `llms.txt` file at the repository root containing a self-contained reference for LLM agents to correctly generate Tack playbooks, CLI commands, and configurations.
 
 #### Scenario: LLM generates a valid playbook
-- **WHEN** an LLM agent consumes `llms.txt` and is asked to generate a Bolt playbook
-- **THEN** the generated playbook SHALL use correct Bolt syntax (not Ansible-specific syntax)
+- **WHEN** an LLM agent consumes `llms.txt` and is asked to generate a Tack playbook
+- **THEN** the generated playbook SHALL use correct Tack syntax (not Ansible-specific syntax)
 
 #### Scenario: File is self-contained
 - **WHEN** an LLM agent loads `llms.txt`
-- **THEN** it SHALL NOT need to read any other file to generate correct Bolt playbooks
+- **THEN** it SHALL NOT need to read any other file to generate correct Tack playbooks
 
 ### Requirement: Anti-hallucination rules
 The `llms.txt` file SHALL include explicit rules that prevent LLMs from hallucinating Ansible-specific syntax, including differences in template syntax, privilege escalation keywords, and module parameters.

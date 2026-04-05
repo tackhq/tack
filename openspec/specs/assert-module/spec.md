@@ -105,18 +105,18 @@ The assert handler SHALL return a result with `changed: false` on success and SH
 The assert handler SHALL evaluate conditions identically under `--dry-run` / check mode. A failing assert under dry-run SHALL fail the play, matching normal-mode behavior.
 
 #### Scenario: Dry-run evaluates conditions
-- **WHEN** bolt runs with `--dry-run` and assert conditions are true
+- **WHEN** tack runs with `--dry-run` and assert conditions are true
 - **THEN** the task SHALL succeed
 
 #### Scenario: Dry-run fails on failing assert
-- **WHEN** bolt runs with `--dry-run` and an assert condition is false
+- **WHEN** tack runs with `--dry-run` and an assert condition is false
 - **THEN** the play SHALL fail
 
 ### Requirement: Diff mode is a no-op
 The assert handler SHALL be a no-op under `--diff` (no diff output is produced for assert tasks).
 
 #### Scenario: Diff mode produces no assert diff
-- **WHEN** bolt runs with `--diff` over a playbook with assert tasks
+- **WHEN** tack runs with `--diff` over a playbook with assert tasks
 - **THEN** no diff output SHALL be produced for the assert tasks
 
 ### Requirement: Integrates with when, tags, register
