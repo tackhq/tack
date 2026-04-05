@@ -1,0 +1,64 @@
+name: Git Module Integration Test
+hosts: tack-integration-test
+connection: docker
+gather_facts: false
+
+tasks:
+  # ============================================
+  # Set up a local bare repo with one commit
+  # (so we can exercise git module without network)
+  # ============================================
+  - name: Create temp dir for source repo
+    file:
+      path: /tmp/git-src
+      state: directory
+      mode: "0755"
+
+  - name: Initialize source repo
+    command:
+      cmd: |
+        set -e
+        cd /tmp/git-src
+        git init -q -b main
+        git config user.email test@example.com
+        git config user.name Test
+        echo "hello" > README.md
+        git add README.md
+        git commit -q -m "initial"
+
+  - name: Create bare mirror for cloning
+    command:
+      cmd: git clone -q --bare /tmp/git-src /tmp/git-remote.git
+
+  # ============================================
+  # git module tests
+  # ============================================
+  - name: Clone repo to destination
+    git:
+      repo: /tmp/git-remote.git
+      dest: /tmp/git-dest
+    register: clone_result
+
+  - name: Verify clone changed
+    assert:
+      that:
+        - "clone_result.changed == true"
+
+  - name: Run same clone again — should be idempotent
+    git:
+      repo: /tmp/git-remote.git
+      dest: /tmp/git-dest
+    register: rerun_result
+
+  - name: Verify second run was a no-op
+    assert:
+      that:
+        - "rerun_result.changed == false"
+
+  - name: Verify after_sha is populated
+    command:
+      cmd: echo "after_sha={{ clone_result.after_sha }}" > /tmp/git-after-sha.txt
+
+  - name: Verify register output consumed downstream
+    command:
+      cmd: test -s /tmp/git-after-sha.txt && grep -E 'after_sha=[0-9a-f]{40}' /tmp/git-after-sha.txt

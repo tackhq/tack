@@ -23,8 +23,8 @@ critical ways.
    - In YAML playbooks: `{{ my_var }}` (no dot prefix)
    - In .tmpl template files: `{{ .my_var }}` (dot prefix, Go template syntax)
 4. There is no `apt_repository`, `pip`, `docker_container`,
-   `cron`, `git`, `service`, `uri`, or `shell`
-   module. Only the 13 modules listed below exist.
+   `service`, `uri`, or `shell`
+   module. Only the modules listed below exist.
 5. There is no `become_user`, `become_method`, `environment`, `timeout`,
    `delegate_to`, `run_once`, `serial`, `strategy`, `any_errors_fatal`,
    `max_fail_percentage`, or `collections` directive.
@@ -155,7 +155,7 @@ Tasks can specify the module as a top-level key:
 
 ## MODULES
 
-Tack has exactly 13 modules. Do not hallucinate others.
+Do not hallucinate modules beyond this list.
 
 ### apt
 
@@ -546,6 +546,43 @@ Linux only.
   group:
     name: oldgroup
     state: absent
+```
+
+### git
+
+Check out a git repository to the target idempotently. Compares current HEAD
+to the resolved target SHA and skips fetch/checkout when they match.
+Requires the `git` binary on the target. SSH auth only in v1.
+
+| Param          | Type   | Required | Default | Description                                       |
+|----------------|--------|----------|---------|---------------------------------------------------|
+| repo           | string | yes      | -       | Repository URL (SSH or HTTPS)                     |
+| dest           | string | yes      | -       | Absolute path on target                           |
+| version        | string | no       | -       | Branch, tag, or SHA; defaults to remote HEAD      |
+| force          | bool   | no       | false   | Reset dirty worktree before checkout              |
+| depth          | int    | no       | 0       | Shallow clone depth (0 = full)                    |
+| update         | bool   | no       | true    | Fetch+checkout when repo already exists           |
+| clone          | bool   | no       | true    | Clone when dest is missing                        |
+| bare           | bool   | no       | false   | Create bare clone (no worktree)                   |
+| single_branch  | bool   | no       | false   | Clone only the target branch                      |
+| recursive      | bool   | no       | false   | Init/update submodules after checkout             |
+| accept_hostkey | bool   | no       | false   | StrictHostKeyChecking=accept-new (TOFU)           |
+| key_file       | string | no       | ""      | Path on target to SSH key file                    |
+
+Registered result fields: `changed`, `before_sha`, `after_sha`, `remote_url`,
+`version_resolved`, `warnings` (list).
+
+```yaml
+- name: Deploy app code
+  git:
+    repo: git@github.com:acme/app.git
+    dest: /opt/app
+    version: v2.4.1
+  register: repo
+
+- name: Tag deploy with the checked-out SHA
+  command:
+    cmd: "echo deployed {{ repo.after_sha }}"
 ```
 
 ---
