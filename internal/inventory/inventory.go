@@ -10,7 +10,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/eugenetaranov/bolt/internal/playbook"
+	"github.com/tackhq/tack/internal/playbook"
 )
 
 // HostEntry defines a single host in the inventory.

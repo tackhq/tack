@@ -3,7 +3,7 @@ package executor
 import (
 	"testing"
 
-	"github.com/eugenetaranov/bolt/internal/playbook"
+	"github.com/tackhq/tack/internal/playbook"
 )
 
 func TestShouldRunTask(t *testing.T) {

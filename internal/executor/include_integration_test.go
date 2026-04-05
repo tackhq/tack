@@ -7,11 +7,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/eugenetaranov/bolt/internal/connector/local"
-	_ "github.com/eugenetaranov/bolt/internal/module/command"
-	_ "github.com/eugenetaranov/bolt/internal/module/file"
-	"github.com/eugenetaranov/bolt/internal/output"
-	"github.com/eugenetaranov/bolt/internal/playbook"
+	"github.com/tackhq/tack/internal/connector/local"
+	_ "github.com/tackhq/tack/internal/module/command"
+	_ "github.com/tackhq/tack/internal/module/file"
+	"github.com/tackhq/tack/internal/output"
+	"github.com/tackhq/tack/internal/playbook"
 )
 
 func writeTestFile(t *testing.T, path string, content []byte, mode os.FileMode) {

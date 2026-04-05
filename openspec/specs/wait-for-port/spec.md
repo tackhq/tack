@@ -40,7 +40,7 @@ The module SHALL validate that required parameters are present and well-formed.
 - **THEN** the module SHALL use a default `timeout` of 300 seconds and default `interval` of 5 seconds
 
 ### Requirement: Port check executes from controller
-TCP port checks SHALL execute from the machine running Bolt (the controller), not on the remote target via the connector.
+TCP port checks SHALL execute from the machine running Tack (the controller), not on the remote target via the connector.
 
 #### Scenario: Port check against remote host
 - **WHEN** `wait_for` is invoked with `type: port`, `host: "10.0.1.5"`, `port: 443`

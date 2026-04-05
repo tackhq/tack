@@ -10,8 +10,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/eugenetaranov/bolt/internal/executor"
-	"github.com/eugenetaranov/bolt/internal/playbook"
+	"github.com/tackhq/tack/internal/executor"
+	"github.com/tackhq/tack/internal/playbook"
 )
 
 // Options configures a test run.
@@ -140,7 +140,7 @@ func generateTempPlaybook(container, role string) (string, func(), error) {
     - %s
 `, role, container, role)
 
-	f, err := os.CreateTemp("", "bolt-test-*.yaml")
+	f, err := os.CreateTemp("", "tack-test-*.yaml")
 	if err != nil {
 		return "", nil, err
 	}
@@ -185,7 +185,7 @@ func stableContainerName(target string) string {
 	base = strings.TrimSuffix(base, ".yaml")
 	base = strings.TrimSuffix(base, ".yml")
 	sanitized := sanitizeRe.ReplaceAllString(base, "-")
-	return "bolt-test-" + sanitized
+	return "tack-test-" + sanitized
 }
 
 // ensureContainer makes sure a container with the given name is running.

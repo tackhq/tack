@@ -1,9 +1,9 @@
-# GoReleaser configuration for Bolt
+# GoReleaser configuration for Tack
 # Documentation: https://goreleaser.com
 
 version: 2
 
-project_name: bolt
+project_name: tack
 
 before:
   hooks:
@@ -11,9 +11,9 @@ before:
     - go generate ./...
 
 builds:
-  - id: bolt
-    binary: bolt
-    main: ./cmd/bolt
+  - id: tack
+    binary: tack
+    main: ./cmd/tack
     env:
       - CGO_ENABLED=0
     goos:
@@ -72,13 +72,13 @@ changelog:
 
 release:
   github:
-    owner: eugenetaranov
-    name: bolt
+    owner: tackhq
+    name: tack
   draft: false
   prerelease: auto
   mode: replace
   header: |
-    ## Bolt {{ .Version }}
+    ## Tack {{ .Version }}
 
     Configuration management and system bootstrapping tool.
   footer: |
@@ -86,7 +86,7 @@ release:
 
     ### Homebrew (macOS/Linux)
     ```bash
-    brew install eugenetaranov/tap/bolt
+    brew install tackhq/tap/tack
     ```
 
     ### Direct Download
@@ -94,19 +94,19 @@ release:
 
     ### Build from Source
     ```bash
-    go install github.com/eugenetaranov/bolt/cmd/bolt@{{ .Tag }}
+    go install github.com/tackhq/tack/cmd/tack@{{ .Tag }}
     ```
 
 # Homebrew Tap
 brews:
-  - name: bolt
+  - name: tack
     repository:
-      owner: eugenetaranov
+      owner: tackhq
       name: homebrew-tap
       branch: main
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     directory: Formula
-    homepage: "https://github.com/eugenetaranov/bolt"
+    homepage: "https://github.com/tackhq/tack"
     description: "Configuration management and system bootstrapping tool inspired by Ansible"
     license: "MIT"
     commit_author:
@@ -117,9 +117,9 @@ brews:
       - name: go
         type: optional
     test: |
-      system "#{bin}/bolt", "--version"
+      system "#{bin}/tack", "--version"
     install: |
-      bin.install "bolt"
+      bin.install "tack"
 
 # Announce release (optional)
 announce:

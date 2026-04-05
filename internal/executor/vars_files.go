@@ -8,7 +8,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/eugenetaranov/bolt/internal/playbook"
+	"github.com/tackhq/tack/internal/playbook"
 )
 
 // loadVarsFile reads a single YAML file and returns its contents as a variable map.

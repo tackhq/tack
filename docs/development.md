@@ -3,23 +3,23 @@
 ## Requirements
 
 - Go 1.24+
-- Docker (for integration tests and `bolt test`)
+- Docker (for integration tests and `tack test`)
 - golangci-lint (for linting)
 
 ## Project Structure
 
 ```
-bolt/
-├── cmd/bolt/           # CLI entrypoint (Cobra)
+tack/
+├── cmd/tack/           # CLI entrypoint (Cobra)
 ├── internal/
 │   ├── connector/      # Connection backends (local, docker, ssh, ssm)
 │   ├── executor/       # Playbook execution engine + parallel host support
-│   ├── generate/       # bolt generate command
+│   ├── generate/       # tack generate command
 │   ├── module/         # Task modules (apt, brew, yum, file, copy, command, systemd, template)
 │   ├── output/         # Formatted terminal and JSON output
 │   ├── playbook/       # YAML parsing, variable interpolation, conditions
 │   ├── source/         # Remote playbook sources (git, s3, http)
-│   ├── testrun/        # bolt test command
+│   ├── testrun/        # tack test command
 │   └── vault/          # Encrypted vault file support
 ├── pkg/
 │   ├── facts/          # System fact gathering (OS, arch, network, EC2)
@@ -32,10 +32,10 @@ bolt/
 ## Build & Run
 
 ```bash
-make build              # Build for current platform (output: ./bin/bolt)
+make build              # Build for current platform (output: ./bin/tack)
 make test               # Run unit tests with race detector
 make lint               # Run golangci-lint
-go run ./cmd/bolt       # Run directly without building
+go run ./cmd/tack       # Run directly without building
 ```
 
 ## Testing

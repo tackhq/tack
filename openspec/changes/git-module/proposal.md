@@ -1,6 +1,6 @@
 ## Why
 
-Deployment playbooks commonly need to check out a git repository at a specific ref on target hosts — to pull application code, configuration, templates, or scripts. Bolt currently has no first-class way to do this; users fall back to `command:` tasks that shell out to `git`, losing idempotency and producing noisy diffs on every run. A proper `git` module compares current HEAD to desired ref and only fetches/checks out when actually needed.
+Deployment playbooks commonly need to check out a git repository at a specific ref on target hosts — to pull application code, configuration, templates, or scripts. Tack currently has no first-class way to do this; users fall back to `command:` tasks that shell out to `git`, losing idempotency and producing noisy diffs on every run. A proper `git` module compares current HEAD to desired ref and only fetches/checks out when actually needed.
 
 ## What Changes
 

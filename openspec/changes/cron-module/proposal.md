@@ -1,6 +1,6 @@
 ## Why
 
-Scheduled jobs (backups, log rotation, health checks, periodic scripts) are a staple of system configuration, but Bolt has no idempotent way to manage them. Users must fall back to `command:` tasks that shell out to `crontab` or write crontab files by hand — both approaches lose idempotency guarantees and make playbooks brittle. A first-class `cron` module is the established Ansible pattern and unblocks common IT-automation workflows.
+Scheduled jobs (backups, log rotation, health checks, periodic scripts) are a staple of system configuration, but Tack has no idempotent way to manage them. Users must fall back to `command:` tasks that shell out to `crontab` or write crontab files by hand — both approaches lose idempotency guarantees and make playbooks brittle. A first-class `cron` module is the established Ansible pattern and unblocks common IT-automation workflows.
 
 ## What Changes
 

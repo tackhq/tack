@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/eugenetaranov/bolt/internal/playbook"
+	"github.com/tackhq/tack/internal/playbook"
 )
 
 // JSONEmitter emits newline-delimited JSON events to stdout.

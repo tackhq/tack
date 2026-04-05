@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/eugenetaranov/bolt/internal/connector"
+	"github.com/tackhq/tack/internal/connector"
 	sshconfig "github.com/kevinburke/ssh_config"
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
@@ -257,7 +257,7 @@ func (c *Connector) Upload(ctx context.Context, src io.Reader, dst string, mode 
 	// Upload to a temp file, then move it into place via sudo.
 	target := dst
 	if c.sudo && c.user != "root" {
-		target = fmt.Sprintf("/tmp/bolt-upload-%d", time.Now().UnixNano())
+		target = fmt.Sprintf("/tmp/tack-upload-%d", time.Now().UnixNano())
 	}
 
 	f, err := sftpClient.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_TRUNC)

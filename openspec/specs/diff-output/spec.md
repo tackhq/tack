@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Diff display in plan output
-When `--diff` or `--verbose` is active and a file-changing task has content differences, Bolt SHALL display a unified diff of the old and new file content during the plan phase.
+When `--diff` or `--verbose` is active and a file-changing task has content differences, Tack SHALL display a unified diff of the old and new file content during the plan phase.
 
 #### Scenario: Diff shown for changed file
 - **WHEN** `--diff` is specified and a `copy` or `template` task would change a remote file
@@ -44,21 +44,21 @@ Diffs SHALL show only a configurable number of context lines around each change,
 - **THEN** the diff SHALL show ±3 lines of context around the change with `@@` hunk markers, not all 200 lines
 
 ### Requirement: Binary file detection
-Bolt SHALL detect binary files and skip content diff rendering.
+Tack SHALL detect binary files and skip content diff rendering.
 
 #### Scenario: Binary file detected
 - **WHEN** `--diff` is active and the file content (old or new) contains null bytes in the first 8KB
 - **THEN** the plan output SHALL show "Binary files differ" with old/new checksums instead of a content diff
 
 ### Requirement: Large file threshold
-Bolt SHALL skip content diff rendering for files exceeding a size threshold.
+Tack SHALL skip content diff rendering for files exceeding a size threshold.
 
 #### Scenario: File exceeds 64KB
 - **WHEN** `--diff` is active and the file content exceeds 64KB
 - **THEN** the plan output SHALL show old/new checksums with a "(file too large for diff)" note instead of a content diff
 
 ### Requirement: Gate remote content fetch
-Bolt SHALL only fetch remote file content (for diff purposes) when `--diff` or `--verbose` is active.
+Tack SHALL only fetch remote file content (for diff purposes) when `--diff` or `--verbose` is active.
 
 #### Scenario: No diff flag skips content fetch
 - **WHEN** neither `--diff` nor `--verbose` is specified

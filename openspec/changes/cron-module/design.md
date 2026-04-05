@@ -4,7 +4,7 @@ Cron has two management surfaces on Linux:
 1. **User crontabs** managed by the `crontab` binary (`crontab -l` to read, `crontab -` to replace, `-u <user>` to target another user). Storage location varies (`/var/spool/cron/`, `/var/spool/cron/crontabs/`) and is not meant to be edited directly.
 2. **System drop-ins** in `/etc/cron.d/` — plain files read by the cron daemon. Each line includes a `user` field between schedule and command. Drop-ins must pass the cron daemon's filename rules (no dots, limited charset).
 
-Bolt's existing modules all execute via the `Connector` interface, so the cron module composes `crontab` invocations and file reads/writes rather than touching spool files directly. Similar precedent exists in `internal/module/user/` and `internal/module/systemd/` which both call OS binaries idempotently.
+Tack's existing modules all execute via the `Connector` interface, so the cron module composes `crontab` invocations and file reads/writes rather than touching spool files directly. Similar precedent exists in `internal/module/user/` and `internal/module/systemd/` which both call OS binaries idempotently.
 
 The connector already supports `Execute`, `Upload`, `Download`, and sudo. No interface changes required.
 
@@ -33,7 +33,7 @@ Each managed entry is preceded by a single-line marker comment: `# BOLT: <name>`
 - **Hash suffix in comment** (`# BOLT: name [hash]`): Cleaner conflict detection but surprises users who hand-edit the line. Rejected — humans need to be able to read and edit the managed line without breaking idempotency.
 - **External state file on target**: Too much state. Rejected.
 
-**Rationale:** Matches Ansible's long-standing pattern; users already recognize it. The marker is the source of truth for "Bolt manages this line."
+**Rationale:** Matches Ansible's long-standing pattern; users already recognize it. The marker is the source of truth for "Tack manages this line."
 
 ### Decision 2: Read-modify-write for user crontabs
 
@@ -72,7 +72,7 @@ At task start, the module inspects `facts.os_type` (already gathered by `pkg/fac
 
 ### Decision 8: Diff output shows full file context
 
-For `--diff` mode, emit a unified diff between the current crontab (or drop-in file) and the prospective version, using Bolt's existing diff helper. Small crontabs → show entire diff. Large crontabs → let the existing diff helper decide truncation.
+For `--diff` mode, emit a unified diff between the current crontab (or drop-in file) and the prospective version, using Tack's existing diff helper. Small crontabs → show entire diff. Large crontabs → let the existing diff helper decide truncation.
 
 ### Decision 9: Name validation
 
@@ -88,7 +88,7 @@ When `cron_file` is set, the filename component (basename) must match cron daemo
 
 ### Decision 11: Concurrency
 
-The module does NOT attempt to lock the crontab. Two concurrent bolt runs editing the same user crontab can race. This matches Ansible's behavior and is documented. Users should partition playbooks or use `--forks 1` if this matters.
+The module does NOT attempt to lock the crontab. Two concurrent tack runs editing the same user crontab can race. This matches Ansible's behavior and is documented. Users should partition playbooks or use `--forks 1` if this matters.
 
 ## Risks / Trade-offs
 
@@ -97,4 +97,4 @@ The module does NOT attempt to lock the crontab. Two concurrent bolt runs editin
 - **[Risk]** Under sudo, `crontab -u <user>` requires `root` or specific sudoers rules. Failure modes surface as cryptic errors. → **Mitigation:** When `sudo.enabled` is false and `user` != connected user, emit a preflight warning.
 - **[Trade-off]** No bulk operations means managing many entries is verbose. → **Mitigation:** Users can use `loop:` (already supported) to iterate.
 - **[Trade-off]** Markers leave a visual footprint in crontabs. → **Mitigation:** This is the accepted idiom; document it.
-- **[Risk]** Drop-in file rewrites are not atomic through the connector abstraction if Upload doesn't use rename. → **Mitigation:** Check existing Upload semantics; if non-atomic, write to `<path>.bolt.tmp` first and `mv` via Execute.
+- **[Risk]** Drop-in file rewrites are not atomic through the connector abstraction if Upload doesn't use rename. → **Mitigation:** Check existing Upload semantics; if non-atomic, write to `<path>.tack.tmp` first and `mv` via Execute.

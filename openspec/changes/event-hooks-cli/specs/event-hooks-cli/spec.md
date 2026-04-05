@@ -1,22 +1,22 @@
 ## ADDED Requirements
 
 ### Requirement: Hook CLI flags
-The bolt CLI SHALL accept three repeatable flags on the run/execute command: `--on-failure <cmd>`, `--on-success <cmd>`, and `--on-complete <cmd>`. Each flag MAY be specified multiple times. The flags SHALL register commands to invoke at end-of-run.
+The tack CLI SHALL accept three repeatable flags on the run/execute command: `--on-failure <cmd>`, `--on-success <cmd>`, and `--on-complete <cmd>`. Each flag MAY be specified multiple times. The flags SHALL register commands to invoke at end-of-run.
 
 #### Scenario: Single hook registered
-- **WHEN** bolt is invoked with `--on-failure "slack-notify fail"`
+- **WHEN** tack is invoked with `--on-failure "slack-notify fail"`
 - **THEN** the command SHALL be registered and executed if the run fails
 
 #### Scenario: Multiple hooks registered
-- **WHEN** bolt is invoked with `--on-failure "A" --on-failure "B" --on-complete "C"`
+- **WHEN** tack is invoked with `--on-failure "A" --on-failure "B" --on-complete "C"`
 - **THEN** all three commands SHALL be registered
 
 #### Scenario: No hooks registered
-- **WHEN** bolt is invoked without any hook flags
+- **WHEN** tack is invoked without any hook flags
 - **THEN** no hook commands SHALL be executed at end-of-run
 
 ### Requirement: Hook timeout flag
-The bolt CLI SHALL accept `--hook-timeout <duration>` (default `30s`) controlling the maximum wall-clock time for each hook. The value SHALL accept Go duration format (e.g. `10s`, `2m`).
+The tack CLI SHALL accept `--hook-timeout <duration>` (default `30s`) controlling the maximum wall-clock time for each hook. The value SHALL accept Go duration format (e.g. `10s`, `2m`).
 
 #### Scenario: Default timeout
 - **WHEN** `--hook-timeout` is not specified
@@ -28,25 +28,25 @@ The bolt CLI SHALL accept `--hook-timeout <duration>` (default `30s`) controllin
 
 #### Scenario: Invalid duration
 - **WHEN** `--hook-timeout notaduration` is set
-- **THEN** bolt SHALL fail with a parse error before running the playbook
+- **THEN** tack SHALL fail with a parse error before running the playbook
 
 ### Requirement: Environment variable equivalents
-The bolt CLI SHALL support `BOLT_ON_FAILURE`, `BOLT_ON_SUCCESS`, `BOLT_ON_COMPLETE`, and `BOLT_HOOK_TIMEOUT` environment variables as equivalents to the CLI flags. When an env var is set, its value SHALL be interpreted as a comma-separated list of commands (literal `,` can be escaped as `\,`). CLI flags SHALL take precedence over environment variables for the same hook type — when a flag is set, the env var for that type SHALL be ignored.
+The tack CLI SHALL support `TACK_ON_FAILURE`, `TACK_ON_SUCCESS`, `TACK_ON_COMPLETE`, and `TACK_HOOK_TIMEOUT` environment variables as equivalents to the CLI flags. When an env var is set, its value SHALL be interpreted as a comma-separated list of commands (literal `,` can be escaped as `\,`). CLI flags SHALL take precedence over environment variables for the same hook type — when a flag is set, the env var for that type SHALL be ignored.
 
 #### Scenario: Env var only
-- **WHEN** `BOLT_ON_FAILURE="cmd1,cmd2"` is set and no `--on-failure` flag
+- **WHEN** `TACK_ON_FAILURE="cmd1,cmd2"` is set and no `--on-failure` flag
 - **THEN** both `cmd1` and `cmd2` SHALL be registered as failure hooks
 
 #### Scenario: Escaped comma in env
-- **WHEN** `BOLT_ON_COMPLETE="curl -d a\,b https://x"` is set
+- **WHEN** `TACK_ON_COMPLETE="curl -d a\,b https://x"` is set
 - **THEN** one hook SHALL be registered with the comma preserved
 
 #### Scenario: Flag overrides env
-- **WHEN** `BOLT_ON_FAILURE="env-cmd"` is set and `--on-failure "flag-cmd"` is passed
+- **WHEN** `TACK_ON_FAILURE="env-cmd"` is set and `--on-failure "flag-cmd"` is passed
 - **THEN** only `flag-cmd` SHALL be registered for the failure hook type
 
 #### Scenario: Env-only timeout
-- **WHEN** `BOLT_HOOK_TIMEOUT=10s` is set and no flag is passed
+- **WHEN** `TACK_HOOK_TIMEOUT=10s` is set and no flag is passed
 - **THEN** each hook SHALL be limited to 10 seconds
 
 ### Requirement: Execution conditions
@@ -61,15 +61,15 @@ The system SHALL execute `--on-failure` hooks only when the run status is `faile
 - **THEN** `B` SHALL run, then `C`; `A` SHALL NOT run
 
 ### Requirement: Subprocess invocation
-Each registered hook SHALL be executed as a subprocess via `/bin/sh -c "<cmd>"` on the control host. The subprocess SHALL inherit bolt's environment plus `BOLT_RUN_ID`, `BOLT_RUN_STATUS`, and `BOLT_PLAYBOOK` environment variables.
+Each registered hook SHALL be executed as a subprocess via `/bin/sh -c "<cmd>"` on the control host. The subprocess SHALL inherit tack's environment plus `TACK_RUN_ID`, `TACK_RUN_STATUS`, and `TACK_PLAYBOOK` environment variables.
 
 #### Scenario: Shell features available
-- **WHEN** hook command is `echo $BOLT_RUN_STATUS | tee /tmp/out`
+- **WHEN** hook command is `echo $TACK_RUN_STATUS | tee /tmp/out`
 - **THEN** shell pipes and variable expansion SHALL work
 
 #### Scenario: Convenience env vars
 - **WHEN** a hook runs
-- **THEN** the subprocess env SHALL contain `BOLT_RUN_ID`, `BOLT_RUN_STATUS` (`success`/`failed`), and `BOLT_PLAYBOOK` set to the playbook path
+- **THEN** the subprocess env SHALL contain `TACK_RUN_ID`, `TACK_RUN_STATUS` (`success`/`failed`), and `TACK_PLAYBOOK` set to the playbook path
 
 ### Requirement: JSON payload on stdin
 The system SHALL write a JSON payload to each hook's stdin and close stdin after writing. The payload SHALL contain `schema_version` (integer, starting at 1), `run_id`, `status`, `playbook`, `started_at` (RFC3339), `ended_at` (RFC3339), `duration_ms`, `failed_task_count`, `changed_task_count`, `ok_task_count`, and `hosts` (array of per-host summaries including `name`, `status`, `ok_task_count`, `changed_task_count`, `failed_tasks`, `duration_ms`).
@@ -133,37 +133,37 @@ Each hook subprocess SHALL be terminated if it runs longer than the configured t
 
 #### Scenario: Timeout warning emitted
 - **WHEN** a hook is terminated by timeout
-- **THEN** bolt SHALL emit a warning to stderr naming the hook command and the timeout
+- **THEN** tack SHALL emit a warning to stderr naming the hook command and the timeout
 
 ### Requirement: Hook output capture
 Hook stdout and stderr SHALL be captured into a combined buffer up to 64KB per hook. In verbose mode (`-v` or higher), the captured output SHALL be printed. When not verbose, captured output SHALL be printed only when the hook exits non-zero. Output exceeding 64KB SHALL be truncated and suffixed with `... [truncated, exceeded 64KB]`.
 
 #### Scenario: Success, non-verbose
-- **WHEN** hook exits 0 and bolt runs without `-v`
+- **WHEN** hook exits 0 and tack runs without `-v`
 - **THEN** hook output SHALL NOT be printed
 
 #### Scenario: Success, verbose
-- **WHEN** hook exits 0 and bolt runs with `-v`
+- **WHEN** hook exits 0 and tack runs with `-v`
 - **THEN** hook output SHALL be printed
 
 #### Scenario: Failure, non-verbose
-- **WHEN** hook exits non-zero and bolt runs without `-v`
+- **WHEN** hook exits non-zero and tack runs without `-v`
 - **THEN** hook output SHALL be printed as part of the warning
 
 #### Scenario: Output truncation
 - **WHEN** hook prints 100KB to stdout
 - **THEN** only the first 64KB SHALL be captured and the truncation suffix SHALL be appended
 
-### Requirement: Hook failures do not change bolt exit code
-When a hook exits non-zero or times out, bolt SHALL emit a warning to stderr but SHALL NOT alter the exit code of the bolt process. The bolt exit code SHALL always reflect the playbook run's outcome.
+### Requirement: Hook failures do not change tack exit code
+When a hook exits non-zero or times out, tack SHALL emit a warning to stderr but SHALL NOT alter the exit code of the tack process. The tack exit code SHALL always reflect the playbook run's outcome.
 
 #### Scenario: Successful run with failing hook
 - **WHEN** the playbook succeeds but `--on-success` hook exits 1
-- **THEN** bolt SHALL exit 0 and print a warning
+- **THEN** tack SHALL exit 0 and print a warning
 
 #### Scenario: Failed run with failing hook
 - **WHEN** the playbook fails (exit code N) and a hook also fails
-- **THEN** bolt SHALL exit with code N
+- **THEN** tack SHALL exit with code N
 
 #### Scenario: Hook warning format
 - **WHEN** a hook fails
@@ -173,18 +173,18 @@ When a hook exits non-zero or times out, bolt SHALL emit a warning to stderr but
 Hooks SHALL execute after the normal end-of-run summary has been written to stdout/stderr, so that users see the summary immediately without waiting for hook completion.
 
 #### Scenario: Summary before hook output
-- **WHEN** bolt runs a play with `--on-complete sleep 1`
+- **WHEN** tack runs a play with `--on-complete sleep 1`
 - **THEN** the run summary SHALL appear in output before the hook starts
 
 ### Requirement: Hooks are control-host only
-Hooks SHALL run on the control host (where bolt is invoked), NOT on target hosts. The hook command SHALL have no access to target connectors.
+Hooks SHALL run on the control host (where tack is invoked), NOT on target hosts. The hook command SHALL have no access to target connectors.
 
 #### Scenario: Hook has local env
 - **WHEN** a hook reads `$HOME`
 - **THEN** it SHALL see the control host's HOME, not any target's HOME
 
 ### Requirement: Run ID generation
-The system SHALL generate a fresh UUIDv4 per bolt invocation, used as `run_id` in the payload and `BOLT_RUN_ID` env var.
+The system SHALL generate a fresh UUIDv4 per tack invocation, used as `run_id` in the payload and `TACK_RUN_ID` env var.
 
 #### Scenario: run_id is UUIDv4
 - **WHEN** a hook runs

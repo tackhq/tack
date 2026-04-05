@@ -82,5 +82,5 @@
 ## 13. Release
 
 - [ ] 13.1 Run `make lint` and `make test`
-- [ ] 13.2 Validate example playbooks with `bolt validate`
+- [ ] 13.2 Validate example playbooks with `tack validate`
 - [ ] 13.3 Manual smoke: clone a public repo to a Docker container and pin to a tag

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/eugenetaranov/bolt/internal/connector"
+	"github.com/tackhq/tack/internal/connector"
 )
 
 type mockConnector struct {

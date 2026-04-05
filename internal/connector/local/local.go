@@ -11,7 +11,7 @@ import (
 	"os/user"
 	"runtime"
 
-	"github.com/eugenetaranov/bolt/internal/connector"
+	"github.com/tackhq/tack/internal/connector"
 )
 
 // Connector executes commands on the local machine.
@@ -150,7 +150,7 @@ func (c *Connector) Upload(ctx context.Context, src io.Reader, dst string, mode 
 	}
 
 	if needsSudo {
-		tmpFile, err := os.CreateTemp("", "bolt-upload-*")
+		tmpFile, err := os.CreateTemp("", "tack-upload-*")
 		if err != nil {
 			return fmt.Errorf("failed to create temp file: %w", err)
 		}

@@ -1,4 +1,4 @@
-# Bolt Roadmap
+# Tack Roadmap
 
 Feature roadmap based on team discussion covering PM, DevOps (senior/mid/junior), developer, and IT automation perspectives.
 
@@ -27,7 +27,7 @@ Feature roadmap based on team discussion covering PM, DevOps (senior/mid/junior)
 
 | Status | Feature | Description | Details |
 |--------|---------|-------------|---------|
-| [ ] | `bolt export` | Compile playbook to standalone shell script | Captures shell commands Bolt would send through a connector. Resolves variables, templates, conditionals. Useful for security audits, air-gapped hosts, debugging |
+| [ ] | `tack export` | Compile playbook to standalone shell script | Captures shell commands Tack would send through a connector. Resolves variables, templates, conditionals. Useful for security audits, air-gapped hosts, debugging |
 | [x] | `--diff` mode | Show file content diffs before applying | Works with `--dry-run` for `copy`, `template`, `file` modules. Colored unified diff output |
 | [x] | `wait_for` module | Poll for conditions before proceeding | Params: type (port/path/command/url), host, port, path, cmd, url, timeout, interval, state (started/stopped). Replaces fragile shell loops |
 | [x] | `assert` module | Validate preconditions and fail fast | Params: that (list of conditions), fail_msg, success_msg. Catch misconfigurations early |

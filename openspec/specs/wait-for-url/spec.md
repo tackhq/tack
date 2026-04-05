@@ -32,7 +32,7 @@ The module SHALL validate that the `url` parameter is present and well-formed.
 - **THEN** the module SHALL return an error with message "url must use http or https scheme"
 
 ### Requirement: URL check executes from controller
-HTTP requests for URL checks SHALL originate from the machine running Bolt (the controller), not from the target.
+HTTP requests for URL checks SHALL originate from the machine running Tack (the controller), not from the target.
 
 #### Scenario: URL check from controller
 - **WHEN** `wait_for` is invoked with `type: url`, `url: "http://10.0.1.5:8080/health"`

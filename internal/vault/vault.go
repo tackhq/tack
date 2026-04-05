@@ -15,9 +15,9 @@ import (
 )
 
 const (
-	// magicPrefix is the versioned identifier for Bolt vault files.
-	// Format: $BOLT_VAULT;<version>;<algorithm>
-	magicPrefix = "$BOLT_VAULT;1.0;AES256-GCM"
+	// magicPrefix is the versioned identifier for Tack vault files.
+	// Format: $TACK_VAULT;<version>;<algorithm>
+	magicPrefix = "$TACK_VAULT;1.0;AES256-GCM"
 
 	saltSize  = 16 // bytes — Argon2id salt
 	nonceSize = 12 // bytes — AES-GCM standard nonce
@@ -171,7 +171,7 @@ func parseHeader(line string) (vaultParams, error) {
 	}
 
 	// Extract the KDF params suffix after the magic prefix.
-	// Expected format: $BOLT_VAULT;1.0;AES256-GCM;t=N,m=N,p=N
+	// Expected format: $TACK_VAULT;1.0;AES256-GCM;t=N,m=N,p=N
 	suffix := line[len(magicPrefix):]
 	if suffix == "" || suffix[0] != ';' {
 		return vaultParams{}, fmt.Errorf("vault: malformed header: missing KDF params after magic prefix")

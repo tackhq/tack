@@ -6,8 +6,8 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/eugenetaranov/bolt/internal/inventory"
-	"github.com/eugenetaranov/bolt/internal/playbook"
+	"github.com/tackhq/tack/internal/inventory"
+	"github.com/tackhq/tack/internal/playbook"
 )
 
 func TestEvaluateCondition(t *testing.T) {

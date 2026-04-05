@@ -11,7 +11,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/eugenetaranov/bolt/internal/connector"
+	"github.com/tackhq/tack/internal/connector"
 )
 
 // Connector executes commands inside Docker containers.
@@ -151,7 +151,7 @@ func (c *Connector) buildExecArgs(cmd string) []string {
 // Upload copies content to a file inside the container.
 func (c *Connector) Upload(ctx context.Context, src io.Reader, dst string, mode uint32) error {
 	// Docker cp doesn't support stdin directly, so we need a temp file
-	tmpFile, err := os.CreateTemp("", "bolt-upload-*")
+	tmpFile, err := os.CreateTemp("", "tack-upload-*")
 	if err != nil {
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}
@@ -188,7 +188,7 @@ func (c *Connector) Upload(ctx context.Context, src io.Reader, dst string, mode 
 // Download copies content from a file inside the container.
 func (c *Connector) Download(ctx context.Context, src string, dst io.Writer) error {
 	// Docker cp doesn't support stdout directly, so we need a temp file
-	tmpFile, err := os.CreateTemp("", "bolt-download-*")
+	tmpFile, err := os.CreateTemp("", "tack-download-*")
 	if err != nil {
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}

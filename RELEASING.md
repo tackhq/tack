@@ -1,6 +1,6 @@
-# Releasing Bolt
+# Releasing Tack
 
-This document describes how to create a new release of Bolt.
+This document describes how to create a new release of Tack.
 
 ## Prerequisites
 
@@ -21,7 +21,7 @@ go install github.com/goreleaser/goreleaser/v2@latest
 1. **Create a Homebrew Tap Repository**
 
    Create a new repository named `homebrew-tap` under your GitHub account:
-   - Repository: `eugenetaranov/homebrew-tap`
+   - Repository: `tackhq/homebrew-tap`
    - This will host the Homebrew formula
 
 2. **Create a Personal Access Token**
@@ -32,7 +32,7 @@ go install github.com/goreleaser/goreleaser/v2@latest
 
 3. **Add Repository Secrets**
 
-   In the `bolt` repository, add the following secret:
+   In the `tack` repository, add the following secret:
    - `HOMEBREW_TAP_TOKEN`: Your GitHub PAT with repo access
 
 ## Creating a Release
@@ -77,10 +77,10 @@ Each release includes:
 
 | Artifact | Description |
 |----------|-------------|
-| `bolt_VERSION_darwin_amd64.tar.gz` | macOS Intel |
-| `bolt_VERSION_darwin_arm64.tar.gz` | macOS Apple Silicon |
-| `bolt_VERSION_linux_amd64.tar.gz` | Linux x86_64 |
-| `bolt_VERSION_linux_arm64.tar.gz` | Linux ARM64 |
+| `tack_VERSION_darwin_amd64.tar.gz` | macOS Intel |
+| `tack_VERSION_darwin_arm64.tar.gz` | macOS Apple Silicon |
+| `tack_VERSION_linux_amd64.tar.gz` | Linux x86_64 |
+| `tack_VERSION_linux_arm64.tar.gz` | Linux ARM64 |
 | `checksums.txt` | SHA256 checksums |
 
 ## Homebrew Installation
@@ -89,13 +89,13 @@ After release, users can install via Homebrew:
 
 ```bash
 # Add the tap (first time only)
-brew tap eugenetaranov/tap
+brew tap tackhq/tap
 
-# Install bolt
-brew install bolt
+# Install tack
+brew install tack
 
 # Or in one command
-brew install eugenetaranov/tap/bolt
+brew install tackhq/tap/tack
 ```
 
 ## Versioning

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/eugenetaranov/bolt/internal/output"
-	"github.com/eugenetaranov/bolt/internal/playbook"
+	"github.com/tackhq/tack/internal/output"
+	"github.com/tackhq/tack/internal/playbook"
 )
 
 // runTagPlaybook parses and runs a playbook YAML with tag filters and returns success + output.

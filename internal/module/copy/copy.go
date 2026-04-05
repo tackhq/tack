@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/eugenetaranov/bolt/internal/connector"
-	"github.com/eugenetaranov/bolt/internal/module"
+	"github.com/tackhq/tack/internal/connector"
+	"github.com/tackhq/tack/internal/module"
 )
 
 func init() {
@@ -126,7 +126,7 @@ func (m *Module) Run(ctx context.Context, conn connector.Connector, params map[s
 		}
 	}
 
-	targetPath := fmt.Sprintf("/tmp/bolt-copy-%d", time.Now().UnixNano())
+	targetPath := fmt.Sprintf("/tmp/tack-copy-%d", time.Now().UnixNano())
 	modeInt, err := module.ParseMode(mode)
 	if err != nil {
 		return nil, fmt.Errorf("invalid mode: %w", err)

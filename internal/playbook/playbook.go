@@ -1,4 +1,4 @@
-// Package playbook defines the structure and parsing of Bolt playbooks.
+// Package playbook defines the structure and parsing of Tack playbooks.
 package playbook
 
 import (

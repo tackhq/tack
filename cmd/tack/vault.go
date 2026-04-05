@@ -11,7 +11,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/eugenetaranov/bolt/internal/vault"
+	"github.com/tackhq/tack/internal/vault"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -46,12 +46,12 @@ func init() {
 }
 
 // resolveVaultPassword returns a []byte password using the resolution chain:
-// BOLT_VAULT_PASSWORD env > --vault-password-file flag > interactive prompt.
+// TACK_VAULT_PASSWORD env > --vault-password-file flag > interactive prompt.
 // confirmPrompt=true prompts twice and verifies match (for vault init).
 // When env or file source is used, confirmation is always skipped.
 func resolveVaultPassword(cmd *cobra.Command, confirmPrompt bool) ([]byte, error) {
 	// 1. Environment variable (highest priority; skip confirmation even if confirmPrompt)
-	if envPw := os.Getenv("BOLT_VAULT_PASSWORD"); envPw != "" {
+	if envPw := os.Getenv("TACK_VAULT_PASSWORD"); envPw != "" {
 		return []byte(envPw), nil
 	}
 
@@ -113,7 +113,7 @@ func launchEditor(ctx context.Context, path string) error {
 // then renames it atomically to dst. On failure the temp file is removed.
 // This ensures the vault file is never left in a partially-written state.
 func atomicWrite(dst string, data []byte, perm os.FileMode) error {
-	tmp, err := os.CreateTemp(filepath.Dir(dst), ".bolt-vault-*.tmp")
+	tmp, err := os.CreateTemp(filepath.Dir(dst), ".tack-vault-*.tmp")
 	if err != nil {
 		return fmt.Errorf("atomic write: create temp: %w", err)
 	}
@@ -141,7 +141,7 @@ func atomicWrite(dst string, data []byte, perm os.FileMode) error {
 	return nil
 }
 
-// runVaultInit implements `bolt vault init <file>`.
+// runVaultInit implements `tack vault init <file>`.
 // It checks that the file does not exist, prompts for a password with confirmation,
 // opens $EDITOR with scaffold content, then encrypts and writes the result.
 func runVaultInit(cmd *cobra.Command, args []string) error {
@@ -149,7 +149,7 @@ func runVaultInit(cmd *cobra.Command, args []string) error {
 
 	// D-08: Refuse if file already exists
 	if _, err := os.Stat(vaultPath); err == nil {
-		return fmt.Errorf("file already exists: %s. Use 'bolt vault edit' to modify it", vaultPath)
+		return fmt.Errorf("file already exists: %s. Use 'tack vault edit' to modify it", vaultPath)
 	}
 
 	// D-09/D-06: Resolve password with confirmation for interactive prompts
@@ -165,7 +165,7 @@ func runVaultInit(cmd *cobra.Command, args []string) error {
 
 	// D-07: Write scaffold content to temp file in os.TempDir()
 	scaffoldContent := "# Add your secrets as YAML key-value pairs below\ndb_password: changeme\n"
-	tmpFile, err := os.CreateTemp("", "bolt-vault-*.yaml")
+	tmpFile, err := os.CreateTemp("", "tack-vault-*.yaml")
 	if err != nil {
 		return fmt.Errorf("creating temp file: %w", err)
 	}
@@ -216,7 +216,7 @@ func runVaultInit(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// runVaultEdit implements `bolt vault edit <file>`.
+// runVaultEdit implements `tack vault edit <file>`.
 // It decrypts the vault, opens $EDITOR, detects no-op changes, and re-encrypts if modified.
 func runVaultEdit(cmd *cobra.Command, args []string) error {
 	vaultPath := args[0]
@@ -244,7 +244,7 @@ func runVaultEdit(cmd *cobra.Command, args []string) error {
 	}
 
 	// D-10/D-03: Write plaintext to temp file in os.TempDir()
-	tmpFile, err := os.CreateTemp("", "bolt-vault-*.yaml")
+	tmpFile, err := os.CreateTemp("", "tack-vault-*.yaml")
 	if err != nil {
 		for i := range pw {
 			pw[i] = 0

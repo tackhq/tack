@@ -1,6 +1,6 @@
 # Sample inventory file
 #
-# Run with: bolt run playbook.yaml -i examples/inventory.yaml --hosts webservers
+# Run with: tack run playbook.yaml -i examples/inventory.yaml --hosts webservers
 
 hosts:
   web1:

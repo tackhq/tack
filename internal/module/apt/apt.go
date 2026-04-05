@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/eugenetaranov/bolt/internal/connector"
-	"github.com/eugenetaranov/bolt/internal/module"
+	"github.com/tackhq/tack/internal/connector"
+	"github.com/tackhq/tack/internal/module"
 )
 
 func init() {
@@ -384,7 +384,7 @@ func installDebFile(ctx context.Context, conn connector.Connector, path string) 
 	// Download if it's a URL
 	localPath := path
 	if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
-		localPath = "/tmp/bolt-pkg.deb"
+		localPath = "/tmp/tack-pkg.deb"
 		cmd := fmt.Sprintf("curl -fsSL -o %s %s", connector.ShellQuote(localPath), connector.ShellQuote(path))
 		if _, err := connector.Run(ctx, conn, cmd); err != nil {
 			return false, fmt.Errorf("failed to download deb file: %w", err)

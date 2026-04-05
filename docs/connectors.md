@@ -1,6 +1,6 @@
 # Connectors
 
-Connectors define how Bolt connects to and executes commands on target systems.
+Connectors define how Tack connects to and executes commands on target systems.
 
 ## Available Connectors
 
@@ -27,7 +27,7 @@ tasks:
       state: present
 ```
 
-Supports sudo via `sudo: true` at play or task level. Password can be provided via `--sudo-password` flag, `BOLT_SUDO_PASSWORD` env var, or interactive prompt.
+Supports sudo via `sudo: true` at play or task level. Password can be provided via `--sudo-password` flag, `TACK_SUDO_PASSWORD` env var, or interactive prompt.
 
 ## Docker Connector
 
@@ -49,7 +49,7 @@ The `hosts` value is the container name or ID. Sudo runs commands as the specifi
 **CLI shorthand:**
 
 ```bash
-bolt run playbook.yaml -c docker://my-container
+tack run playbook.yaml -c docker://my-container
 ```
 
 ## SSH Connector
@@ -90,30 +90,30 @@ tasks:
 
 ```bash
 # URI-style connection strings
-bolt run playbook.yaml -c ssh://deploy@web1:2222
-bolt run playbook.yaml -c ssh://deploy@web1 -c ssh://deploy@web2
+tack run playbook.yaml -c ssh://deploy@web1:2222
+tack run playbook.yaml -c ssh://deploy@web1 -c ssh://deploy@web2
 
 # Separate flags
-bolt run playbook.yaml --hosts web1,web2 --ssh-user deploy --ssh-key ~/.ssh/deploy_key
+tack run playbook.yaml --hosts web1,web2 --ssh-user deploy --ssh-key ~/.ssh/deploy_key
 
 # SSH config aliases work directly
-bolt run playbook.yaml --hosts myserver
+tack run playbook.yaml --hosts myserver
 
 # Connection type is auto-detected from SSH flags or remote hosts
-bolt run playbook.yaml --hosts web1 --ssh-user deploy
+tack run playbook.yaml --hosts web1 --ssh-user deploy
 ```
 
 ### Environment Variables
 
 | Variable | Description |
 |----------|-------------|
-| `BOLT_CONNECTION` | Connection type |
-| `BOLT_HOSTS` | Comma-separated host list |
-| `BOLT_SSH_USER` | SSH username |
-| `BOLT_SSH_PORT` | SSH port |
-| `BOLT_SSH_KEY` | Path to SSH private key |
-| `BOLT_SSH_PASSWORD` | SSH password |
-| `BOLT_SSH_INSECURE` | Skip host key verification (`1`, `true`, or `yes`) |
+| `TACK_CONNECTION` | Connection type |
+| `TACK_HOSTS` | Comma-separated host list |
+| `TACK_SSH_USER` | SSH username |
+| `TACK_SSH_PORT` | SSH port |
+| `TACK_SSH_KEY` | Path to SSH private key |
+| `TACK_SSH_PASSWORD` | SSH password |
+| `TACK_SSH_INSECURE` | Skip host key verification (`1`, `true`, or `yes`) |
 
 ## SSM Connector
 
@@ -159,30 +159,30 @@ ssm:
 
 ```bash
 # Tags on CLI (SSM connection auto-detected)
-bolt run patch.yaml --ssm-tags env=production,role=app-server --ssm-region us-east-1
+tack run patch.yaml --ssm-tags env=production,role=app-server --ssm-region us-east-1
 
 # Direct instance IDs
-bolt run patch.yaml --ssm-instances i-0abc123,i-0def456 --ssm-region us-east-1 --ssm-bucket my-bucket
+tack run patch.yaml --ssm-instances i-0abc123,i-0def456 --ssm-region us-east-1 --ssm-bucket my-bucket
 ```
 
 ### Environment Variables
 
 | Variable | Description |
 |----------|-------------|
-| `BOLT_SSM_INSTANCES` | Comma-separated instance IDs |
-| `BOLT_SSM_TAGS` | Comma-separated key=value tags |
-| `BOLT_SSM_REGION` | AWS region |
-| `BOLT_SSM_BUCKET` | S3 bucket for file transfer |
+| `TACK_SSM_INSTANCES` | Comma-separated instance IDs |
+| `TACK_SSM_TAGS` | Comma-separated key=value tags |
+| `TACK_SSM_REGION` | AWS region |
+| `TACK_SSM_BUCKET` | S3 bucket for file transfer |
 
 AWS credentials use the standard SDK credential chain (env vars, shared config, IAM roles).
 
 ## Dynamic Inventory
 
-In addition to static YAML inventory files, Bolt supports dynamic inventory sources via a plugin architecture. Pass any source with `-i`:
+In addition to static YAML inventory files, Tack supports dynamic inventory sources via a plugin architecture. Pass any source with `-i`:
 
 **Executable scripts** — auto-detected by file permissions, run with `--list`:
 ```bash
-bolt run deploy.yaml -i ./my-inventory-script.sh
+tack run deploy.yaml -i ./my-inventory-script.sh
 ```
 
 **Plugin configs** — YAML files with a `plugin:` key:
@@ -204,13 +204,13 @@ host_key: private_ip
 
 **Multiple sources** merge in order (later wins on conflicts):
 ```bash
-bolt run deploy.yaml -i ec2.yml -i overrides.yml
+tack run deploy.yaml -i ec2.yml -i overrides.yml
 ```
 
 **Inspect resolved inventory** for debugging:
 ```bash
-bolt inventory --list -i ec2.yml
-bolt inventory --host web1 -i hosts.yml
+tack inventory --list -i ec2.yml
+tack inventory --host web1 -i hosts.yml
 ```
 
 Use `--inventory-timeout` to control plugin execution timeout (default: 30s).
@@ -219,7 +219,7 @@ See [`examples/dynamic-inventory/`](../examples/dynamic-inventory/) for complete
 
 ## Auto-Detection
 
-When no `connection:` is specified, Bolt infers the type from flags:
+When no `connection:` is specified, Tack infers the type from flags:
 
 - SSH flags (`--ssh-user`, `--ssh-key`, etc.) or remote `--hosts` values imply `ssh`
 - SSM flags (`--ssm-instances`, `--ssm-tags`) imply `ssm`
@@ -227,8 +227,8 @@ When no `connection:` is specified, Bolt infers the type from flags:
 
 ## Parallel Execution
 
-Use `--forks N` (or `BOLT_FORKS` env var) to execute against multiple hosts concurrently. Output is buffered per-host and flushed in host order after completion. Defaults to 1 (serial).
+Use `--forks N` (or `TACK_FORKS` env var) to execute against multiple hosts concurrently. Output is buffered per-host and flushed in host order after completion. Defaults to 1 (serial).
 
 ```bash
-bolt run deploy.yaml --hosts web1,web2,web3 --forks 3
+tack run deploy.yaml --hosts web1,web2,web3 --forks 3
 ```

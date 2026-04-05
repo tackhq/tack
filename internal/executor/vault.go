@@ -5,8 +5,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/eugenetaranov/bolt/internal/playbook"
-	"github.com/eugenetaranov/bolt/internal/vault"
+	"github.com/tackhq/tack/internal/playbook"
+	"github.com/tackhq/tack/internal/vault"
 	"gopkg.in/yaml.v3"
 )
 

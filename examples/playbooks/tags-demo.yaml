@@ -2,11 +2,11 @@
 # Demonstrates selective task execution with --tags and --skip-tags.
 #
 # Run examples:
-#   bolt run examples/playbooks/tags-demo.yaml                    # runs all (except 'never' tasks)
-#   bolt run examples/playbooks/tags-demo.yaml --tags deploy      # only deploy-tagged tasks
-#   bolt run examples/playbooks/tags-demo.yaml --skip-tags debug  # skip debug tasks
-#   bolt run examples/playbooks/tags-demo.yaml --tags debug       # includes 'never' debug task
-#   bolt run examples/playbooks/tags-demo.yaml --check --tags deploy  # plan mode with tag filter
+#   tack run examples/playbooks/tags-demo.yaml                    # runs all (except 'never' tasks)
+#   tack run examples/playbooks/tags-demo.yaml --tags deploy      # only deploy-tagged tasks
+#   tack run examples/playbooks/tags-demo.yaml --skip-tags debug  # skip debug tasks
+#   tack run examples/playbooks/tags-demo.yaml --tags debug       # includes 'never' debug task
+#   tack run examples/playbooks/tags-demo.yaml --check --tags deploy  # plan mode with tag filter
 
 name: Tags demonstration
 hosts: localhost

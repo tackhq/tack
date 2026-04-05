@@ -1,6 +1,6 @@
 # Example: include_tasks with vars, when, and loop patterns
 #
-# Run: bolt run examples/include-tasks/playbook.yml
+# Run: tack run examples/include-tasks/playbook.yml
 ---
 - name: Include Tasks Demo
   hosts: localhost

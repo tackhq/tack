@@ -4,11 +4,11 @@
 The system SHALL accept multiple `-i` flags on the CLI. Each source SHALL be loaded independently (static, script, or plugin) and the results merged into a single `*Inventory`.
 
 #### Scenario: Two static files merged
-- **WHEN** user runs `bolt run playbook.yml -i hosts1.yml -i hosts2.yml`
+- **WHEN** user runs `tack run playbook.yml -i hosts1.yml -i hosts2.yml`
 - **THEN** the system SHALL load both files and merge their inventories
 
 #### Scenario: Mixed source types
-- **WHEN** user runs `bolt run playbook.yml -i ./script.sh -i overrides.yml`
+- **WHEN** user runs `tack run playbook.yml -i ./script.sh -i overrides.yml`
 - **THEN** the system SHALL execute the script for the first source, parse YAML for the second, and merge results
 
 ### Requirement: Host merge semantics

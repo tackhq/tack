@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: JSON output flag
-Bolt SHALL support an `--output` flag accepting `text` (default) or `json`. When `json` is specified, all execution output SHALL be emitted as newline-delimited JSON (NDJSON).
+Tack SHALL support an `--output` flag accepting `text` (default) or `json`. When `json` is specified, all execution output SHALL be emitted as newline-delimited JSON (NDJSON).
 
 #### Scenario: Default output
 - **WHEN** `--output` is not specified
@@ -13,7 +13,7 @@ Bolt SHALL support an `--output` flag accepting `text` (default) or `json`. When
 
 #### Scenario: Invalid output mode
 - **WHEN** `--output xml` is specified
-- **THEN** bolt SHALL return an error listing valid modes
+- **THEN** tack SHALL return an error listing valid modes
 
 ### Requirement: JSON event schema
 Each JSON line SHALL be a self-contained object with at minimum: `type` (string) and `timestamp` (ISO 8601 string).

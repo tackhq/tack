@@ -1,5 +1,5 @@
 # Example playbook: Setup Development Machine
-# Run with: bolt run examples/playbooks/setup-dev.yaml
+# Run with: tack run examples/playbooks/setup-dev.yaml
 
 name: Setup Development Machine
 hosts: localhost
@@ -84,12 +84,12 @@ tasks:
 
   - name: Create shell profile marker
     command:
-      cmd: echo "# Bolt managed" >> {{ env.HOME }}/.profile
-      creates: "{{ env.HOME }}/.bolt_configured"
+      cmd: echo "# Tack managed" >> {{ env.HOME }}/.profile
+      creates: "{{ env.HOME }}/.tack_configured"
     register: profile_result
 
   - name: Mark as configured
     file:
-      path: "{{ env.HOME }}/.bolt_configured"
+      path: "{{ env.HOME }}/.tack_configured"
       state: touch
     when: profile_result.changed

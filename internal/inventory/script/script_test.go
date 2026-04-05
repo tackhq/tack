@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/eugenetaranov/bolt/internal/inventory"
+	"github.com/tackhq/tack/internal/inventory"
 )
 
 func writeScript(t *testing.T, dir, name, content string) string {

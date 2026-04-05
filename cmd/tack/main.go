@@ -1,4 +1,4 @@
-// Package main is the entrypoint for the bolt CLI.
+// Package main is the entrypoint for the tack CLI.
 package main
 
 import (
@@ -18,33 +18,33 @@ import (
 	"golang.org/x/term"
 
 	// Import inventory plugins to register them
-	_ "github.com/eugenetaranov/bolt/internal/inventory/ec2"
-	_ "github.com/eugenetaranov/bolt/internal/inventory/http"
-	_ "github.com/eugenetaranov/bolt/internal/inventory/script"
+	_ "github.com/tackhq/tack/internal/inventory/ec2"
+	_ "github.com/tackhq/tack/internal/inventory/http"
+	_ "github.com/tackhq/tack/internal/inventory/script"
 
 	// Import modules to register them
-	_ "github.com/eugenetaranov/bolt/internal/module/apt"
-	_ "github.com/eugenetaranov/bolt/internal/module/blockinfile"
-	_ "github.com/eugenetaranov/bolt/internal/module/brew"
-	_ "github.com/eugenetaranov/bolt/internal/module/command"
-	_ "github.com/eugenetaranov/bolt/internal/module/copy"
-	_ "github.com/eugenetaranov/bolt/internal/module/file"
-	_ "github.com/eugenetaranov/bolt/internal/module/group"
-	_ "github.com/eugenetaranov/bolt/internal/module/lineinfile"
-	_ "github.com/eugenetaranov/bolt/internal/module/systemd"
-	_ "github.com/eugenetaranov/bolt/internal/module/template"
-	_ "github.com/eugenetaranov/bolt/internal/module/user"
-	_ "github.com/eugenetaranov/bolt/internal/module/waitfor"
-	_ "github.com/eugenetaranov/bolt/internal/module/yum"
+	_ "github.com/tackhq/tack/internal/module/apt"
+	_ "github.com/tackhq/tack/internal/module/blockinfile"
+	_ "github.com/tackhq/tack/internal/module/brew"
+	_ "github.com/tackhq/tack/internal/module/command"
+	_ "github.com/tackhq/tack/internal/module/copy"
+	_ "github.com/tackhq/tack/internal/module/file"
+	_ "github.com/tackhq/tack/internal/module/group"
+	_ "github.com/tackhq/tack/internal/module/lineinfile"
+	_ "github.com/tackhq/tack/internal/module/systemd"
+	_ "github.com/tackhq/tack/internal/module/template"
+	_ "github.com/tackhq/tack/internal/module/user"
+	_ "github.com/tackhq/tack/internal/module/waitfor"
+	_ "github.com/tackhq/tack/internal/module/yum"
 
-	"github.com/eugenetaranov/bolt/internal/executor"
-	"github.com/eugenetaranov/bolt/internal/output"
-	"github.com/eugenetaranov/bolt/internal/generate"
-	"github.com/eugenetaranov/bolt/internal/inventory"
-	"github.com/eugenetaranov/bolt/internal/module"
-	"github.com/eugenetaranov/bolt/internal/playbook"
-	"github.com/eugenetaranov/bolt/internal/source"
-	"github.com/eugenetaranov/bolt/internal/testrun"
+	"github.com/tackhq/tack/internal/executor"
+	"github.com/tackhq/tack/internal/output"
+	"github.com/tackhq/tack/internal/generate"
+	"github.com/tackhq/tack/internal/inventory"
+	"github.com/tackhq/tack/internal/module"
+	"github.com/tackhq/tack/internal/playbook"
+	"github.com/tackhq/tack/internal/source"
+	"github.com/tackhq/tack/internal/testrun"
 )
 
 var (
@@ -108,9 +108,9 @@ func addConnectionFlags(cmd *cobra.Command) {
 }
 
 var rootCmd = &cobra.Command{
-	Use:   "bolt",
-	Short: "Bolt - System bootstrapping and configuration management",
-	Long: `Bolt is a Go-based configuration management tool inspired by Ansible.
+	Use:   "tack",
+	Short: "Tack - System bootstrapping and configuration management",
+	Long: `Tack is a Go-based configuration management tool inspired by Ansible.
 It helps you bootstrap and configure macOS and Linux systems using
 simple YAML playbooks.
 
@@ -150,8 +150,8 @@ If the argument is a directory, it is treated as a role and wrapped in
 a temporary playbook. Connection and host settings come from CLI flags.
 
 Connection flags override playbook values. Environment variables
-(BOLT_CONNECTION, BOLT_HOSTS, BOLT_SSH_USER, BOLT_SSH_PORT,
-BOLT_SSH_KEY, BOLT_SSH_PASSWORD) fill in when neither CLI flag
+(TACK_CONNECTION, TACK_HOSTS, TACK_SSH_USER, TACK_SSH_PORT,
+TACK_SSH_KEY, TACK_SSH_PASSWORD) fill in when neither CLI flag
 nor playbook provides a value.
 
 The -c flag supports URI-style connection strings:
@@ -160,25 +160,25 @@ The -c flag supports URI-style connection strings:
   local://
 
 Multiple -c flags target multiple hosts:
-  bolt run setup.yaml -c ssh://user@web1:2222 -c ssh://user@web2:2222
+  tack run setup.yaml -c ssh://user@web1:2222 -c ssh://user@web2:2222
 
 Explicit flags (--ssh-user, --ssh-port, etc.) override URI-derived values.
 
-By default, bolt shows a plan of what will run and prompts for
+By default, tack shows a plan of what will run and prompts for
 confirmation before applying. Use --auto-approve to skip the prompt
 (useful for CI/scripting), or --check/--dry-run to show the plan without applying.
 
 Examples:
-  bolt run setup.yaml
-  bolt run setup.yaml --auto-approve
-  bolt run setup.yaml --debug
-  bolt run setup.yaml --check
-  bolt run setup.yaml --dry-run
-  bolt run setup.yaml -c ssh://deploy@web1:2222
-  bolt run setup.yaml -c ssh://deploy@web1 -c ssh://deploy@web2
-  bolt run setup.yaml -c ssh --hosts=web1,web2
-  bolt run setup.yaml --ssh-user=deploy --ssh-key=~/.ssh/deploy_key
-  BOLT_SSH_HOSTS=web1,web2 bolt run setup.yaml`,
+  tack run setup.yaml
+  tack run setup.yaml --auto-approve
+  tack run setup.yaml --debug
+  tack run setup.yaml --check
+  tack run setup.yaml --dry-run
+  tack run setup.yaml -c ssh://deploy@web1:2222
+  tack run setup.yaml -c ssh://deploy@web1 -c ssh://deploy@web2
+  tack run setup.yaml -c ssh --hosts=web1,web2
+  tack run setup.yaml --ssh-user=deploy --ssh-key=~/.ssh/deploy_key
+  TACK_SSH_HOSTS=web1,web2 tack run setup.yaml`,
 	Args: cobra.ExactArgs(1),
 	RunE: runPlaybook,
 }
@@ -289,11 +289,11 @@ func runPlaybook(cmd *cobra.Command, args []string) error {
 	// Resolve forks: CLI flag > env var > default (1)
 	forks, _ := cmd.Flags().GetInt("forks")
 	if !cmd.Flags().Changed("forks") {
-		if envForks := os.Getenv("BOLT_FORKS"); envForks != "" {
+		if envForks := os.Getenv("TACK_FORKS"); envForks != "" {
 			if n, err := strconv.Atoi(envForks); err == nil {
 				forks = n
 			} else {
-				return fmt.Errorf("invalid BOLT_FORKS value %q: %w", envForks, err)
+				return fmt.Errorf("invalid TACK_FORKS value %q: %w", envForks, err)
 			}
 		}
 	}
@@ -323,7 +323,7 @@ func runPlaybook(cmd *cobra.Command, args []string) error {
 	}
 	// Vault password resolution: env > file > prompt (D-01)
 	vaultPwFile, _ := cmd.Flags().GetString("vault-password-file")
-	if envPw := os.Getenv("BOLT_VAULT_PASSWORD"); envPw != "" {
+	if envPw := os.Getenv("TACK_VAULT_PASSWORD"); envPw != "" {
 		pw := []byte(envPw)
 		exec.ResolveVaultPassword = func() ([]byte, error) { return pw, nil }
 	} else if vaultPwFile != "" {
@@ -385,8 +385,8 @@ This checks for:
   - Task structure
 
 Examples:
-  bolt validate setup.yaml
-  bolt validate *.yaml`,
+  tack validate setup.yaml
+  tack validate *.yaml`,
 	Args: cobra.MinimumNArgs(1),
 	RunE: validatePlaybooks,
 }
@@ -485,9 +485,9 @@ parameters, types, defaults, and descriptions.
 If no module name is given, lists all available modules.
 
 Examples:
-  bolt module apt
-  bolt module file
-  bolt module`,
+  tack module apt
+  tack module file
+  tack module`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) == 0 {
@@ -536,10 +536,10 @@ Specify which resources to capture using --packages, --files, --services,
 and --users flags. At least one resource flag is required.
 
 Examples:
-  bolt generate --packages neovim,tmux
-  bolt generate -c ssh://root@web1 --packages nginx --services nginx --files /etc/nginx/nginx.conf
-  bolt generate --connection local --files /etc/hosts -o setup.yaml
-  bolt generate -c ssh://deploy@web1 --users deploy,app --sudo`,
+  tack generate --packages neovim,tmux
+  tack generate -c ssh://root@web1 --packages nginx --services nginx --files /etc/nginx/nginx.conf
+  tack generate --connection local --files /etc/hosts -o setup.yaml
+  tack generate -c ssh://deploy@web1 --users deploy,app --sudo`,
 	RunE: runGenerate,
 }
 
@@ -617,8 +617,8 @@ var scaffoldCmd = &cobra.Command{
 (packages, files, services, templates).
 
 Examples:
-  bolt scaffold myrole
-  bolt scaffold myrole --path ./my-roles`,
+  tack scaffold myrole
+  tack scaffold myrole --path ./my-roles`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		path, _ := cmd.Flags().GetString("path")
@@ -652,12 +652,12 @@ as a playbook. Otherwise it is treated as a role name (looked up under ./roles/)
 The playbook's connection and hosts are overridden to use the Docker container.
 
 Examples:
-  bolt test myrole                  # reuse or create, keep after
-  bolt test myrole --new            # force fresh container
-  bolt test myrole --rm             # remove container after run
-  bolt test myrole --new --rm       # fresh + disposable (one-shot)
-  bolt test playbook.yaml
-  bolt test myrole --image debian:12`,
+  tack test myrole                  # reuse or create, keep after
+  tack test myrole --new            # force fresh container
+  tack test myrole --rm             # remove container after run
+  tack test myrole --new --rm       # fresh + disposable (one-shot)
+  tack test playbook.yaml
+  tack test myrole --image debian:12`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		image, _ := cmd.Flags().GetString("image")
@@ -707,14 +707,14 @@ func buildConnOverrides(cmd *cobra.Command) (*executor.ConnOverrides, error) {
 			return nil, fmt.Errorf("invalid connection flag: %w", err)
 		}
 		o = merged
-	} else if envConn := os.Getenv("BOLT_CONNECTION"); envConn != "" {
+	} else if envConn := os.Getenv("TACK_CONNECTION"); envConn != "" {
 		o = &executor.ConnOverrides{Connection: envConn}
 	} else {
 		o = &executor.ConnOverrides{}
 	}
 
 	// --hosts overrides any URI-derived hosts
-	hostsStr := flagOrEnv(cmd, "hosts", "BOLT_HOSTS")
+	hostsStr := flagOrEnv(cmd, "hosts", "TACK_HOSTS")
 	if hostsStr != "" {
 		o.Hosts = nil
 		for _, h := range strings.Split(hostsStr, ",") {
@@ -728,23 +728,23 @@ func buildConnOverrides(cmd *cobra.Command) (*executor.ConnOverrides, error) {
 	// Explicit flags override URI-derived SSH values
 	if cmd.Flags().Changed("ssh-user") {
 		o.SSHUser, _ = cmd.Flags().GetString("ssh-user")
-	} else if envUser := os.Getenv("BOLT_SSH_USER"); envUser != "" && o.SSHUser == "" {
+	} else if envUser := os.Getenv("TACK_SSH_USER"); envUser != "" && o.SSHUser == "" {
 		o.SSHUser = envUser
 	}
 
 	if cmd.Flags().Changed("ssh-key") {
 		o.SSHKey, _ = cmd.Flags().GetString("ssh-key")
-	} else if envKey := os.Getenv("BOLT_SSH_KEY"); envKey != "" {
+	} else if envKey := os.Getenv("TACK_SSH_KEY"); envKey != "" {
 		o.SSHKey = envKey
 	}
 
 	// SSH port: explicit flag > env > URI-derived > 0
 	if cmd.Flags().Changed("ssh-port") {
 		o.SSHPort, _ = cmd.Flags().GetInt("ssh-port")
-	} else if envPort := os.Getenv("BOLT_SSH_PORT"); envPort != "" && o.SSHPort == 0 {
+	} else if envPort := os.Getenv("TACK_SSH_PORT"); envPort != "" && o.SSHPort == 0 {
 		port, err := strconv.Atoi(envPort)
 		if err != nil {
-			return nil, fmt.Errorf("invalid BOLT_SSH_PORT: %w", err)
+			return nil, fmt.Errorf("invalid TACK_SSH_PORT: %w", err)
 		}
 		o.SSHPort = port
 	}
@@ -765,7 +765,7 @@ func buildConnOverrides(cmd *cobra.Command) (*executor.ConnOverrides, error) {
 		} else {
 			o.SSHPass = val
 		}
-	} else if envPass := os.Getenv("BOLT_SSH_PASSWORD"); envPass != "" && !o.HasSSHPass {
+	} else if envPass := os.Getenv("TACK_SSH_PASSWORD"); envPass != "" && !o.HasSSHPass {
 		o.HasSSHPass = true
 		o.SSHPass = envPass
 	}
@@ -773,7 +773,7 @@ func buildConnOverrides(cmd *cobra.Command) (*executor.ConnOverrides, error) {
 	// SSH insecure: flag > env > false
 	if cmd.Flags().Changed("ssh-insecure") {
 		o.SSHInsecure, _ = cmd.Flags().GetBool("ssh-insecure")
-	} else if envInsecure := os.Getenv("BOLT_SSH_INSECURE"); envInsecure != "" {
+	} else if envInsecure := os.Getenv("TACK_SSH_INSECURE"); envInsecure != "" {
 		o.SSHInsecure = envInsecure == "1" || envInsecure == "true" || envInsecure == "yes"
 	}
 
@@ -797,14 +797,14 @@ func buildConnOverrides(cmd *cobra.Command) (*executor.ConnOverrides, error) {
 		} else {
 			o.SudoPassword = val
 		}
-	} else if envPass := os.Getenv("BOLT_SUDO_PASSWORD"); envPass != "" {
+	} else if envPass := os.Getenv("TACK_SUDO_PASSWORD"); envPass != "" {
 		o.SudoPassword = envPass
 	}
 
 	// SSM: instances
 	if cmd.Flags().Changed("ssm-instances") {
 		o.SSMInstances, _ = cmd.Flags().GetStringSlice("ssm-instances")
-	} else if envInst := os.Getenv("BOLT_SSM_INSTANCES"); envInst != "" {
+	} else if envInst := os.Getenv("TACK_SSM_INSTANCES"); envInst != "" {
 		for _, id := range strings.Split(envInst, ",") {
 			id = strings.TrimSpace(id)
 			if id != "" {
@@ -816,7 +816,7 @@ func buildConnOverrides(cmd *cobra.Command) (*executor.ConnOverrides, error) {
 	// SSM: tags
 	if cmd.Flags().Changed("ssm-tags") {
 		o.SSMTags, _ = cmd.Flags().GetStringToString("ssm-tags")
-	} else if envTags := os.Getenv("BOLT_SSM_TAGS"); envTags != "" {
+	} else if envTags := os.Getenv("TACK_SSM_TAGS"); envTags != "" {
 		o.SSMTags = make(map[string]string)
 		for _, kv := range strings.Split(envTags, ",") {
 			parts := strings.SplitN(kv, "=", 2)
@@ -829,14 +829,14 @@ func buildConnOverrides(cmd *cobra.Command) (*executor.ConnOverrides, error) {
 	// SSM: region
 	if cmd.Flags().Changed("ssm-region") {
 		o.SSMRegion, _ = cmd.Flags().GetString("ssm-region")
-	} else if envRegion := os.Getenv("BOLT_SSM_REGION"); envRegion != "" {
+	} else if envRegion := os.Getenv("TACK_SSM_REGION"); envRegion != "" {
 		o.SSMRegion = envRegion
 	}
 
 	// SSM: bucket
 	if cmd.Flags().Changed("ssm-bucket") {
 		o.SSMBucket, _ = cmd.Flags().GetString("ssm-bucket")
-	} else if envBucket := os.Getenv("BOLT_SSM_BUCKET"); envBucket != "" {
+	} else if envBucket := os.Getenv("TACK_SSM_BUCKET"); envBucket != "" {
 		o.SSMBucket = envBucket
 	}
 
@@ -867,9 +867,9 @@ resolved hosts, groups, and variables as JSON.
 Use --list to dump the full inventory, or --host <name> for a single host.
 
 Examples:
-  bolt inventory --list -i hosts.yml
-  bolt inventory --list -i ./ec2-inventory.sh
-  bolt inventory --host web1 -i hosts.yml`,
+  tack inventory --list -i hosts.yml
+  tack inventory --list -i ./ec2-inventory.sh
+  tack inventory --host web1 -i hosts.yml`,
 	RunE: runInventory,
 }
 

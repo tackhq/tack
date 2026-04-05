@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: HTTP GET inventory fetch
-The HTTP plugin SHALL perform a GET request to the configured URL and parse the response body as Bolt-native inventory (JSON or YAML).
+The HTTP plugin SHALL perform a GET request to the configured URL and parse the response body as Tack-native inventory (JSON or YAML).
 
 #### Scenario: Successful fetch
 - **WHEN** the HTTP endpoint returns 200 with a valid JSON inventory body

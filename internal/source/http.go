@@ -19,7 +19,7 @@ func parseHTTPSource(ref string) (*HTTPSource, error) {
 }
 
 func (s *HTTPSource) Fetch(ctx context.Context) (string, func(), error) {
-	tmpDir, err := os.MkdirTemp("", "bolt-http-*")
+	tmpDir, err := os.MkdirTemp("", "tack-http-*")
 	if err != nil {
 		return "", nil, fmt.Errorf("creating temp dir: %w", err)
 	}

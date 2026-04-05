@@ -7,7 +7,7 @@
 
 ## 2. CLI Subcommand
 
-- [ ] 2.1 Add `export` command to `cmd/bolt/main.go` via cobra
+- [ ] 2.1 Add `export` command to `cmd/tack/main.go` via cobra
 - [ ] 2.2 Wire flags: `--host`, `--all-hosts`, `--output`, `--no-facts`, `--check-only`, `-e`/`--extra-vars`, `--tags`, `--skip-tags`, `--connection`, `--no-banner-timestamp`
 - [ ] 2.3 Validation: `--host` XOR `--all-hosts`; `--all-hosts` requires `--output` as directory; reject simultaneous flags
 - [ ] 2.4 Default host selection: single inventory match when neither flag set
@@ -17,7 +17,7 @@
 
 - [ ] 3.1 Implement `gatherFactsForExport(ctx, conn, host) map[string]any` reusing `pkg/facts`
 - [ ] 3.2 Freeze facts once per host into in-memory map
-- [ ] 3.3 `--no-facts` path: substitute sentinel `__BOLT_FACT_NOT_GATHERED__` and set warning flag
+- [ ] 3.3 `--no-facts` path: substitute sentinel `__TACK_FACT_NOT_GATHERED__` and set warning flag
 - [ ] 3.4 Render facts alphabetically into banner comment, skipping values that exceed 200 chars
 
 ## 4. Variable Resolution Context
@@ -56,7 +56,7 @@
 ## 9. Script Skeleton Rendering
 
 - [ ] 9.1 Implement `renderBanner(ctx Compiler)` producing shebang + set -euo pipefail + banner comments
-- [ ] 9.2 Include bolt version, playbook path, host, timestamp (UTC, second precision), facts summary
+- [ ] 9.2 Include tack version, playbook path, host, timestamp (UTC, second precision), facts summary
 - [ ] 9.3 `--no-banner-timestamp` drops the timestamp line
 - [ ] 9.4 Render counter declarations + trap function + trap install
 - [ ] 9.5 Add vault-values-present warning block when any decrypted vault var was resolved
@@ -64,7 +64,7 @@
 
 ## 10. Per-Task Block Rendering
 
-- [ ] 10.1 Implement `renderBlock(task, result EmitResult)` producing `# === TASK: ... ===` header + `BOLT_CURRENT_TASK=` + PreHook + Shell + changed-counter bump guard
+- [ ] 10.1 Implement `renderBlock(task, result EmitResult)` producing `# === TASK: ... ===` header + `TACK_CURRENT_TASK=` + PreHook + Shell + changed-counter bump guard
 - [ ] 10.2 Deduplicate PreHook fragments across blocks
 - [ ] 10.3 Wrap shell in `>/dev/null 2>&1` redirect when `no_log: true`
 - [ ] 10.4 Render UNSUPPORTED block for tasks without Emit: `# UNSUPPORTED: <reason>` + embedded task YAML (redacted) as comments
@@ -123,7 +123,7 @@
 - [ ] 15.9 Unit tests for `--no-facts` sentinel substitution + banner warning
 - [ ] 15.10 Unit tests for deterministic output (diff between two export runs = empty)
 - [ ] 15.11 Unit tests for `--check-only` exit codes
-- [ ] 15.12 Integration test: export a playbook, run the emitted script inside a Docker container, verify end state matches running bolt normally
+- [ ] 15.12 Integration test: export a playbook, run the emitted script inside a Docker container, verify end state matches running tack normally
 - [ ] 15.13 Integration test: re-run the emitted script twice and verify second run produces `changed=0` (idempotency)
 - [ ] 15.14 Integration test: `--all-hosts` produces N files with correct per-host variable substitution
 - [ ] 15.15 `go test -race ./...` passes
@@ -132,9 +132,9 @@
 
 - [ ] 16.1 Add `docs/export.md` with overview, flag reference, supported/unsupported construct matrix, examples, security notes (vault, secrets in plaintext), air-gapped workflow, audit workflow
 - [ ] 16.2 Update `README.md` with an "Export" section
-- [ ] 16.3 Update `llms.txt` with `bolt export` usage
+- [ ] 16.3 Update `llms.txt` with `tack export` usage
 - [ ] 16.4 Add `examples/export-audit/` showing a playbook + exported script + diff-review workflow
-- [ ] 16.5 Update `ROADMAP.md` — mark `bolt export` as implemented, celebrating P2 completion
+- [ ] 16.5 Update `ROADMAP.md` — mark `tack export` as implemented, celebrating P2 completion
 
 ## 17. Release
 

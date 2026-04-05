@@ -2,8 +2,8 @@
 # Example: use `assert:` to validate preconditions at the top of a play.
 # A failing assert fails the play fast — before any system changes happen.
 #
-# Run:   bolt run examples/assert-preflight.yaml
-# Or:    bolt run examples/assert-preflight.yaml -e deploy_env=prod
+# Run:   tack run examples/assert-preflight.yaml
+# Or:    tack run examples/assert-preflight.yaml -e deploy_env=prod
 - name: Preflight checks
   hosts: localhost
   connection: local

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/eugenetaranov/bolt/internal/playbook"
+	"github.com/tackhq/tack/internal/playbook"
 )
 
 func parseJSONLine(t *testing.T, line string) map[string]any {

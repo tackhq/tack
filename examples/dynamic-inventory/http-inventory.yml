@@ -1,6 +1,6 @@
 # Example: HTTP-based dynamic inventory
 # Fetches inventory from a REST API endpoint.
-# Usage: bolt run playbook.yaml -i http-inventory.yml
+# Usage: tack run playbook.yaml -i http-inventory.yml
 
 plugin: http
 url: https://cmdb.example.com/api/inventory

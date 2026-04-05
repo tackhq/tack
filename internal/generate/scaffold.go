@@ -50,13 +50,13 @@ func tasksContent(name string) string {
   apt:
     name: "{{ app_package }}"
     state: present
-  when: bolt_os == "linux"
+  when: tack_os == "linux"
 
 - name: Install packages (brew)
   brew:
     name: "{{ app_package }}"
     state: present
-  when: bolt_os == "darwin"
+  when: tack_os == "darwin"
 
 - name: Create config directory
   file:
@@ -81,7 +81,7 @@ func tasksContent(name string) string {
     name: "{{ service_name }}"
     state: started
     enabled: true
-  when: bolt_os == "linux"
+  when: tack_os == "linux"
   notify: restart service
 
 - name: Verify service is listening

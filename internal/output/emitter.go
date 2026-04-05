@@ -1,7 +1,7 @@
 package output
 
 import (
-	"github.com/eugenetaranov/bolt/internal/playbook"
+	"github.com/tackhq/tack/internal/playbook"
 )
 
 // Emitter is the interface for output backends (text, JSON, etc.).

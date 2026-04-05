@@ -15,7 +15,7 @@ PUB_KEY=$(cat "$KEY_FILE.pub")
 
 # Inject public key into each container and verify connectivity
 for port in 2201 2202 2203; do
-    container="bolt-test-node$((port - 2200))"
+    container="tack-test-node$((port - 2200))"
     echo "Setting up SSH key on $container (port $port)..."
     docker exec "$container" bash -c "echo '$PUB_KEY' > /home/testuser/.ssh/authorized_keys && chown testuser:testuser /home/testuser/.ssh/authorized_keys && chmod 600 /home/testuser/.ssh/authorized_keys"
 

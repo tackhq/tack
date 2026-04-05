@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/eugenetaranov/bolt/pkg/ssmparams"
+	"github.com/tackhq/tack/pkg/ssmparams"
 )
 
 func TestInterpolateString(t *testing.T) {

@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"os/exec"
 
-	"github.com/eugenetaranov/bolt/internal/inventory"
+	"github.com/tackhq/tack/internal/inventory"
 )
 
 func init() {

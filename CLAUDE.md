@@ -1,16 +1,16 @@
-# Bolt - System Bootstrapping Tool
+# Tack - System Bootstrapping Tool
 
 ## Project Overview
-Bolt is a Go-based configuration management and system bootstrapping tool inspired by Ansible. It supports local execution, SSH, and AWS SSM connectors.
+Tack is a Go-based configuration management and system bootstrapping tool inspired by Ansible. It supports local execution, SSH, and AWS SSM connectors.
 
 ## Build & Run
 - `make build` - Build the binary
 - `make test` - Run tests
 - `make lint` - Run linter (golangci-lint)
-- `go run ./cmd/bolt` - Run directly
+- `go run ./cmd/tack` - Run directly
 
 ## Project Structure
-- `cmd/bolt/` - CLI entrypoint using Cobra
+- `cmd/tack/` - CLI entrypoint using Cobra
 - `internal/connector/` - Connection backends (local, SSH, SSM)
 - `internal/module/` - Task modules (apt, brew, file, copy, command)
 - `internal/playbook/` - YAML playbook parsing and execution
@@ -48,9 +48,9 @@ Bolt is a Go-based configuration management and system bootstrapping tool inspir
 <!-- GSD:project-start source:PROJECT.md -->
 ## Project
 
-**Bolt — Encrypted Vault Variables**
+**Tack — Encrypted Vault Variables**
 
-Bolt is a Go-based configuration management and system bootstrapping tool inspired by Ansible. It supports local execution, SSH, Docker, and AWS SSM connectors with idempotent modules for package management, file operations, templates, and services. This milestone adds encrypted variable files (vault) — allowing users to store secrets in YAML files encrypted with AES-256-GCM and use them transparently in playbooks.
+Tack is a Go-based configuration management and system bootstrapping tool inspired by Ansible. It supports local execution, SSH, Docker, and AWS SSM connectors with idempotent modules for package management, file operations, templates, and services. This milestone adds encrypted variable files (vault) — allowing users to store secrets in YAML files encrypted with AES-256-GCM and use them transparently in playbooks.
 
 **Core Value:** Secrets must never be stored in plaintext or leak to logs/process listings — encrypted vault variables are decrypted in-memory only, on demand, and merged into play vars seamlessly.
 
@@ -75,7 +75,7 @@ Bolt is a Go-based configuration management and system bootstrapping tool inspir
 - Go modules
 - Lockfile: `go.sum` present
 ## Frameworks
-- `github.com/spf13/cobra` v1.8.0 - CLI framework, command hierarchy in `cmd/bolt/main.go`
+- `github.com/spf13/cobra` v1.8.0 - CLI framework, command hierarchy in `cmd/tack/main.go`
 - `gopkg.in/yaml.v3` v3.0.1 - YAML parsing for playbooks and inventory
 - Go standard `testing` package
 - `github.com/stretchr/testify` v1.11.1 - Test assertions
@@ -93,26 +93,26 @@ Bolt is a Go-based configuration management and system bootstrapping tool inspir
 - `aws-sdk-go-v2/service/s3` v1.96.2 - S3 file transfer for SSM connector
 - `aws-sdk-go-v2/service/ssm` v1.68.1 - Systems Manager command execution and parameter store
 - `github.com/kevinburke/ssh_config` v1.6.0 - Parse `~/.ssh/config` for SSH defaults (`internal/connector/ssh/ssh.go`)
-- `golang.org/x/term` v0.40.0 - Terminal password prompting (`cmd/bolt/main.go`)
+- `golang.org/x/term` v0.40.0 - Terminal password prompting (`cmd/tack/main.go`)
 - `github.com/spf13/pflag` v1.0.5 - Flag parsing (indirect, via cobra)
 ## Configuration
 - No `.env` files; configuration is via CLI flags and environment variables
-- Environment variable prefix: `BOLT_` (e.g., `BOLT_CONNECTION`, `BOLT_SSH_USER`, `BOLT_SSH_KEY`, `BOLT_SSH_PORT`, `BOLT_SSH_PASSWORD`, `BOLT_SSH_INSECURE`, `BOLT_HOSTS`, `BOLT_SSM_INSTANCES`, `BOLT_SSM_TAGS`, `BOLT_SSM_REGION`, `BOLT_SSM_BUCKET`, `BOLT_SUDO_PASSWORD`)
+- Environment variable prefix: `TACK_` (e.g., `TACK_CONNECTION`, `TACK_SSH_USER`, `TACK_SSH_KEY`, `TACK_SSH_PORT`, `TACK_SSH_PASSWORD`, `TACK_SSH_INSECURE`, `TACK_HOSTS`, `TACK_SSM_INSTANCES`, `TACK_SSM_TAGS`, `TACK_SSM_REGION`, `TACK_SSM_BUCKET`, `TACK_SUDO_PASSWORD`)
 - AWS credentials: standard AWS SDK credential chain (env vars, shared config, IAM roles)
 - `Makefile` - Primary build entry point
 - `.goreleaser.yaml` - Release builds with ldflags for version embedding
-- Version injected via ldflags: `-X main.version`, `-X main.commit`, `-X main.date` (see `Makefile` lines 12, `cmd/bolt/main.go` lines 36-40)
+- Version injected via ldflags: `-X main.version`, `-X main.commit`, `-X main.date` (see `Makefile` lines 12, `cmd/tack/main.go` lines 36-40)
 ## Platform Requirements
 - Linux amd64, arm64
 - macOS (Darwin) amd64, arm64
 - Go 1.24+
 - `make`
 - `golangci-lint` (for linting)
-- Docker (for integration tests and `bolt test` command)
+- Docker (for integration tests and `tack test` command)
 - `git` (for source fetching feature)
 - `aws` CLI (for S3 source fetching via `internal/source/s3.go`)
 - Single static binary (CGO_ENABLED=0)
-- Homebrew tap: `eugenetaranov/tap/bolt` (configured in `.goreleaser.yaml`)
+- Homebrew tap: `tackhq/tap/tack` (configured in `.goreleaser.yaml`)
 - GitHub Releases via GoReleaser
 ## CI/CD
 - `build` - Compile binary, verify `--version`
@@ -164,8 +164,8 @@ Bolt is a Go-based configuration management and system bootstrapping tool inspir
 - SSM connector uses AWS SDK v2 with interface-based mocking (`ssmAPI`, `s3API`, `ec2API`)
 ## Code Organization
 - `internal/` for all private packages (standard Go convention)
-- `pkg/` for packages potentially reusable outside bolt (`facts`, `ssmparams`)
-- `cmd/bolt/` single CLI binary
+- `pkg/` for packages potentially reusable outside tack (`facts`, `ssmparams`)
+- `cmd/tack/` single CLI binary
 - `tests/integration/` for Docker-based integration tests
 <!-- GSD:conventions-end -->
 

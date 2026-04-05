@@ -1,25 +1,25 @@
 ## ADDED Requirements
 
-### Requirement: `bolt export` subcommand
-The bolt CLI SHALL provide a `bolt export <playbook>` subcommand that compiles a playbook into a standalone bash script per host.
+### Requirement: `tack export` subcommand
+The tack CLI SHALL provide a `tack export <playbook>` subcommand that compiles a playbook into a standalone bash script per host.
 
 #### Scenario: Subcommand is registered
-- **WHEN** `bolt --help` is invoked
+- **WHEN** `tack --help` is invoked
 - **THEN** `export` SHALL appear in the command list with a description
 
 #### Scenario: Missing playbook argument
-- **WHEN** `bolt export` is invoked without a playbook path
+- **WHEN** `tack export` is invoked without a playbook path
 - **THEN** the command SHALL fail with a usage error
 
 ### Requirement: Host selection flags
 The export command SHALL accept `--host <name>` to target a single host or `--all-hosts` to emit one script per host in the inventory. Exactly one SHALL be specified (the two flags are mutually exclusive). When inventory has a single matching host and neither flag is set, the command SHALL default to that host.
 
 #### Scenario: Single host via flag
-- **WHEN** `bolt export play.yml --host web01` is run
+- **WHEN** `tack export play.yml --host web01` is run
 - **THEN** a single script SHALL be produced targeting web01
 
 #### Scenario: All hosts via flag
-- **WHEN** `bolt export play.yml --all-hosts` is run against an inventory with 3 hosts
+- **WHEN** `tack export play.yml --all-hosts` is run against an inventory with 3 hosts
 - **THEN** 3 scripts SHALL be produced
 
 #### Scenario: Mutually exclusive
@@ -30,15 +30,15 @@ The export command SHALL accept `--host <name>` to target a single host or `--al
 The export command SHALL accept `--output <path>`. With `--host`, `--output` is a file path; if unset, output goes to stdout. With `--all-hosts`, `--output` MUST be a directory path and one file per host is written as `<dir>/<hostname>.sh`.
 
 #### Scenario: Stdout in single-host mode
-- **WHEN** `bolt export play.yml --host web01` is run without `--output`
+- **WHEN** `tack export play.yml --host web01` is run without `--output`
 - **THEN** the script SHALL be written to stdout
 
 #### Scenario: File output in single-host mode
-- **WHEN** `bolt export play.yml --host web01 --output /tmp/web01.sh` is run
+- **WHEN** `tack export play.yml --host web01 --output /tmp/web01.sh` is run
 - **THEN** the script SHALL be written to /tmp/web01.sh
 
 #### Scenario: Directory output in all-hosts mode
-- **WHEN** `bolt export play.yml --all-hosts --output /tmp/scripts/` is run against 2 hosts
+- **WHEN** `tack export play.yml --all-hosts --output /tmp/scripts/` is run against 2 hosts
 - **THEN** `/tmp/scripts/<host>.sh` SHALL be written for each host plus `/tmp/scripts/INDEX.txt`
 
 #### Scenario: All-hosts without --output
@@ -110,33 +110,33 @@ The export command SHALL accept `--tags` and `--skip-tags` flags with runtime-eq
 - **THEN** the emitted block header SHALL be `# === TASK: <name> === (tags: setup,web)` (sorted)
 
 ### Requirement: Script banner and runtime scaffolding
-The emitted script SHALL begin with `#!/usr/bin/env bash`, `set -euo pipefail`, and a banner comment containing the bolt version, playbook path, host name, export timestamp (UTC, second-precision), and summary of frozen facts. It SHALL declare counters `BOLT_CHANGED=0`, `BOLT_FAILED=0`, `BOLT_CURRENT_TASK=""`, and install a trap printing a summary on exit.
+The emitted script SHALL begin with `#!/usr/bin/env bash`, `set -euo pipefail`, and a banner comment containing the tack version, playbook path, host name, export timestamp (UTC, second-precision), and summary of frozen facts. It SHALL declare counters `TACK_CHANGED=0`, `TACK_FAILED=0`, `TACK_CURRENT_TASK=""`, and install a trap printing a summary on exit.
 
 #### Scenario: Header structure
 - **WHEN** any script is emitted
 - **THEN** the first two lines SHALL be `#!/usr/bin/env bash` and `set -euo pipefail`
 
 #### Scenario: Banner content
-- **WHEN** a script is emitted for host web01 with bolt version 1.2.3
-- **THEN** the banner SHALL name the bolt version, playbook path, host, and export timestamp
+- **WHEN** a script is emitted for host web01 with tack version 1.2.3
+- **THEN** the banner SHALL name the tack version, playbook path, host, and export timestamp
 
 #### Scenario: Counters declared
 - **WHEN** any script is emitted
-- **THEN** the prelude SHALL contain `BOLT_CHANGED=0` and `BOLT_FAILED=0`
+- **THEN** the prelude SHALL contain `TACK_CHANGED=0` and `TACK_FAILED=0`
 
 #### Scenario: Trap prints summary
 - **WHEN** the emitted script runs to completion
-- **THEN** the trap SHALL print `bolt-export: summary: changed=<N> failed=<M>` to stderr
+- **THEN** the trap SHALL print `tack-export: summary: changed=<N> failed=<M>` to stderr
 
 #### Scenario: Trap names failing task
 - **WHEN** the emitted script exits non-zero mid-run
-- **THEN** the trap SHALL print `bolt-export: FAILED on task: <name>` to stderr before exiting
+- **THEN** the trap SHALL print `tack-export: FAILED on task: <name>` to stderr before exiting
 
 ### Requirement: Deterministic output
 The export command SHALL produce byte-identical output for identical inputs, subject only to the banner timestamp. All map iteration SHALL use sorted keys. Fact ordering SHALL be alphabetical. Loop iterations SHALL preserve input list order. A `--no-banner-timestamp` flag SHALL omit the timestamp line for fully reproducible output.
 
 #### Scenario: Repeated export with same inputs
-- **WHEN** `bolt export play.yml --host web01 --no-banner-timestamp` is run twice
+- **WHEN** `tack export play.yml --host web01 --no-banner-timestamp` is run twice
 - **THEN** the two outputs SHALL be byte-identical
 
 #### Scenario: Sorted fact list in banner
@@ -148,7 +148,7 @@ The export command SHALL produce byte-identical output for identical inputs, sub
 - **THEN** the emitted shell SHALL order them alphabetically
 
 ### Requirement: Per-task block format
-Each supported task SHALL emit as a block with this shape: a header comment `# === TASK: <name> === (tags: <sorted-csv>)`, a `BOLT_CURRENT_TASK="<name>"` assignment, the module-emitted shell, and a conditional `BOLT_CHANGED` bump based on the module's change-detection logic.
+Each supported task SHALL emit as a block with this shape: a header comment `# === TASK: <name> === (tags: <sorted-csv>)`, a `TACK_CURRENT_TASK="<name>"` assignment, the module-emitted shell, and a conditional `TACK_CHANGED` bump based on the module's change-detection logic.
 
 #### Scenario: Block header
 - **WHEN** a task is emitted
@@ -156,11 +156,11 @@ Each supported task SHALL emit as a block with this shape: a header comment `# =
 
 #### Scenario: Current-task assignment
 - **WHEN** a task is emitted
-- **THEN** the block SHALL set `BOLT_CURRENT_TASK="<name>"` before the shell payload
+- **THEN** the block SHALL set `TACK_CURRENT_TASK="<name>"` before the shell payload
 
 #### Scenario: Changed counter bump
 - **WHEN** a module's emitted shell performs a potentially-changing operation
-- **THEN** the block SHALL bump `BOLT_CHANGED` when the change is detected at runtime
+- **THEN** the block SHALL bump `TACK_CHANGED` when the change is detected at runtime
 
 ### Requirement: Module Emitter interface
 The system SHALL define an optional `Emitter` interface: `Emit(params map[string]any, pctx *PlayContext) (*EmitResult, error)`. Modules implementing this interface SHALL be supported by export. Modules not implementing it SHALL be treated as unsupported and emitted as comment blocks.
@@ -204,7 +204,7 @@ The export command SHALL gather facts from the target via the chosen connector o
 - **THEN** the banner SHALL contain a line `# Facts: arch=x86_64 os_family=Debian os_type=Linux ...`
 
 ### Requirement: `--no-facts` flag
-The export command SHALL accept `--no-facts` to skip fact gathering. When set, `{{ facts.* }}` references SHALL resolve to the sentinel string `__BOLT_FACT_NOT_GATHERED__` and a warning comment SHALL appear in the banner.
+The export command SHALL accept `--no-facts` to skip fact gathering. When set, `{{ facts.* }}` references SHALL resolve to the sentinel string `__TACK_FACT_NOT_GATHERED__` and a warning comment SHALL appear in the banner.
 
 #### Scenario: Skip facts
 - **WHEN** `--no-facts` is set
@@ -278,10 +278,10 @@ The template module's Emit SHALL render the template at export time and embed th
 - **THEN** the emitted shell SHALL include `chmod 0600` and `chown root` for the target
 
 ### Requirement: Extra-vars support
-The export command SHALL accept `-e key=value` and `--extra-vars` flags with the same semantics as `bolt run`. These values SHALL participate in variable resolution at export time.
+The export command SHALL accept `-e key=value` and `--extra-vars` flags with the same semantics as `tack run`. These values SHALL participate in variable resolution at export time.
 
 #### Scenario: Extra var applied
-- **WHEN** `bolt export play.yml --host web01 -e app_version=2.0` is run
+- **WHEN** `tack export play.yml --host web01 -e app_version=2.0` is run
 - **THEN** `{{ app_version }}` SHALL resolve to `2.0` in the emitted script
 
 ### Requirement: Connection flag for fact gathering

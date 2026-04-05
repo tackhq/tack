@@ -23,7 +23,7 @@ func setupSSHContainer(t *testing.T, ctx context.Context) testcontainers.Contain
 	t.Helper()
 
 	// Remove any existing container with this name
-	cmd := exec.Command("docker", "rm", "-f", "bolt-ssh-integration-test")
+	cmd := exec.Command("docker", "rm", "-f", "tack-ssh-integration-test")
 	_ = cmd.Run()
 
 	dockerfilePath := filepath.Join(projectRoot, "tests", "integration")
@@ -33,7 +33,7 @@ func setupSSHContainer(t *testing.T, ctx context.Context) testcontainers.Contain
 			Context:    dockerfilePath,
 			Dockerfile: "Dockerfile.ssh",
 		},
-		Name:         "bolt-ssh-integration-test",
+		Name:         "tack-ssh-integration-test",
 		ExposedPorts: []string{"22/tcp"},
 		WaitingFor:   wait.ForListeningPort("22/tcp").WithStartupTimeout(30 * time.Second),
 	}
@@ -107,7 +107,7 @@ func TestSSHIntegration(t *testing.T) {
 	playbookPath := filepath.Join(projectRoot, "tests", "integration", "testdata", "ssh-playbook.yaml")
 
 	t.Run("PasswordAuth", func(t *testing.T) {
-		cmd := exec.Command(boltBinaryPath, "run", playbookPath,
+		cmd := exec.Command(tackBinaryPath, "run", playbookPath,
 			"--connection", "ssh",
 			"--hosts", "127.0.0.1",
 			"--ssh-port", port,
@@ -132,7 +132,7 @@ func TestSSHIntegration(t *testing.T) {
 	})
 
 	t.Run("KeyAuth", func(t *testing.T) {
-		cmd := exec.Command(boltBinaryPath, "run", playbookPath,
+		cmd := exec.Command(tackBinaryPath, "run", playbookPath,
 			"--connection", "ssh",
 			"--hosts", "127.0.0.1",
 			"--ssh-port", port,
@@ -160,7 +160,7 @@ func TestSSHIntegration(t *testing.T) {
 		// method to be rejected.
 		agentSock := startEmptyAgent(t)
 
-		cmd := exec.Command(boltBinaryPath, "run", playbookPath,
+		cmd := exec.Command(tackBinaryPath, "run", playbookPath,
 			"--connection", "ssh",
 			"--hosts", "127.0.0.1",
 			"--ssh-port", port,
@@ -189,7 +189,7 @@ func TestSSHIntegration(t *testing.T) {
 
 	t.Run("InsecureHostKey", func(t *testing.T) {
 		// Connect with --ssh-insecure (no known_hosts needed)
-		cmd := exec.Command(boltBinaryPath, "run", playbookPath,
+		cmd := exec.Command(tackBinaryPath, "run", playbookPath,
 			"--connection", "ssh",
 			"--hosts", "127.0.0.1",
 			"--ssh-port", port,
@@ -216,7 +216,7 @@ func TestSSHIntegration(t *testing.T) {
 		require.NoError(t, os.MkdirAll(sshDir, 0700))
 		require.NoError(t, os.WriteFile(filepath.Join(sshDir, "known_hosts"), []byte{}, 0600))
 
-		cmd := exec.Command(boltBinaryPath, "run", playbookPath,
+		cmd := exec.Command(tackBinaryPath, "run", playbookPath,
 			"--connection", "ssh",
 			"--hosts", "127.0.0.1",
 			"--ssh-port", port,
@@ -237,7 +237,7 @@ func TestSSHIntegration(t *testing.T) {
 	})
 
 	t.Run("WrongUser", func(t *testing.T) {
-		cmd := exec.Command(boltBinaryPath, "run", playbookPath,
+		cmd := exec.Command(tackBinaryPath, "run", playbookPath,
 			"--connection", "ssh",
 			"--hosts", "127.0.0.1",
 			"--ssh-port", port,
@@ -255,7 +255,7 @@ func TestSSHIntegration(t *testing.T) {
 	})
 
 	t.Run("WrongPassword", func(t *testing.T) {
-		cmd := exec.Command(boltBinaryPath, "run", playbookPath,
+		cmd := exec.Command(tackBinaryPath, "run", playbookPath,
 			"--connection", "ssh",
 			"--hosts", "127.0.0.1",
 			"--ssh-port", port,

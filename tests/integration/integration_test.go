@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	boltBinaryPath string
+	tackBinaryPath string
 	projectRoot    string
 )
 
@@ -27,15 +27,15 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	// Build bolt binary
-	boltBinaryPath = filepath.Join(projectRoot, "bin", "bolt")
-	fmt.Println("Building bolt binary...")
-	cmd := exec.Command("go", "build", "-o", boltBinaryPath, "./cmd/bolt")
+	// Build tack binary
+	tackBinaryPath = filepath.Join(projectRoot, "bin", "tack")
+	fmt.Println("Building tack binary...")
+	cmd := exec.Command("go", "build", "-o", tackBinaryPath, "./cmd/tack")
 	cmd.Dir = projectRoot
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to build bolt: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Failed to build tack: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -75,7 +75,7 @@ func setupTestContainer(t *testing.T, ctx context.Context) testcontainers.Contai
 			Context:    dockerfilePath,
 			Dockerfile: "Dockerfile",
 		},
-		Name:       "bolt-integration-test",
+		Name:       "tack-integration-test",
 		Cmd:        []string{"sleep", "600"},
 		WaitingFor: wait.ForExec([]string{"echo", "ready"}).WithStartupTimeout(30 * time.Second),
 	}
@@ -96,7 +96,7 @@ func setupTestContainer(t *testing.T, ctx context.Context) testcontainers.Contai
 }
 
 func cleanupExistingContainer() {
-	cmd := exec.Command("docker", "rm", "-f", "bolt-integration-test")
+	cmd := exec.Command("docker", "rm", "-f", "tack-integration-test")
 	_ = cmd.Run() // Ignore errors - container may not exist
 }
 
@@ -110,12 +110,12 @@ func TestIntegration(t *testing.T) {
 	// Setup container
 	container := setupTestContainer(t, ctx)
 
-	// Run bolt playbook
+	// Run tack playbook
 	playbookPath := filepath.Join(projectRoot, "tests", "integration", "testdata", "playbook.yaml")
-	cmd := exec.Command(boltBinaryPath, "run", playbookPath, "--auto-approve")
+	cmd := exec.Command(tackBinaryPath, "run", playbookPath, "--auto-approve")
 	cmd.Dir = projectRoot
 	output, err := cmd.CombinedOutput()
-	require.NoError(t, err, "bolt playbook failed: %s", string(output))
+	require.NoError(t, err, "tack playbook failed: %s", string(output))
 	t.Logf("Playbook output:\n%s", string(output))
 
 	// Run validation subtests
@@ -186,55 +186,55 @@ func testCommandModule(t *testing.T, ctx context.Context, container testcontaine
 func testFileModule(t *testing.T, ctx context.Context, container testcontainers.Container) {
 	// Test directory creation
 	t.Run("Directory", func(t *testing.T) {
-		assertIsDirectory(t, ctx, container, "/tmp/bolt-test-dir")
-		assertFileMode(t, ctx, container, "/tmp/bolt-test-dir", "755")
+		assertIsDirectory(t, ctx, container, "/tmp/tack-test-dir")
+		assertFileMode(t, ctx, container, "/tmp/tack-test-dir", "755")
 	})
 
 	// Test nested directory creation
 	t.Run("NestedDirectory", func(t *testing.T) {
-		assertIsDirectory(t, ctx, container, "/tmp/bolt-test-dir/nested/deep")
-		assertFileMode(t, ctx, container, "/tmp/bolt-test-dir/nested/deep", "700")
+		assertIsDirectory(t, ctx, container, "/tmp/tack-test-dir/nested/deep")
+		assertFileMode(t, ctx, container, "/tmp/tack-test-dir/nested/deep", "700")
 	})
 
 	// Test touch (empty file creation)
 	t.Run("Touch", func(t *testing.T) {
-		assertFileExists(t, ctx, container, "/tmp/bolt-test-dir/touched.txt")
-		assertIsFile(t, ctx, container, "/tmp/bolt-test-dir/touched.txt")
-		assertFileMode(t, ctx, container, "/tmp/bolt-test-dir/touched.txt", "644")
+		assertFileExists(t, ctx, container, "/tmp/tack-test-dir/touched.txt")
+		assertIsFile(t, ctx, container, "/tmp/tack-test-dir/touched.txt")
+		assertFileMode(t, ctx, container, "/tmp/tack-test-dir/touched.txt", "644")
 	})
 
 	// Test symlink creation
 	t.Run("Symlink", func(t *testing.T) {
 		// Verify the link target exists
-		assertFileExists(t, ctx, container, "/tmp/bolt-test-dir/link-target.txt")
-		assertFileContains(t, ctx, container, "/tmp/bolt-test-dir/link-target.txt", []string{"symlink target content"})
+		assertFileExists(t, ctx, container, "/tmp/tack-test-dir/link-target.txt")
+		assertFileContains(t, ctx, container, "/tmp/tack-test-dir/link-target.txt", []string{"symlink target content"})
 
 		// Verify symlink
-		assertSymlink(t, ctx, container, "/tmp/bolt-test-dir/test-link", "/tmp/bolt-test-dir/link-target.txt")
+		assertSymlink(t, ctx, container, "/tmp/tack-test-dir/test-link", "/tmp/tack-test-dir/link-target.txt")
 
 		// Verify symlink resolution works
-		assertCommandOutput(t, ctx, container, []string{"cat", "/tmp/bolt-test-dir/test-link"}, []string{"symlink target content"})
+		assertCommandOutput(t, ctx, container, []string{"cat", "/tmp/tack-test-dir/test-link"}, []string{"symlink target content"})
 	})
 }
 
 func testCopyModule(t *testing.T, ctx context.Context, container testcontainers.Container) {
 	// Test basic copy with content
 	t.Run("BasicCopy", func(t *testing.T) {
-		assertFileExists(t, ctx, container, "/tmp/bolt-test-dir/copied.txt")
-		assertIsFile(t, ctx, container, "/tmp/bolt-test-dir/copied.txt")
-		assertFileMode(t, ctx, container, "/tmp/bolt-test-dir/copied.txt", "640")
-		assertFileContains(t, ctx, container, "/tmp/bolt-test-dir/copied.txt", []string{
-			"This file was created by bolt copy module",
+		assertFileExists(t, ctx, container, "/tmp/tack-test-dir/copied.txt")
+		assertIsFile(t, ctx, container, "/tmp/tack-test-dir/copied.txt")
+		assertFileMode(t, ctx, container, "/tmp/tack-test-dir/copied.txt", "640")
+		assertFileContains(t, ctx, container, "/tmp/tack-test-dir/copied.txt", []string{
+			"This file was created by tack copy module",
 			"Line 2 of the file",
 		})
 	})
 
 	// Test executable script
 	t.Run("ExecutableScript", func(t *testing.T) {
-		assertFileExists(t, ctx, container, "/tmp/bolt-test-dir/executable.sh")
-		assertIsFile(t, ctx, container, "/tmp/bolt-test-dir/executable.sh")
-		assertFileMode(t, ctx, container, "/tmp/bolt-test-dir/executable.sh", "755")
-		assertFileContains(t, ctx, container, "/tmp/bolt-test-dir/executable.sh", []string{
+		assertFileExists(t, ctx, container, "/tmp/tack-test-dir/executable.sh")
+		assertIsFile(t, ctx, container, "/tmp/tack-test-dir/executable.sh")
+		assertFileMode(t, ctx, container, "/tmp/tack-test-dir/executable.sh", "755")
+		assertFileContains(t, ctx, container, "/tmp/tack-test-dir/executable.sh", []string{
 			"#!/bin/bash",
 			"I am executable",
 		})
@@ -242,8 +242,8 @@ func testCopyModule(t *testing.T, ctx context.Context, container testcontainers.
 
 	// Test config file
 	t.Run("ConfigFile", func(t *testing.T) {
-		assertFileExists(t, ctx, container, "/tmp/bolt-test-dir/config.yaml")
-		assertFileContains(t, ctx, container, "/tmp/bolt-test-dir/config.yaml", []string{
+		assertFileExists(t, ctx, container, "/tmp/tack-test-dir/config.yaml")
+		assertFileContains(t, ctx, container, "/tmp/tack-test-dir/config.yaml", []string{
 			"port: 8080",
 			"host: localhost",
 			"level: info",

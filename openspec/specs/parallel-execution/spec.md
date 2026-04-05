@@ -44,15 +44,15 @@ The executor SHALL respect context cancellation (SIGINT) during parallel executi
 - **WHEN** the user presses Ctrl+C while hosts are executing in parallel
 - **THEN** all running host goroutines SHALL be cancelled and cleanup SHALL proceed
 
-### Requirement: BOLT_FORKS environment variable
-The fork count SHALL be configurable via the `BOLT_FORKS` environment variable, with CLI flag taking precedence.
+### Requirement: TACK_FORKS environment variable
+The fork count SHALL be configurable via the `TACK_FORKS` environment variable, with CLI flag taking precedence.
 
 #### Scenario: Environment variable set
-- **WHEN** `BOLT_FORKS=10` is set and no `--forks` flag is provided
+- **WHEN** `TACK_FORKS=10` is set and no `--forks` flag is provided
 - **THEN** the executor SHALL use 10 as the fork count
 
 #### Scenario: CLI flag overrides environment
-- **WHEN** `BOLT_FORKS=10` is set and `--forks 5` is provided
+- **WHEN** `TACK_FORKS=10` is set and `--forks 5` is provided
 - **THEN** the executor SHALL use 5 as the fork count
 
 ### Requirement: Plan phase remains serial

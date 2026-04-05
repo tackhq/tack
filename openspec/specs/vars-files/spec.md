@@ -52,8 +52,8 @@ Variables from `vars_files:` SHALL have higher precedence than play-level `vars:
 - **THEN** `port` SHALL resolve to `9090`
 
 ### Requirement: Playbook validation
-The `bolt validate` command SHALL check that vars_files paths are syntactically valid but SHALL NOT require the files to exist at validation time (they may be generated or environment-specific).
+The `tack validate` command SHALL check that vars_files paths are syntactically valid but SHALL NOT require the files to exist at validation time (they may be generated or environment-specific).
 
 #### Scenario: Validate with vars_files
-- **WHEN** running `bolt validate playbook.yaml` and the playbook has `vars_files: ["vars/{{ env }}.yaml"]`
+- **WHEN** running `tack validate playbook.yaml` and the playbook has `vars_files: ["vars/{{ env }}.yaml"]`
 - **THEN** validation SHALL pass (file existence not checked)

@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Default IPv4 address and interface
-Bolt SHALL gather the default IPv4 address and default network interface name on Linux and macOS targets.
+Tack SHALL gather the default IPv4 address and default network interface name on Linux and macOS targets.
 
 #### Scenario: Linux target
 - **WHEN** facts are gathered on a Linux host with `ip` available
@@ -16,7 +16,7 @@ Bolt SHALL gather the default IPv4 address and default network interface name on
 - **THEN** the facts are absent (not set) and no error is raised
 
 ### Requirement: All IPv4 and IPv6 addresses
-Bolt SHALL gather all non-loopback IPv4 and IPv6 addresses as lists.
+Tack SHALL gather all non-loopback IPv4 and IPv6 addresses as lists.
 
 #### Scenario: Multiple interfaces
 - **WHEN** the target has multiple network interfaces with IPs
@@ -27,7 +27,7 @@ Bolt SHALL gather all non-loopback IPv4 and IPv6 addresses as lists.
 - **THEN** `facts.all_ipv4` contains that single address
 
 ### Requirement: EC2 private and public IP from IMDS
-Bolt SHALL gather EC2 private and public IPv4 addresses from IMDS when running on EC2.
+Tack SHALL gather EC2 private and public IPv4 addresses from IMDS when running on EC2.
 
 #### Scenario: EC2 instance with public IP
 - **WHEN** facts are gathered on an EC2 instance with a public IP

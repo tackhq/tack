@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/eugenetaranov/bolt/internal/playbook"
-	"github.com/eugenetaranov/bolt/internal/vault"
+	"github.com/tackhq/tack/internal/playbook"
+	"github.com/tackhq/tack/internal/vault"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

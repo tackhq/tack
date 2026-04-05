@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/eugenetaranov/bolt/internal/connector"
+	"github.com/tackhq/tack/internal/connector"
 )
 
 // Checksum calculates SHA256 checksum of data.

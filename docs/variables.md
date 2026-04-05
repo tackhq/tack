@@ -1,8 +1,8 @@
 # Variables and Facts
 
-Bolt supports variable interpolation using `{{ variable }}` syntax.
+Tack supports variable interpolation using `{{ variable }}` syntax.
 
-> **Note:** This is Bolt's own interpolation, NOT Jinja2. See [filters](#available-filters) for what's supported.
+> **Note:** This is Tack's own interpolation, NOT Jinja2. See [filters](#available-filters) for what's supported.
 
 ## Variable Sources
 
@@ -31,7 +31,7 @@ vars_files:
 
 ### vault_file
 
-Load encrypted variables (see `bolt vault init` to create):
+Load encrypted variables (see `tack vault init` to create):
 
 ```yaml
 vault_file: secrets.yaml
@@ -134,7 +134,7 @@ tasks:
 
 ## System Facts
 
-When `gather_facts: true` (the default), Bolt collects system information.
+When `gather_facts: true` (the default), Tack collects system information.
 
 ### Available Facts
 
@@ -171,7 +171,7 @@ On Linux, network facts are gathered via `ip route` and `ip addr`. On macOS, `ro
 
 #### EC2 (auto-detected via IMDSv2)
 
-These facts are only available when running on an EC2 instance. Bolt uses IMDSv2 with a 1-second timeout, so there is no delay on non-EC2 hosts.
+These facts are only available when running on an EC2 instance. Tack uses IMDSv2 with a 1-second timeout, so there is no delay on non-EC2 hosts.
 
 | Fact | Description | Example Value |
 |------|-------------|---------------|
@@ -184,7 +184,7 @@ These facts are only available when running on an EC2 instance. Bolt uses IMDSv2
 | `facts.ec2_private_ip` | Private IPv4 address | `10.80.41.80` |
 | `facts.ec2_public_ip` | Public IPv4 address (if assigned) | `54.12.34.56` |
 
-EC2 tags require "Allow tags in instance metadata" to be enabled on the instance. If IMDS tags are unavailable, Bolt falls back to the EC2 API (requires `ec2:DescribeTags` permission).
+EC2 tags require "Allow tags in instance metadata" to be enabled on the instance. If IMDS tags are unavailable, Tack falls back to the EC2 API (requires `ec2:DescribeTags` permission).
 
 #### Environment
 

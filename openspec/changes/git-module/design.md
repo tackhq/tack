@@ -1,6 +1,6 @@
 ## Context
 
-Git is the universal deployment-time code delivery tool. Ansible's `ansible.builtin.git` is widely used and sets the user expectation for behavior: idempotent, ref-aware, with shallow-clone and submodule support. Bolt already has a `source/git.go` that clones repos on the **control host** as part of the source-fetching feature (for remote playbook/role sources) — this is **different**: the new module operates on **target hosts** via the connector.
+Git is the universal deployment-time code delivery tool. Ansible's `ansible.builtin.git` is widely used and sets the user expectation for behavior: idempotent, ref-aware, with shallow-clone and submodule support. Tack already has a `source/git.go` that clones repos on the **control host** as part of the source-fetching feature (for remote playbook/role sources) — this is **different**: the new module operates on **target hosts** via the connector.
 
 Git auth on remote hosts is a thorny topic. To keep scope tight, the v1 module:
 1. Uses whatever auth is available on the target (ssh-agent, `~/.ssh/id_rsa`, `key_file` when provided via `GIT_SSH_COMMAND`).
@@ -12,7 +12,7 @@ Git auth on remote hosts is a thorny topic. To keep scope tight, the v1 module:
 - Idempotent: don't fetch, don't check out, don't change mtimes when the worktree already matches.
 - Ref resolution: accept branches, tags, and explicit SHAs; always resolve to a canonical SHA for reporting.
 - Shallow & submodule support for large repos and nested dependencies.
-- Clean separation: the module calls `git` binary on the target via connector.Execute; Bolt does not link a Go git implementation.
+- Clean separation: the module calls `git` binary on the target via connector.Execute; Tack does not link a Go git implementation.
 - Useful `register:` output for downstream tasks (e.g., tagging builds with the checked-out SHA).
 
 **Non-Goals:**
@@ -124,4 +124,4 @@ The module honors connector sudo configuration. Typical use: `dest` owned by a s
 - **[Risk]** Target-side `git` version varies; some flags are recent (`--no-local`, `-c`, ...). → **Mitigation:** Stick to git 2.10+ commands (widely available on Debian 10+, RHEL 8+); document minimum.
 - **[Trade-off]** No HTTPS token auth means private repos require SSH. → **Mitigation:** Document; deferred to v2.
 - **[Trade-off]** No LFS. → **Mitigation:** Document; users can run `git lfs pull` via `command:` after.
-- **[Risk]** Concurrent bolt runs editing the same `dest` can corrupt a checkout. → **Mitigation:** Out of scope — users should serialize. Documented.
+- **[Risk]** Concurrent tack runs editing the same `dest` can corrupt a checkout. → **Mitigation:** Out of scope — users should serialize. Documented.

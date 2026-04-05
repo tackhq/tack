@@ -5,32 +5,32 @@
 ### Homebrew (macOS/Linux)
 
 ```bash
-brew install eugenetaranov/tap/bolt
+brew install tackhq/tap/tack
 ```
 
 ### Download Binary
 
-Download from the [releases page](https://github.com/eugenetaranov/bolt/releases).
+Download from the [releases page](https://github.com/tackhq/tack/releases).
 
 ### Go Install
 
 ```bash
-go install github.com/eugenetaranov/bolt/cmd/bolt@latest
+go install github.com/tackhq/tack/cmd/tack@latest
 ```
 
 ### From Source
 
 ```bash
-git clone https://github.com/eugenetaranov/bolt.git
-cd bolt && make build
-# Binary at ./bin/bolt
+git clone https://github.com/tackhq/tack.git
+cd tack && make build
+# Binary at ./bin/tack
 ```
 
 ## Verify Installation
 
 ```bash
-bolt --version
-bolt modules
+tack --version
+tack modules
 ```
 
 ## Your First Playbook
@@ -38,7 +38,7 @@ bolt modules
 Create `hello.yaml`:
 
 ```yaml
-name: Hello Bolt
+name: Hello Tack
 hosts: localhost
 connection: local
 gather_facts: true
@@ -50,9 +50,9 @@ tasks:
 
   - name: Create a test file
     copy:
-      dest: /tmp/bolt-hello
+      dest: /tmp/tack-hello
       content: |
-        Bolt was here!
+        Tack was here!
         OS: {{ facts.os_type }}
         User: {{ facts.user }}
 ```
@@ -60,23 +60,23 @@ tasks:
 Run it:
 
 ```bash
-bolt run hello.yaml             # plan + approve + apply
-bolt run hello.yaml --check     # preview only, no changes
-bolt run hello.yaml --debug     # detailed output
+tack run hello.yaml             # plan + approve + apply
+tack run hello.yaml --check     # preview only, no changes
+tack run hello.yaml --debug     # detailed output
 ```
 
 ## CLI Overview
 
 ```
-bolt run <playbook|role>    Run a playbook or role directory
-bolt validate <playbook>    Check playbook syntax without executing
-bolt test <playbook|role>   Test in an ephemeral Docker container
-bolt generate               Capture live system state as a playbook
-bolt scaffold <name>        Create a new role with sample files
-bolt module <name>          Show module documentation
-bolt modules                List available modules
-bolt vault init <file>      Create a new encrypted vault file
-bolt vault edit <file>      Edit an existing encrypted vault file
+tack run <playbook|role>    Run a playbook or role directory
+tack validate <playbook>    Check playbook syntax without executing
+tack test <playbook|role>   Test in an ephemeral Docker container
+tack generate               Capture live system state as a playbook
+tack scaffold <name>        Create a new role with sample files
+tack module <name>          Show module documentation
+tack modules                List available modules
+tack vault init <file>      Create a new encrypted vault file
+tack vault edit <file>      Edit an existing encrypted vault file
 ```
 
 ### Key Flags
@@ -95,7 +95,7 @@ bolt vault edit <file>      Edit an existing encrypted vault file
 | `--extra-vars` | `-e` | Extra variables (key=value) |
 | `--connection` | `-c` | Connection URI (e.g. `ssh://user@host`) |
 
-Run `bolt run --help` for the full flag reference.
+Run `tack run --help` for the full flag reference.
 
 ## Next Steps
 
