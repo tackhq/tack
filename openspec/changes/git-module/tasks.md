@@ -11,6 +11,7 @@
 - [ ] 2.3 Validate mutual-exclusion / defaults for bools: `update` default true, `clone` default true, `force`/`bare`/`single_branch`/`recursive`/`accept_hostkey` default false
 - [ ] 2.4 Validate `depth >= 0`
 - [ ] 2.5 Detect whether `version` is SHA-like (`^[0-9a-f]{7,40}$`) for downstream logic
+- [ ] 2.6 Validate `version`: if provided, must be non-empty trimmed string; SHA detection is informational (not restrictive)
 
 ## 3. Git Binary Precheck
 
@@ -38,7 +39,7 @@
 
 ## 7. Update Path
 
-- [ ] 7.1 Implement `fetch(ctx, conn, dest, params, sshCmd)` — `git -C <dest> fetch origin [--depth=N]` with SHA-fetch fallback logic and warning collection
+- [ ] 7.1 Implement `fetch(ctx, conn, dest, params, sshCmd)` — `git -C <dest> fetch origin [--depth=N]` with SHA-fetch fallback logic and warning collection. When fetching a bare SHA on an existing shallow clone fails, fall back to `git fetch --unshallow origin` and append a warning to `Result.Data.warnings` explaining the depth was extended.
 - [ ] 7.2 Implement `checkout(ctx, conn, dest, sha)` — `git -C <dest> checkout --detach <sha>` (use --detach to avoid branch-HEAD mutation surprises)
 - [ ] 7.3 Run submodule update after checkout when `recursive: true` and not bare
 - [ ] 7.4 Handle `force: true` via `git -C <dest> reset --hard && git -C <dest> clean -fdx` before checkout (skip for bare)
@@ -64,7 +65,7 @@
 - [ ] 11.1 Unit tests for parameter validation (missing repo/dest, relative dest, depth, SHA regex detection)
 - [ ] 11.2 Unit tests for version resolution with mock connector (branch, tag, SHA pass-through, default HEAD, unknown ref)
 - [ ] 11.3 Unit tests for repo inspection helpers
-- [ ] 11.4 Module tests with mock connector covering: fresh clone, update with SHA change, idempotent no-op, update:false skip, clone:false failure, dirty-fail vs dirty-force, bare flow, shallow-clone-SHA fallback warning
+- [ ] 11.4 Module tests with mock connector covering: fresh clone, update with SHA change, idempotent no-op, update:false skip, clone:false failure, dirty-fail vs dirty-force, bare flow, shallow-clone-SHA fallback warning, force=true on clean worktree (should be no-op — don't redundantly reset)
 - [ ] 11.5 Integration test against Docker container with git installed — fixture `tests/integration/git_playbook.yaml` using a public repo (pin small one like `https://github.com/git-fixtures/basic` or host a tiny test repo)
 - [ ] 11.6 Integration test for register output: downstream task consumes `after_sha`
 - [ ] 11.7 `go test -race ./...` passes
@@ -73,7 +74,7 @@
 
 - [ ] 12.1 Add `docs/modules/git.md` with params table, examples (branch pin, tag pin, SHA pin, shallow, bare, recursive, key_file, accept_hostkey)
 - [ ] 12.2 Document SSH-only auth + target prerequisite (git binary, existing keys) + security notes on accept_hostkey
-- [ ] 12.3 Document known limitations: no HTTPS tokens, no LFS, Linux/macOS-only, shallow-SHA caveat
+- [ ] 12.3 Document known limitations: no HTTPS tokens, no LFS, Linux/macOS-only, shallow-SHA caveat, and `accept_hostkey=false` (the safe default) will fail on first connection to unknown hosts — users must pre-populate `known_hosts` or opt into `accept-new`
 - [ ] 12.4 Update `README.md` feature list and module table
 - [ ] 12.5 Update `llms.txt` with git module syntax
 - [ ] 12.6 Add example playbook `examples/git-deploy.yaml`
