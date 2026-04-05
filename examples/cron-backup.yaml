@@ -1,0 +1,38 @@
+---
+# Example playbook demonstrating the cron module.
+- name: Configure cron jobs
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Daily backup job in current user's crontab
+      cron:
+        name: backup
+        job: /usr/local/bin/backup.sh
+        hour: "2"
+        minute: "0"
+
+    - name: Set PATH environment line
+      cron:
+        name: path
+        env: true
+        job: "PATH=/usr/local/bin:/usr/bin:/bin"
+
+    - name: Hourly health check via /etc/cron.d drop-in
+      cron:
+        name: health-check
+        cron_file: /etc/cron.d/health-check
+        user: root
+        job: /usr/local/bin/healthcheck.sh
+        special_time: hourly
+
+    - name: Temporarily disable a job
+      cron:
+        name: report
+        job: /usr/local/bin/report.sh
+        special_time: daily
+        disabled: true
+
+    - name: Remove an obsolete entry
+      cron:
+        name: old-cleanup
+        state: absent

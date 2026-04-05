@@ -28,6 +28,7 @@ import (
 	_ "github.com/tackhq/tack/internal/module/brew"
 	_ "github.com/tackhq/tack/internal/module/command"
 	_ "github.com/tackhq/tack/internal/module/copy"
+	_ "github.com/tackhq/tack/internal/module/cron"
 	_ "github.com/tackhq/tack/internal/module/file"
 	_ "github.com/tackhq/tack/internal/module/group"
 	_ "github.com/tackhq/tack/internal/module/lineinfile"
