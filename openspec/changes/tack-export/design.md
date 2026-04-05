@@ -18,7 +18,7 @@ Not every module can faithfully emit shell: `template` can render a file, but id
 
 **Non-Goals:**
 - Reproduce SSH/SSM/Docker transport logic — export is local-connector payload only.
-- Support every Tack feature. Handlers, rescue, register-with-runtime-downstream, async, delegate_to are all out of scope in v1; emit warnings.
+- Support every Tack feature. Handlers, block/rescue/always, register-with-runtime-downstream, async, delegate_to are all out of scope in v1; emitted as UNSUPPORTED.
 - Runtime introspection — export cannot know target state, so it cannot prune tasks based on "file already exists" etc. The emitted script does runtime checks itself.
 - Dry-run of the exported script — that's the user's job (`bash -n out.sh` or `bash -x out.sh`).
 - Windows shell (PowerShell) export — bash only.
@@ -134,7 +134,7 @@ Unsupported constructs produce:
 
 The task YAML is embedded as a comment so auditors/reviewers can see what was skipped. Export exit code: 0 if all unsupported constructs are non-fatal (explicit skip); non-zero if `--check-only` and any unsupported found.
 
-Fatal unsupported (export fails): structural constructs that change control flow without workarounds — rescue blocks, async, delegate_to. These bail early with a clear error unless `--allow-partial` is set (v1.1 scope — not in initial release).
+Fatal unsupported (export fails): structural constructs that change control flow without workarounds — block/rescue/always, async, delegate_to. These bail early with a clear error unless `--allow-partial` is set (v1.1 scope — not in initial release).
 
 **v1 behavior:** Any unsupported construct simply emits the comment and continues. No `--allow-partial` flag needed.
 

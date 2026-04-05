@@ -33,7 +33,7 @@
 
 ## 6. Crontab Editor (Core Logic)
 
-- [ ] 6.1 Implement `locateManaged(lines, name)` — scan for `# BOLT: <name>` marker, return indices of marker + following line
+- [ ] 6.1 Implement `locateManaged(lines, name)` — scan for `# TACK: <name>` marker, return indices of marker + following line
 - [ ] 6.2 Implement `renderScheduleLine(params)` — emit `@shortcut ` or `min hour day mon weekday `, then user field (drop-in only), then job
 - [ ] 6.3 Implement `renderManagedBlock(name, scheduleLine, disabled)` — produces marker + (optionally-commented) line
 - [ ] 6.4 Implement `applyPresent(lines, name, block)` — replace existing block in place, or append to end (with separating newline)

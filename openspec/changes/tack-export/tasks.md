@@ -68,7 +68,7 @@
 - [ ] 10.2 Deduplicate PreHook fragments across blocks
 - [ ] 10.3 Wrap shell in `>/dev/null 2>&1` redirect when `no_log: true`
 - [ ] 10.4 Render UNSUPPORTED block for tasks without Emit: `# UNSUPPORTED: <reason>` + embedded task YAML (redacted) as comments
-- [ ] 10.5 Emit rescue/handler warnings as documented
+- [ ] 10.5 Emit block/rescue/always + handlers as UNSUPPORTED (no partial emission in v1)
 
 ## 11. Module Emitter Implementations
 
@@ -117,7 +117,7 @@
 - [ ] 15.3 Unit tests for loop expansion (static list, variable list, runtime list)
 - [ ] 15.4 Unit tests for when: pruning (true, false, runtime-var)
 - [ ] 15.5 Unit tests for tag filtering applied during export
-- [ ] 15.6 Unit tests for UNSUPPORTED emission (async, handlers, rescue warning, registry-miss)
+- [ ] 15.6 Unit tests for UNSUPPORTED emission (async, handlers, block/rescue/always, registry-miss)
 - [ ] 15.7 Unit tests for no_log wrapping and embedded-YAML redaction
 - [ ] 15.8 Unit tests for vault warning banner presence/absence
 - [ ] 15.9 Unit tests for `--no-facts` sentinel substitution + banner warning

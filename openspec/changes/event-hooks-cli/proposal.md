@@ -8,7 +8,7 @@ Operators running Tack in CI, cron, or orchestrated pipelines need to know when 
 - Add `--hook-timeout <duration>` flag (default `30s`) controlling how long each hook may run before SIGTERM.
 - Add environment-variable equivalents following the existing `TACK_*` convention: `TACK_ON_FAILURE`, `TACK_ON_SUCCESS`, `TACK_ON_COMPLETE`, `TACK_HOOK_TIMEOUT`. Flags take precedence over env vars; env vars accept comma-separated commands for repetition.
 - At the end of a run, spawn each matching command via `/bin/sh -c <cmd>` on the control host (where tack is running, not on targets), feeding a JSON payload on stdin.
-- JSON payload shape: `{run_id, status, playbook, started_at, ended_at, duration_ms, failed_task_count, changed_task_count, ok_task_count, hosts: [{name, status, failed_tasks, ok_task_count, changed_task_count, duration_ms}]}`.
+- JSON payload shape: `{schema_version, tack_version, run_id, status, playbook, started_at, ended_at, duration_ms, failed_task_count, changed_task_count, ok_task_count, hosts: [{name, status, failed_tasks, ok_task_count, changed_task_count, duration_ms}]}`.
 - Hooks run sequentially in registration order: all `--on-failure` (or `--on-success`), then all `--on-complete`.
 - Hook stdout/stderr is captured; shown in verbose mode; hook exit code is recorded but does NOT change the playbook run's exit code. Hook failures are logged as warnings.
 - Scope explicitly excludes: webhooks (users wrap `curl`), per-task hooks, plugin architecture, callback registry. Those are v2.

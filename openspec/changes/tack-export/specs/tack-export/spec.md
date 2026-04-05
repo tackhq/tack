@@ -184,9 +184,9 @@ The export command SHALL render unsupported constructs as a comment block `# ===
 - **WHEN** a play defines `handlers:`
 - **THEN** the handlers SHALL be emitted as a single UNSUPPORTED block with embedded YAML
 
-#### Scenario: Rescue block unsupported
-- **WHEN** a block has `rescue:`
-- **THEN** the block's tasks SHALL be emitted normally with a `# WARN: block rescue not supported; emitted as sequential tasks` comment
+#### Scenario: block/rescue/always unsupported
+- **WHEN** a play contains `block:`, `rescue:`, or `always:` constructs
+- **THEN** the entire block SHALL be emitted as a single `# UNSUPPORTED: block/rescue/always not supported in v1` comment with the embedded YAML, and `--check-only` SHALL exit non-zero
 
 #### Scenario: Embedded YAML redaction
 - **WHEN** an unsupported task has `password: "secret"` and `no_log: true`
