@@ -1,0 +1,92 @@
+# Tack Plan → Approve → Apply Workflow
+#
+# This workflow runs tack in a two-job pattern:
+#   1. Plan: runs --dry-run, uploads output, notifies Slack
+#   2. Apply: waits for environment approval, then applies
+#
+# Setup:
+#   1. Create a "production" environment in repo Settings → Environments
+#   2. Add required reviewers to the environment
+#   3. Set SLACK_WEBHOOK_URL as a repository secret (optional)
+#   4. Set any tack secrets (TACK_SSH_KEY, etc.) as repository secrets
+#
+# Customize:
+#   - Change the playbook path in the tack commands
+#   - Change the environment name if not "production"
+#   - Adjust the trigger (push, workflow_dispatch, etc.)
+
+name: Tack Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  plan:
+    name: Plan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tack
+        run: |
+          curl -fsSL https://github.com/tackhq/tack/releases/latest/download/tack_linux_amd64.tar.gz | tar xz
+          sudo mv tack /usr/local/bin/
+
+      - name: Run tack plan
+        id: plan
+        env:
+          TACK_SSH_KEY: ${{ secrets.TACK_SSH_KEY }}
+          TACK_SSH_PASSWORD: ${{ secrets.TACK_SSH_PASSWORD }}
+          TACK_SUDO_PASSWORD: ${{ secrets.TACK_SUDO_PASSWORD }}
+        run: |
+          # Run plan and capture both human-readable and JSON output
+          tack run playbook.yaml --dry-run 2>&1 | tee plan-output.txt
+          tack run playbook.yaml --dry-run --output json > plan-output.json 2>&1
+
+      - name: Upload plan output
+        uses: actions/upload-artifact@v4
+        with:
+          name: tack-plan
+          path: |
+            plan-output.txt
+            plan-output.json
+          retention-days: 7
+
+      - name: Notify Slack
+        if: env.SLACK_WEBHOOK_URL != ''
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          bash examples/ci/slack-notify.sh plan-output.json \
+            "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+  apply:
+    name: Apply
+    needs: plan
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tack
+        run: |
+          curl -fsSL https://github.com/tackhq/tack/releases/latest/download/tack_linux_amd64.tar.gz | tar xz
+          sudo mv tack /usr/local/bin/
+
+      - name: Download plan output
+        uses: actions/download-artifact@v4
+        with:
+          name: tack-plan
+
+      - name: Apply changes
+        env:
+          TACK_SSH_KEY: ${{ secrets.TACK_SSH_KEY }}
+          TACK_SSH_PASSWORD: ${{ secrets.TACK_SSH_PASSWORD }}
+          TACK_SUDO_PASSWORD: ${{ secrets.TACK_SUDO_PASSWORD }}
+        run: |
+          echo "--- Approved plan (for reference) ---"
+          cat plan-output.txt
+          echo "--- Applying ---"
+          tack run playbook.yaml
