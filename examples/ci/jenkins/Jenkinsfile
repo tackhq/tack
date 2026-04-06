@@ -1,0 +1,85 @@
+// Tack Plan → Approve → Apply Pipeline
+//
+// This pipeline runs tack in a four-stage pattern:
+//   1. Plan:    runs --dry-run, stashes output
+//   2. Notify:  posts plan summary to Slack
+//   3. Approve: pauses for human approval (24h timeout)
+//   4. Apply:   applies the changes
+//
+// Setup:
+//   1. Create a Pipeline job pointing to this Jenkinsfile
+//   2. Add credentials:
+//      - SLACK_WEBHOOK_URL (Secret text) - optional
+//      - Any tack secrets (SSH keys, passwords)
+//   3. Customize the playbook path and approval settings below
+
+pipeline {
+    agent any
+
+    environment {
+        // Customize these for your setup
+        PLAYBOOK = 'playbook.yaml'
+    }
+
+    stages {
+        stage('Plan') {
+            steps {
+                sh 'tack run ${PLAYBOOK} --dry-run 2>&1 | tee plan-output.txt'
+                sh 'tack run ${PLAYBOOK} --dry-run --output json > plan-output.json 2>&1'
+                stash includes: 'plan-output.txt,plan-output.json', name: 'plan'
+            }
+        }
+
+        stage('Notify') {
+            when {
+                expression { return env.SLACK_WEBHOOK_URL != null }
+            }
+            steps {
+                withCredentials([string(credentialsId: 'SLACK_WEBHOOK_URL', variable: 'SLACK_WEBHOOK_URL')]) {
+                    sh "bash examples/ci/slack-notify.sh plan-output.json ${BUILD_URL}"
+                }
+            }
+        }
+
+        stage('Approve') {
+            steps {
+                script {
+                    // Show plan summary in the approval prompt
+                    def planOutput = readFile('plan-output.txt')
+                    def truncated = planOutput.length() > 2000
+                        ? planOutput.take(2000) + '\n... (truncated, see full output in Plan stage)'
+                        : planOutput
+
+                    input message: 'Review the plan and approve to apply changes.',
+                          parameters: [
+                              text(name: 'Plan Output', defaultValue: truncated, description: 'Tack plan output')
+                          ],
+                          ok: 'Apply',
+                          submitter: '' // Leave empty for any authenticated user, or set to 'user1,user2'
+                }
+            }
+            options {
+                timeout(time: 24, unit: 'HOURS')
+            }
+        }
+
+        stage('Apply') {
+            steps {
+                unstash 'plan'
+                sh 'echo "--- Approved plan (for reference) ---"'
+                sh 'cat plan-output.txt'
+                sh 'echo "--- Applying ---"'
+                sh "tack run ${PLAYBOOK}"
+            }
+        }
+    }
+
+    post {
+        failure {
+            echo 'Pipeline failed. Check the logs above for details.'
+        }
+        aborted {
+            echo 'Pipeline was aborted (approval rejected or timed out).'
+        }
+    }
+}
