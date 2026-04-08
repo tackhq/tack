@@ -138,3 +138,28 @@ func Unchanged(msg string) *Result {
 func ChangedWithData(msg string, data map[string]any) *Result {
 	return &Result{Changed: true, Message: msg, Data: data}
 }
+
+// EmitResult holds the output of a module's shell emission for export.
+type EmitResult struct {
+	// Supported indicates whether this module can emit shell for the given params.
+	Supported bool
+
+	// Reason explains why a module is unsupported (when Supported=false).
+	Reason string
+
+	// Shell is the bash fragment to emit (multiline OK); must be set -e safe.
+	Shell string
+
+	// PreHook is optional setup emitted before the task block (deduplicated across blocks).
+	PreHook string
+
+	// Warnings holds non-fatal caveats (e.g., "template mode inferred").
+	Warnings []string
+}
+
+// Emitter is an optional interface for modules that support shell export.
+// Modules implementing this interface can have their operations compiled into
+// standalone bash scripts via `tack export`.
+type Emitter interface {
+	Emit(params map[string]any, vars map[string]any) (*EmitResult, error)
+}
