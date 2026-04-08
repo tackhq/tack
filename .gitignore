@@ -1,6 +1,7 @@
 # Build artifacts
 bin/
 dist/
+/tack
 
 # Test artifacts
 coverage.out
