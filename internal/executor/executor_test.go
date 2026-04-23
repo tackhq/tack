@@ -436,6 +436,72 @@ func TestToStringMap(t *testing.T) {
 	}
 }
 
+func TestNeedsSudoPassword_NoPromptOptOut(t *testing.T) {
+	sudoTrue := true
+
+	cases := []struct {
+		name         string
+		play         *playbook.Play
+		tasks        []*playbook.Task
+		sudoNoPrompt bool
+		wantPrompted bool
+	}{
+		{
+			name:         "no sudo needed — no prompt",
+			play:         &playbook.Play{},
+			tasks:        []*playbook.Task{{Name: "t"}},
+			sudoNoPrompt: false,
+			wantPrompted: false,
+		},
+		{
+			name:         "play sudo true, no opt-out — prompts",
+			play:         &playbook.Play{Sudo: true},
+			tasks:        []*playbook.Task{{Name: "t"}},
+			sudoNoPrompt: false,
+			wantPrompted: true,
+		},
+		{
+			name:         "play sudo true, opt-out set — no prompt",
+			play:         &playbook.Play{Sudo: true},
+			tasks:        []*playbook.Task{{Name: "t"}},
+			sudoNoPrompt: true,
+			wantPrompted: false,
+		},
+		{
+			name:         "task sudo true, opt-out set — no prompt",
+			play:         &playbook.Play{},
+			tasks:        []*playbook.Task{{Name: "t", Sudo: &sudoTrue}},
+			sudoNoPrompt: true,
+			wantPrompted: false,
+		},
+		{
+			name:         "play already has password, opt-out irrelevant",
+			play:         &playbook.Play{Sudo: true, SudoPassword: "preset"},
+			tasks:        []*playbook.Task{{Name: "t"}},
+			sudoNoPrompt: false,
+			wantPrompted: false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			prompted := false
+			exec := New()
+			exec.SudoNoPrompt = tc.sudoNoPrompt
+			exec.PromptSudoPassword = func() (string, error) {
+				prompted = true
+				return "pw", nil
+			}
+			if err := exec.needsSudoPassword(tc.play, tc.tasks, nil); err != nil {
+				t.Fatalf("needsSudoPassword: %v", err)
+			}
+			if prompted != tc.wantPrompted {
+				t.Fatalf("prompted = %v, want %v", prompted, tc.wantPrompted)
+			}
+		})
+	}
+}
+
 func TestConnOverrides_SSMFields(t *testing.T) {
 	o := &ConnOverrides{
 		SSMInstances: []string{"i-111", "i-222"},

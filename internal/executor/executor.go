@@ -80,6 +80,13 @@ type Executor struct {
 	// when tasks require sudo but no password was provided.
 	PromptSudoPassword func() (string, error)
 
+	// SudoNoPrompt suppresses the upfront sudo-password prompt. When set,
+	// tack runs sudo without a password; passwordless sudo (NOPASSWD) works
+	// transparently, and if the target actually requires a password, sudo
+	// itself surfaces the error. Intended for CI/non-interactive runs and
+	// for users who've configured passwordless sudo.
+	SudoNoPrompt bool
+
 	// ResolveVaultPassword is called to obtain the vault password when
 	// a play references a vault_file and no password has been cached yet.
 	ResolveVaultPassword func() ([]byte, error)
@@ -1679,6 +1686,12 @@ func (e *Executor) planHandlers(tasks []*playbook.Task, taskPlan []output.Planne
 func (e *Executor) needsSudoPassword(play *playbook.Play, tasks, handlers []*playbook.Task) error {
 	// Already have a sudo password
 	if play.SudoPassword != "" {
+		return nil
+	}
+
+	// User explicitly opted out of the prompt (flag / env / non-TTY stdin).
+	// If sudo later needs a password, the sudo command itself will error.
+	if e.SudoNoPrompt {
 		return nil
 	}
 
