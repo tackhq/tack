@@ -107,6 +107,7 @@ func addConnectionFlags(cmd *cobra.Command) {
 	cmd.Flags().BoolP("sudo", "s", false, "Enable sudo for all tasks")
 	cmd.Flags().String("sudo-password", "", "Sudo password (prompted if flag present with no value)")
 	cmd.Flags().Lookup("sudo-password").NoOptDefVal = ""
+	cmd.Flags().Bool("no-sudo-prompt", false, "Skip the upfront sudo-password prompt (for passwordless sudo / CI). Also: TACK_SUDO_NO_PROMPT=1.")
 }
 
 var rootCmd = &cobra.Command{
@@ -324,6 +325,12 @@ func runPlaybook(cmd *cobra.Command, args []string) error {
 		}
 		return string(passBytes), nil
 	}
+	// Opt out of the sudo prompt when the user asked to, or when stdin isn't
+	// a TTY (CI / piped input) — prompting in that case would just hang.
+	noPromptFlag, _ := cmd.Flags().GetBool("no-sudo-prompt")
+	envNoPrompt := os.Getenv("TACK_SUDO_NO_PROMPT")
+	envOptOut := envNoPrompt == "1" || envNoPrompt == "true" || envNoPrompt == "yes"
+	exec.SudoNoPrompt = noPromptFlag || envOptOut || !term.IsTerminal(int(syscall.Stdin))
 	// Vault password resolution: env > file > prompt (D-01)
 	vaultPwFile, _ := cmd.Flags().GetString("vault-password-file")
 	if envPw := os.Getenv("TACK_VAULT_PASSWORD"); envPw != "" {
