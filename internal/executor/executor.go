@@ -814,14 +814,24 @@ func (e *Executor) runSingleTask(ctx context.Context, pctx *PlayContext, task *p
 		return &TaskResult{Status: "failed", Error: lastErr}, lastErr
 	}
 
-	// Store registered result
+	// Store registered result. Module-specific Data keys are hoisted to the
+	// top level so playbooks can write `{{ reg.field }}` as documented
+	// (docs/modules/*.md, llms.txt, examples/). The nested `data` map is
+	// preserved for back-compat with playbooks that use `{{ reg.data.field }}`.
 	if task.Register != "" {
-		pctx.Registered[task.Register] = map[string]any{
+		reg := map[string]any{
 			"changed": result.Changed,
 			"message": result.Message,
 			"data":    result.Data,
 		}
-		pctx.Vars[task.Register] = pctx.Registered[task.Register]
+		for k, v := range result.Data {
+			if _, reserved := reg[k]; reserved {
+				continue
+			}
+			reg[k] = v
+		}
+		pctx.Registered[task.Register] = reg
+		pctx.Vars[task.Register] = reg
 	}
 
 	// Handle notify
