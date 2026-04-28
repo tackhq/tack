@@ -330,7 +330,7 @@ func runPlaybook(cmd *cobra.Command, args []string) error {
 	noPromptFlag, _ := cmd.Flags().GetBool("no-sudo-prompt")
 	envNoPrompt := os.Getenv("TACK_SUDO_NO_PROMPT")
 	envOptOut := envNoPrompt == "1" || envNoPrompt == "true" || envNoPrompt == "yes"
-	exec.SudoNoPrompt = noPromptFlag || envOptOut || !term.IsTerminal(int(syscall.Stdin))
+	exec.SudoNoPrompt = noPromptFlag || envOptOut || autoApprove || !term.IsTerminal(int(syscall.Stdin))
 	// Vault password resolution: env > file > prompt (D-01)
 	vaultPwFile, _ := cmd.Flags().GetString("vault-password-file")
 	if envPw := os.Getenv("TACK_VAULT_PASSWORD"); envPw != "" {
