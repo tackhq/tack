@@ -21,22 +21,30 @@ func (e *Executor) loadVaultVars(play *playbook.Play, playbookDir string) (map[s
 		vaultPath = filepath.Join(playbookDir, vaultPath)
 	}
 
-	// Check var cache first (D-10)
+	// Check var cache first (D-10). Held under vaultMu for safe access
+	// from per-host goroutines in multi-host plays.
+	e.vaultMu.Lock()
 	if cached, ok := e.vaultVarCache[vaultPath]; ok {
+		e.vaultMu.Unlock()
 		return cached, nil
 	}
 
-	// Acquire password lazily (D-11 — prompted once per run)
+	// Acquire password lazily (D-11 — prompted once per run). Stays under
+	// vaultMu so concurrent goroutines don't re-prompt or race on the
+	// password byte slice.
 	if e.vaultPassword == nil {
 		if e.ResolveVaultPassword == nil {
+			e.vaultMu.Unlock()
 			return nil, fmt.Errorf("play references vault_file but no vault password source configured")
 		}
 		pw, err := e.ResolveVaultPassword()
 		if err != nil {
+			e.vaultMu.Unlock()
 			return nil, fmt.Errorf("acquire vault password: %w", err)
 		}
 		e.vaultPassword = pw
 	}
+	e.vaultMu.Unlock()
 
 	// Read encrypted file (D-07 — missing file is fatal)
 	data, err := os.ReadFile(vaultPath)
@@ -64,8 +72,15 @@ func (e *Executor) loadVaultVars(play *playbook.Play, playbookDir string) (map[s
 		vars = make(map[string]any)
 	}
 
-	// Cache for subsequent plays (D-10)
+	// Cache for subsequent plays (D-10). Re-check under lock so two
+	// goroutines that decrypted in parallel converge on a single map.
+	e.vaultMu.Lock()
+	if existing, ok := e.vaultVarCache[vaultPath]; ok {
+		e.vaultMu.Unlock()
+		return existing, nil
+	}
 	e.vaultVarCache[vaultPath] = vars
+	e.vaultMu.Unlock()
 
 	return vars, nil
 }

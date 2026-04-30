@@ -11,6 +11,12 @@ import (
 	"github.com/tackhq/tack/internal/playbook"
 )
 
+// jsonSchemaVersion is the version of the newline-delimited JSON event
+// schema. Bump on additive or breaking changes; downstream consumers should
+// branch on this. v2 added the `host` field on plan_task/task_start/
+// task_result events for multi-host attribution.
+const jsonSchemaVersion = 2
+
 // JSONEmitter emits newline-delimited JSON events to stdout.
 // Errors are written to stderr. The approval prompt is auto-approved.
 type JSONEmitter struct {
@@ -18,6 +24,10 @@ type JSONEmitter struct {
 	errW   io.Writer
 	debug  bool
 	diff   bool
+	// currentHost tags task_start/task_result events with their host. Set
+	// by HostStart and consumed by subsequent task event emissions until
+	// the next HostStart.
+	currentHost string
 }
 
 // NewJSONEmitter creates a JSONEmitter writing events to w and errors to errW.
@@ -43,7 +53,7 @@ func (j *JSONEmitter) PlaybookStart(path string) {
 	j.emit(map[string]any{
 		"type":     "playbook_start",
 		"playbook": path,
-		"version":  1,
+		"version":  jsonSchemaVersion,
 	})
 }
 
@@ -73,8 +83,10 @@ func (j *JSONEmitter) PlayStart(play *playbook.Play) {
 	})
 }
 
-// HostStart emits a host_start event.
+// HostStart emits a host_start event and tags subsequent task events with
+// the host name until the next HostStart.
 func (j *JSONEmitter) HostStart(host, connType string) {
+	j.currentHost = host
 	j.emit(map[string]any{
 		"type":       "host_start",
 		"host":       host,
@@ -82,57 +94,83 @@ func (j *JSONEmitter) HostStart(host, connType string) {
 	})
 }
 
-// TaskStart emits a task_start event.
+// TaskStart emits a task_start event tagged with the current host.
 func (j *JSONEmitter) TaskStart(name, moduleName string) {
-	j.emit(map[string]any{
+	event := map[string]any{
 		"type":   "task_start",
 		"task":   name,
 		"module": moduleName,
-	})
+	}
+	if j.currentHost != "" {
+		event["host"] = j.currentHost
+	}
+	j.emit(event)
 }
 
-// TaskResult emits a task_result event.
+// TaskResult emits a task_result event tagged with the current host.
 func (j *JSONEmitter) TaskResult(name, status string, changed bool, message string) {
-	j.emit(map[string]any{
+	event := map[string]any{
 		"type":    "task_result",
 		"task":    name,
 		"status":  status,
 		"changed": changed,
 		"message": message,
-	})
+	}
+	if j.currentHost != "" {
+		event["host"] = j.currentHost
+	}
+	j.emit(event)
 }
 
 // DisplayPlan emits plan_task events for each planned task.
 func (j *JSONEmitter) DisplayPlan(tasks []PlannedTask, dryRun bool) {
 	for _, t := range tasks {
-		event := map[string]any{
-			"type":   "plan_task",
-			"task":   t.Name,
-			"module": t.Module,
-			"action": t.Status,
-		}
-		if len(t.Params) > 0 {
-			event["params"] = t.Params
-		}
-		if t.Reason != "" {
-			event["reason"] = t.Reason
-		}
-		if t.OldChecksum != "" {
-			event["old_checksum"] = t.OldChecksum
-		}
-		if t.NewChecksum != "" {
-			event["new_checksum"] = t.NewChecksum
-		}
-		if j.diff {
-			if t.OldContent != "" {
-				event["old_content"] = t.OldContent
-			}
-			if t.NewContent != "" {
-				event["new_content"] = t.NewContent
-			}
-		}
-		j.emit(event)
+		j.emit(j.planTaskEvent(t))
 	}
+}
+
+// DisplayMultiHostPlan emits plan_task events for each planned task in a
+// multi-host plan. Hosts are not pre-filtered for no-op suppression — the
+// JSON consumer can decide what to render. Each event carries `host`.
+func (j *JSONEmitter) DisplayMultiHostPlan(tasks []PlannedTask, hosts []string, dryRun bool) {
+	for _, t := range tasks {
+		j.emit(j.planTaskEvent(t))
+	}
+}
+
+// planTaskEvent constructs a plan_task event payload. Includes `host` when
+// the PlannedTask carries one (multi-host plans).
+func (j *JSONEmitter) planTaskEvent(t PlannedTask) map[string]any {
+	event := map[string]any{
+		"type":   "plan_task",
+		"task":   t.Name,
+		"module": t.Module,
+		"action": t.Status,
+	}
+	if t.Host != "" {
+		event["host"] = t.Host
+	}
+	if len(t.Params) > 0 {
+		event["params"] = t.Params
+	}
+	if t.Reason != "" {
+		event["reason"] = t.Reason
+	}
+	if t.OldChecksum != "" {
+		event["old_checksum"] = t.OldChecksum
+	}
+	if t.NewChecksum != "" {
+		event["new_checksum"] = t.NewChecksum
+	}
+	if j.diff {
+		if t.OldContent != "" {
+			event["old_content"] = t.OldContent
+		}
+		if t.NewContent != "" {
+			event["new_content"] = t.NewContent
+		}
+	}
+	return event
 }
 
 // PromptApproval always returns true in JSON mode (auto-approve).

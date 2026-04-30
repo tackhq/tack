@@ -245,6 +245,8 @@ func (n *nullEmitter) HostStart(host, conn string)                              
 func (n *nullEmitter) TaskStart(name, module string)                               {}
 func (n *nullEmitter) TaskResult(name, status string, changed bool, detail string) {}
 func (n *nullEmitter) DisplayPlan(tasks []output.PlannedTask, dryRun bool)         {}
+func (n *nullEmitter) DisplayMultiHostPlan(tasks []output.PlannedTask, hosts []string, dryRun bool) {
+}
 func (n *nullEmitter) PromptApproval() bool                                        { return true }
 func (n *nullEmitter) Section(name string)                                         {}
 func (n *nullEmitter) Info(format string, args ...any)                             {}

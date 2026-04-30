@@ -820,6 +820,12 @@ For multi-host plays, fact gathering runs concurrently across all hosts
 regardless of `--forks`. The pre-pass is skipped for single-host plays,
 `connection: local`, and `gather_facts: false`. Internal concurrency cap: 20.
 
+Multi-host plays also render a single consolidated plan with per-line host
+prefix (`web1: + apt: install nginx`) and prompt for approval once globally.
+Hosts with only no-op tasks are omitted from the body and counted in the
+footer as `(N unchanged)`. Single-host plays use the original per-task plan
+format unchanged.
+
 ### System
 
 | Fact          | Example           | Description                |
