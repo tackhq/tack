@@ -14,6 +14,21 @@ type Playbook struct {
 
 	// Plays is the list of plays in the playbook.
 	Plays []*Play
+
+	// Defaults captures playbook-level inheritance values from the
+	// mapping-format playbook (hosts/connection/sudo/vars). It is
+	// informational — defaults are already merged into each play in Plays.
+	// Nil for sequence-format playbooks.
+	Defaults *PlaybookDefaults
+}
+
+// PlaybookDefaults holds playbook-level fields inherited by plays that don't
+// override them. Populated only for the mapping-format playbook shape.
+type PlaybookDefaults struct {
+	Hosts      []string
+	Connection string
+	Sudo       bool
+	Vars       map[string]any
 }
 
 // SSHConfig holds SSH connection parameters for a play.
@@ -274,6 +289,16 @@ func (p *Play) Validate() error {
 		// Valid
 	default:
 		return fmt.Errorf("invalid connection type: %s (must be local, docker, ssh, or ssm)", conn)
+	}
+
+	// Hosts may be supplied at the play level or inherited from the
+	// playbook-level `hosts:` default; the parser merges defaults in
+	// before Validate runs, so an empty Hosts here means neither is set.
+	// Local plays are exempt — the executor implicitly targets localhost
+	// for connection: local, and CLI overrides (--hosts) can also fill
+	// this in later for non-local connections.
+	if conn != "local" && len(p.Hosts) == 0 {
+		return fmt.Errorf("play has no hosts; declare `hosts:` on the play or at the playbook level")
 	}
 
 	for i, task := range p.Tasks {

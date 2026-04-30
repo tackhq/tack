@@ -108,6 +108,34 @@ Tasks can specify the module as a top-level key:
     state: present
 ```
 
+### Playbook structure
+
+A playbook file is one of:
+
+1. A YAML sequence of plays (`- name: ...` at the root). See "Playbook example".
+2. A YAML mapping with `hosts`, `connection`, `sudo`, `vars` declared once
+   plus a `plays:` array. Plays inherit those fields unless they set their
+   own value (play-level wins). `vars` is merged, with play-level keys
+   overriding playbook-level keys.
+
+```yaml
+# Mapping format
+hosts: webservers
+connection: ssh
+sudo: true
+plays:
+  - name: Install
+    tasks:
+      - apt: { name: nginx, state: present }
+  - name: Deploy
+    tasks:
+      - copy: { src: app.tar.gz, dest: /opt/app/ }
+```
+
+Only `hosts`, `connection`, `sudo`, and `vars` are inherited from the
+playbook level. SSH/SSM config, vars_files, vault_file, roles, handlers,
+and tasks are NOT inherited.
+
 ### Playbook example
 
 ```yaml

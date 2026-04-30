@@ -97,6 +97,34 @@ tack vault edit <file>      Edit an existing encrypted vault file
 
 Run `tack run --help` for the full flag reference.
 
+## Playbook-Level Defaults
+
+For multi-play playbooks targeting the same group, you can declare `hosts`,
+`connection`, `sudo`, and `vars` once at the playbook level and have every
+play inherit them:
+
+```yaml
+hosts: webservers
+connection: ssh
+sudo: true
+plays:
+  - name: Install packages
+    tasks:
+      - apt:
+          name: nginx
+          state: present
+
+  - name: Deploy app
+    tasks:
+      - copy:
+          src: ./app.tar.gz
+          dest: /opt/app/
+```
+
+Each play can still override any field locally; play-level values win. See
+[`examples/playbook-defaults.yaml`](../examples/playbook-defaults.yaml) for
+a full example. The legacy sequence-of-plays format keeps working unchanged.
+
 ## Next Steps
 
 - [Playbook Structure](playbooks.md) - tasks, handlers, loops, conditionals

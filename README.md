@@ -137,6 +137,30 @@ tack run https://github.com/user/repo.git@v1.0//playbook.yaml
 tack run s3://bucket/path/to/playbook.yaml
 ```
 
+### Playbook-Level Defaults (Multiple Plays)
+
+A playbook is either a sequence of plays (as shown above) or a mapping with
+`hosts`, `connection`, `sudo`, `vars` declared once and a `plays:` array
+underneath. Plays inherit any field they don't set themselves:
+
+```yaml
+hosts: webservers
+connection: ssh
+sudo: true
+plays:
+  - name: Install
+    tasks:
+      - apt: { name: nginx, state: present }
+
+  - name: Deploy
+    tasks:
+      - copy:
+          src: ./app.tar.gz
+          dest: /opt/app/
+```
+
+Play-level values always win on conflict. See `examples/playbook-defaults.yaml`.
+
 ## Task Inclusion
 
 Use `include_tasks` to include shared task files from your playbooks. This eliminates YAML duplication and enables reusable task libraries.
