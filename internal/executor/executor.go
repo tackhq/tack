@@ -523,7 +523,7 @@ func (e *Executor) runMultiHostPlay(ctx context.Context, play *playbook.Play, st
 	// a per-host goroutine. Closes the latent stdin race in --forks > 1
 	// mode that existed before this change.
 	if !e.AutoApprove {
-		if !e.Output.PromptApproval() {
+		if !e.Output.PromptApproval(formatApprovalTarget(play.Hosts, play.GetConnection())) {
 			e.Output.Info("Apply cancelled.")
 			closePrepConnectors(preps)
 			return nil
@@ -816,7 +816,7 @@ func (e *Executor) runPlayOnHost(ctx context.Context, play *playbook.Play, stats
 
 	// Prompt for approval unless auto-approved
 	if !e.AutoApprove {
-		if !emitter.PromptApproval() {
+		if !emitter.PromptApproval(formatApprovalTarget([]string{host}, play.GetConnection())) {
 			emitter.Info("Apply cancelled.")
 			return nil
 		}

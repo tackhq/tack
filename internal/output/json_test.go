@@ -211,7 +211,7 @@ func TestJSONEmitter_Error(t *testing.T) {
 
 func TestJSONEmitter_PromptApproval(t *testing.T) {
 	j := NewJSONEmitter(&bytes.Buffer{}, &bytes.Buffer{})
-	if !j.PromptApproval() {
+	if !j.PromptApproval("any-target") {
 		t.Error("JSONEmitter.PromptApproval should always return true")
 	}
 }
@@ -302,7 +302,7 @@ func TestNewEmitter_JSON_AutoApprove(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !e.PromptApproval() {
+	if !e.PromptApproval("any-target") {
 		t.Error("JSON emitter should auto-approve")
 	}
 }

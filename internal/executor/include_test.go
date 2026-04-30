@@ -247,7 +247,7 @@ func (n *nullEmitter) TaskResult(name, status string, changed bool, detail strin
 func (n *nullEmitter) DisplayPlan(tasks []output.PlannedTask, dryRun bool)         {}
 func (n *nullEmitter) DisplayMultiHostPlan(tasks []output.PlannedTask, hosts []string, dryRun bool) {
 }
-func (n *nullEmitter) PromptApproval() bool                                        { return true }
+func (n *nullEmitter) PromptApproval(_ string) bool                                { return true }
 func (n *nullEmitter) Section(name string)                                         {}
 func (n *nullEmitter) Info(format string, args ...any)                             {}
 func (n *nullEmitter) Warn(format string, args ...any)                             {}

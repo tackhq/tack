@@ -174,7 +174,9 @@ func (j *JSONEmitter) planTaskEvent(t PlannedTask) map[string]any {
 }
 
 // PromptApproval always returns true in JSON mode (auto-approve).
-func (j *JSONEmitter) PromptApproval() bool {
+// The target argument is accepted for interface compatibility and ignored
+// — the JSON emitter never prints a prompt.
+func (j *JSONEmitter) PromptApproval(_ string) bool {
 	return true
 }
 

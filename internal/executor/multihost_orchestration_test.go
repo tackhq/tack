@@ -21,7 +21,7 @@ type countingEmitter struct {
 	approveAnswer bool
 }
 
-func (c *countingEmitter) PromptApproval() bool {
+func (c *countingEmitter) PromptApproval(_ string) bool {
 	atomic.AddInt64(&c.approvalCalls, 1)
 	return c.approveAnswer
 }

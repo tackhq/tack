@@ -22,7 +22,12 @@ type Emitter interface {
 	// no will_run/will_change/always_runs/conditional entries are omitted
 	// from the body and only counted in the footer's "unchanged" total.
 	DisplayMultiHostPlan(tasks []PlannedTask, hosts []string, dryRun bool)
-	PromptApproval() bool
+	// PromptApproval asks the user to confirm applying changes. The target
+	// argument is a human-readable description of which host(s) the changes
+	// will hit (e.g. "web1.prod (ssh)" or "4 hosts (web1, web2, web3, web4)")
+	// and is included in the prompt line so users can identify the target
+	// without scrolling above the prompt.
+	PromptApproval(target string) bool
 	Section(name string)
 	Info(format string, args ...any)
 	Warn(format string, args ...any)
