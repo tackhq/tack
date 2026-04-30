@@ -816,6 +816,10 @@ Empty strings, zero, `nil`, and `false` are falsy.
 Gathered automatically unless `gather_facts: false`. Available as `{{ key }}`
 or `{{ facts.key }}` in playbook variables and `{{ .key }}` in templates.
 
+For multi-host plays, fact gathering runs concurrently across all hosts
+regardless of `--forks`. The pre-pass is skipped for single-host plays,
+`connection: local`, and `gather_facts: false`. Internal concurrency cap: 20.
+
 ### System
 
 | Fact          | Example           | Description                |

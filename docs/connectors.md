@@ -232,3 +232,11 @@ Use `--forks N` (or `TACK_FORKS` env var) to execute against multiple hosts conc
 ```bash
 tack run deploy.yaml --hosts web1,web2,web3 --forks 3
 ```
+
+### Parallel Fact Gathering
+
+Fact gathering runs concurrently across all target hosts regardless of `--forks`. For multi-host plays the executor opens connectors and runs `Gathering Facts` for every host in parallel before any plan/apply work begins, then reuses the open connector for the apply phase.
+
+This is most visible on slow connectors like SSM, where each round-trip costs several seconds. A four-host SSM play that previously waited `4 × t` for serial fact gather now waits roughly `t` (bounded by the slowest host).
+
+The pre-pass is skipped for single-host plays, `connection: local`, and plays with `gather_facts: false`. Concurrency is internally capped at 20 to avoid overwhelming AWS API limits on very large fleets.

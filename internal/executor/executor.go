@@ -109,6 +109,11 @@ type Executor struct {
 	// Inventory holds the loaded inventory (optional). When set, group names
 	// in play.Hosts are expanded and per-host vars/SSH config are applied.
 	Inventory *inventory.Inventory
+
+	// connectorFactory is a test hook overriding GetConnector. nil in
+	// production; set by tests to inject fake connectors for the discovery
+	// pre-pass. Must not be exported.
+	connectorFactory func(play *playbook.Play, host string) (connector.Connector, error)
 }
 
 // New creates a new executor.
@@ -408,15 +413,44 @@ func (e *Executor) runPlay(ctx context.Context, play *playbook.Play, stats *Stat
 
 	// For local connection, run once regardless of hosts list
 	if play.GetConnection() == "local" {
-		return e.runPlayOnHost(ctx, play, stats, roles, "localhost", playbookDir, e.Output)
+		return e.runPlayOnHost(ctx, play, stats, roles, "localhost", playbookDir, e.Output, nil)
+	}
+
+	// Discovery pre-pass: gather facts for all hosts concurrently before
+	// the per-host plan/apply loop. Returns nil for single-host or
+	// gather-disabled plays — those keep the inline path. Output buffers
+	// are flushed in host order so users see "Gathering Facts" lines as a
+	// coherent block before any plan/apply output.
+	preps := e.gatherFactsParallel(ctx, play)
+	if preps != nil {
+		flushPrepBuffers(os.Stdout, play.Hosts, preps)
+		if ctx.Err() != nil {
+			closePrepConnectors(preps)
+			return ctx.Err()
+		}
 	}
 
 	// Determine effective fork count
 	forks := e.Forks
 	if forks <= 1 {
-		// Serial execution — preserve existing real-time output behavior
+		// Serial execution — preserve existing real-time output behavior.
+		// Fail-fast on pre-pass errors: if any host's facts gather failed,
+		// surface the error before any apply runs (matches today's serial
+		// failure semantics where the first host's failure stops the play).
+		if preps != nil {
+			for _, host := range play.Hosts {
+				if prep := preps[host]; prep != nil && prep.err != nil {
+					closePrepConnectors(preps)
+					return fmt.Errorf("host %s: %w", host, prep.err)
+				}
+			}
+		}
 		for _, host := range play.Hosts {
-			if err := e.runPlayOnHost(ctx, play, stats, roles, host, playbookDir, e.Output); err != nil {
+			var prep *hostPrep
+			if preps != nil {
+				prep = preps[host]
+			}
+			if err := e.runPlayOnHost(ctx, play, stats, roles, host, playbookDir, e.Output, prep); err != nil {
 				return err
 			}
 		}
@@ -429,6 +463,26 @@ func (e *Executor) runPlay(ctx context.Context, play *playbook.Play, stats *Stat
 
 	for _, host := range hosts {
 		host := host // capture loop variable
+		var prep *hostPrep
+		if preps != nil {
+			prep = preps[host]
+		}
+
+		// If the discovery pre-pass already failed for this host, skip apply
+		// and surface the failure in the recap (per-host isolation).
+		if prep != nil && prep.err != nil {
+			err := prep.err
+			pool.Submit(ctx, func(ctx context.Context) *HostResult {
+				return &HostResult{
+					Host:    host,
+					Success: false,
+					Error:   err,
+					Output:  &bytes.Buffer{},
+				}
+			})
+			continue
+		}
+
 		pool.Submit(ctx, func(ctx context.Context) *HostResult {
 			buf := &bytes.Buffer{}
 			hostOutput := output.New(buf)
@@ -440,7 +494,7 @@ func (e *Executor) runPlay(ctx context.Context, play *playbook.Play, stats *Stat
 			hostOutput.SetDiff(e.ShowDiff)
 
 			hostStats := &Stats{}
-			err := e.runPlayOnHost(ctx, play, hostStats, roles, host, playbookDir, hostOutput)
+			err := e.runPlayOnHost(ctx, play, hostStats, roles, host, playbookDir, hostOutput, prep)
 
 			return &HostResult{
 				Host:    host,
@@ -486,7 +540,12 @@ func (e *Executor) runPlay(ctx context.Context, play *playbook.Play, stats *Stat
 // runPlayOnHost executes a play against a single host.
 // The emitter parameter controls where output is written — either the main
 // emitter (serial mode) or a per-host buffered emitter (parallel mode).
-func (e *Executor) runPlayOnHost(ctx context.Context, play *playbook.Play, stats *Stats, roles []*playbook.Role, host string, playbookDir string, emitter output.Emitter) error {
+//
+// If prep is non-nil, the connector has already been opened and facts have
+// already been gathered by the discovery pre-pass; runPlayOnHost reuses
+// them and skips the inline Connect/Gather calls. The connector is still
+// closed via defer when the play finishes.
+func (e *Executor) runPlayOnHost(ctx context.Context, play *playbook.Play, stats *Stats, roles []*playbook.Role, host string, playbookDir string, emitter output.Emitter, prep *hostPrep) error {
 	emitter.HostStart(host, play.GetConnection())
 
 	// Create play context
@@ -549,31 +608,44 @@ func (e *Executor) runPlayOnHost(ctx context.Context, play *playbook.Play, stats
 	// Add environment variables
 	pctx.Vars["env"] = getEnvMap()
 
-	// Get connector for this host
-	conn, err := e.GetConnector(play, host)
-	if err != nil {
-		return fmt.Errorf("failed to create connector for host %s: %w", host, err)
-	}
-	pctx.Connector = conn
+	// Get connector and gather facts. When the discovery pre-pass already
+	// did this work for us, reuse its connector + facts and skip the inline
+	// path entirely (the pre-pass also already emitted the "Gathering Facts"
+	// task line for this host).
+	var conn connector.Connector
+	if prep != nil {
+		conn = prep.conn
+		pctx.Connector = conn
+		if prep.facts != nil {
+			pctx.Facts = prep.facts
+			pctx.Vars["facts"] = prep.facts
+		}
+	} else {
+		var err error
+		conn, err = e.GetConnector(play, host)
+		if err != nil {
+			return fmt.Errorf("failed to create connector for host %s: %w", host, err)
+		}
+		pctx.Connector = conn
 
-	// Connect
-	if err := conn.Connect(ctx); err != nil {
-		return fmt.Errorf("failed to connect to %s: %w", host, err)
+		if err := conn.Connect(ctx); err != nil {
+			return fmt.Errorf("failed to connect to %s: %w", host, err)
+		}
+
+		if play.ShouldGatherFacts() {
+			emitter.TaskStart("Gathering Facts", "")
+			f, err := facts.Gather(ctx, conn)
+			if err != nil {
+				emitter.TaskResult("Gathering Facts", "failed", false, err.Error())
+				_ = conn.Close()
+				return fmt.Errorf("failed to gather facts: %w", err)
+			}
+			pctx.Facts = f
+			pctx.Vars["facts"] = f
+			emitter.TaskResult("Gathering Facts", "ok", false, "")
+		}
 	}
 	defer conn.Close()
-
-	// Gather facts if enabled
-	if play.ShouldGatherFacts() {
-		emitter.TaskStart("Gathering Facts", "")
-		f, err := facts.Gather(ctx, conn)
-		if err != nil {
-			emitter.TaskResult("Gathering Facts", "failed", false, err.Error())
-			return fmt.Errorf("failed to gather facts: %w", err)
-		}
-		pctx.Facts = f
-		pctx.Vars["facts"] = f
-		emitter.TaskResult("Gathering Facts", "ok", false, "")
-	}
 
 	// Create lazy SSM Parameter Store client.
 	// Region priority: play.SSM.Region > ec2_region fact > AWS SDK default.

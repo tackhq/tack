@@ -1,0 +1,170 @@
+package executor
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"io"
+	"sync"
+	"time"
+
+	"github.com/tackhq/tack/internal/connector"
+	"github.com/tackhq/tack/internal/output"
+	"github.com/tackhq/tack/internal/playbook"
+	"github.com/tackhq/tack/pkg/facts"
+)
+
+// factsConcurrency caps concurrent fact-gather goroutines independent of
+// --forks. Set to a value that fits typical SSM API ceilings; large enough
+// to make small-fleet runs effectively unbounded, small enough to avoid
+// throttling on hundreds of hosts.
+const factsConcurrency = 20
+
+// hostPrep carries the result of the discovery pre-pass for one host:
+// the open connector (reused by the apply phase), the gathered facts,
+// any error, and a buffered emitter capturing the pre-pass output for
+// host-ordered flush.
+type hostPrep struct {
+	host   string
+	conn   connector.Connector
+	facts  map[string]any
+	err    error
+	output *bytes.Buffer
+}
+
+// gatherFactsParallel runs facts.Gather concurrently across all hosts.
+// Returns a map keyed by host name. The caller is responsible for flushing
+// per-host output buffers in order and for closing connectors of failed
+// hosts (successful hosts hand their connector off to runPlayOnHost which
+// closes it after apply).
+//
+// Returns nil when the pre-pass should be skipped — caller falls back to
+// today's inline gather path:
+//   - len(play.Hosts) <= 1 (nothing to parallelize)
+//   - play.GetConnection() == "local" (single localhost run)
+//   - !play.ShouldGatherFacts() (gather disabled)
+func (e *Executor) gatherFactsParallel(ctx context.Context, play *playbook.Play) map[string]*hostPrep {
+	hosts := play.Hosts
+	if play.GetConnection() == "local" || len(hosts) <= 1 || !play.ShouldGatherFacts() {
+		return nil
+	}
+
+	limit := factsConcurrency
+	if len(hosts) < limit {
+		limit = len(hosts)
+	}
+
+	start := time.Now()
+	if e.Output != nil {
+		e.Output.Debug("parallel fact gather: %d hosts, concurrency=%d", len(hosts), limit)
+	}
+
+	var (
+		mu      sync.Mutex
+		results = make(map[string]*hostPrep, len(hosts))
+	)
+
+	pool := NewWorkerPool(limit)
+	for _, host := range hosts {
+		host := host
+		pool.Submit(ctx, func(ctx context.Context) *HostResult {
+			prep := &hostPrep{host: host, output: &bytes.Buffer{}}
+
+			hostOutput := output.New(prep.output)
+			if textOut, ok := e.Output.(*output.Output); ok {
+				hostOutput.SetColor(textOut.ColorEnabled())
+			}
+			hostOutput.SetDebug(e.Debug)
+			hostOutput.SetVerbose(e.Verbose)
+			hostOutput.SetDiff(e.ShowDiff)
+
+			hostOutput.HostStart(host, play.GetConnection())
+
+			factory := e.connectorFactory
+			if factory == nil {
+				factory = e.GetConnector
+			}
+			conn, err := factory(play, host)
+			if err != nil {
+				prep.err = fmt.Errorf("failed to create connector: %w", err)
+				hostOutput.TaskResult("Gathering Facts", "failed", false, prep.err.Error())
+				mu.Lock()
+				results[host] = prep
+				mu.Unlock()
+				return &HostResult{Host: host, Success: false, Error: prep.err}
+			}
+
+			if err := conn.Connect(ctx); err != nil {
+				prep.err = fmt.Errorf("failed to connect: %w", err)
+				hostOutput.TaskResult("Gathering Facts", "failed", false, prep.err.Error())
+				_ = conn.Close()
+				mu.Lock()
+				results[host] = prep
+				mu.Unlock()
+				return &HostResult{Host: host, Success: false, Error: prep.err}
+			}
+
+			hostOutput.TaskStart("Gathering Facts", "")
+			f, err := facts.Gather(ctx, conn)
+			if err != nil {
+				prep.err = fmt.Errorf("failed to gather facts: %w", err)
+				hostOutput.TaskResult("Gathering Facts", "failed", false, err.Error())
+				_ = conn.Close()
+				mu.Lock()
+				results[host] = prep
+				mu.Unlock()
+				return &HostResult{Host: host, Success: false, Error: prep.err}
+			}
+
+			prep.conn = conn
+			prep.facts = f
+			hostOutput.TaskResult("Gathering Facts", "ok", false, "")
+
+			mu.Lock()
+			results[host] = prep
+			mu.Unlock()
+			return &HostResult{Host: host, Success: true}
+		})
+	}
+	pool.Wait()
+
+	if e.Output != nil {
+		var failed int
+		for _, prep := range results {
+			if prep != nil && prep.err != nil {
+				failed++
+			}
+		}
+		e.Output.Debug("parallel fact gather complete: %d ok, %d failed in %s",
+			len(results)-failed, failed, time.Since(start).Round(time.Millisecond))
+	}
+
+	return results
+}
+
+// flushPrepBuffers writes per-host pre-pass output to w in hosts-slice order,
+// regardless of which goroutine finished first.
+func flushPrepBuffers(w io.Writer, hosts []string, preps map[string]*hostPrep) {
+	for _, host := range hosts {
+		prep, ok := preps[host]
+		if !ok || prep.output == nil {
+			continue
+		}
+		data := prep.output.Bytes()
+		if len(data) > 0 {
+			fmt.Fprint(w, string(data))
+		}
+	}
+}
+
+// closePrepConnectors closes connectors held by successful preps. Used when
+// the play exits before apply (dry-run, no-changes, error in another host
+// under serial mode, etc.) so we don't leak connections.
+func closePrepConnectors(preps map[string]*hostPrep) {
+	for _, prep := range preps {
+		if prep != nil && prep.conn != nil {
+			_ = prep.conn.Close()
+			prep.conn = nil
+		}
+	}
+}
