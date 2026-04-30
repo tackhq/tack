@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/tackhq/tack/internal/connector"
@@ -97,8 +98,13 @@ type Executor struct {
 
 	// vaultVarCache caches decrypted vault vars by resolved file path.
 	// Avoids re-running Argon2id (~600ms) when multiple plays reference
-	// the same vault file.
+	// the same vault file. Guarded by vaultMu for safe access from
+	// per-host goroutines during the multi-host discovery+plan pre-pass.
 	vaultVarCache map[string]map[string]any
+
+	// vaultMu protects vaultPassword and vaultVarCache when the multi-host
+	// orchestration runs vault loads from per-host goroutines.
+	vaultMu sync.Mutex
 
 	// Tags filters execution to only run tasks matching these tags.
 	Tags []string
@@ -182,6 +188,12 @@ type PlayContext struct {
 	// Play is the current play.
 	Play *playbook.Play
 
+	// Host identifies the target host this context belongs to. Empty for
+	// local-connection plays where the host is implicit ("localhost"). Used
+	// to tag PlannedTask entries during the plan phase so multi-host plans
+	// can be aggregated and rendered with per-line attribution.
+	Host string
+
 	// Vars holds all variables (play vars + facts + registered).
 	Vars map[string]any
 
@@ -223,6 +235,8 @@ func (e *Executor) Run(ctx context.Context, pb *playbook.Playbook) (*RunResult, 
 
 	// Zero vault password and var cache at end of run (D-12).
 	defer func() {
+		e.vaultMu.Lock()
+		defer e.vaultMu.Unlock()
 		for i := range e.vaultPassword {
 			e.vaultPassword[i] = 0
 		}
@@ -411,72 +425,153 @@ func (e *Executor) runPlay(ctx context.Context, play *playbook.Play, stats *Stat
 
 	e.Output.PlayStart(play)
 
-	// For local connection, run once regardless of hosts list
+	// Local connection: single-host fast path.
 	if play.GetConnection() == "local" {
 		return e.runPlayOnHost(ctx, play, stats, roles, "localhost", playbookDir, e.Output, nil)
 	}
 
-	// Discovery pre-pass: gather facts for all hosts concurrently before
-	// the per-host plan/apply loop. Returns nil for single-host or
-	// gather-disabled plays — those keep the inline path. Output buffers
-	// are flushed in host order so users see "Gathering Facts" lines as a
-	// coherent block before any plan/apply output.
-	preps := e.gatherFactsParallel(ctx, play)
-	if preps != nil {
-		flushPrepBuffers(os.Stdout, play.Hosts, preps)
-		if ctx.Err() != nil {
-			closePrepConnectors(preps)
-			return ctx.Err()
+	// Single-host non-local: keep the existing per-host orchestration so
+	// the output is byte-identical to today.
+	if len(play.Hosts) == 1 {
+		return e.runPlayOnHost(ctx, play, stats, roles, play.Hosts[0], playbookDir, e.Output, nil)
+	}
+
+	// Multi-host: run the consolidated discover+plan pre-pass, render once,
+	// prompt once, then dispatch apply.
+	return e.runMultiHostPlay(ctx, play, stats, roles, playbookDir)
+}
+
+// runMultiHostPlay runs the consolidated multi-host orchestration: discover
+// + plan in parallel, render one consolidated plan with per-line host
+// attribution, prompt once globally, then apply (serial or via WorkerPool).
+func (e *Executor) runMultiHostPlay(ctx context.Context, play *playbook.Play, stats *Stats, roles []*playbook.Role, playbookDir string) error {
+	preps := e.discoverAndPlanParallel(ctx, play, roles, playbookDir)
+	if preps == nil {
+		// Defensive: discoverAndPlanParallel only returns nil for cases the
+		// caller already filtered out (single-host, local). Should not happen.
+		return fmt.Errorf("multi-host orchestration: discover+plan returned no preps")
+	}
+
+	// Flush per-host pre-pass output (HostStart + Gathering Facts) in host
+	// order. Plan output is rendered separately on the main thread below.
+	flushPrepBuffers(os.Stdout, play.Hosts, preps)
+
+	if ctx.Err() != nil {
+		closePrepConnectors(preps)
+		return ctx.Err()
+	}
+
+	forks := e.Forks
+
+	// Pre-pass error handling. Serial mode preserves today's fail-fast
+	// semantics; parallel mode isolates failures per host.
+	if forks <= 1 {
+		for _, host := range play.Hosts {
+			if prep := preps[host]; prep != nil && prep.err != nil {
+				closePrepConnectors(preps)
+				return fmt.Errorf("host %s: %w", host, prep.err)
+			}
 		}
 	}
 
-	// Determine effective fork count
-	forks := e.Forks
-	if forks <= 1 {
-		// Serial execution — preserve existing real-time output behavior.
-		// Fail-fast on pre-pass errors: if any host's facts gather failed,
-		// surface the error before any apply runs (matches today's serial
-		// failure semantics where the first host's failure stops the play).
-		if preps != nil {
-			for _, host := range play.Hosts {
-				if prep := preps[host]; prep != nil && prep.err != nil {
-					closePrepConnectors(preps)
-					return fmt.Errorf("host %s: %w", host, prep.err)
-				}
-			}
+	// Aggregate plans across hosts into a single slice. Hosts whose pre-pass
+	// failed contribute nothing (their failure is recorded separately).
+	var allPlanned []output.PlannedTask
+	for _, host := range play.Hosts {
+		prep := preps[host]
+		if prep == nil || prep.err != nil {
+			continue
 		}
+		allPlanned = append(allPlanned, prep.planned...)
+	}
+
+	// Render one consolidated plan with per-line host attribution.
+	e.Output.DisplayMultiHostPlan(allPlanned, play.Hosts, e.DryRun)
+
+	// Dry run: evaluate per-host asserts (preserves fail-fast for assert
+	// preconditions), then return.
+	if e.DryRun {
 		for _, host := range play.Hosts {
-			var prep *hostPrep
-			if preps != nil {
-				prep = preps[host]
+			prep := preps[host]
+			if prep == nil || prep.err != nil || prep.pctx == nil {
+				continue
 			}
-			if err := e.runPlayOnHost(ctx, play, stats, roles, host, playbookDir, e.Output, prep); err != nil {
+			if err := e.evaluateAssertsForDryRun(prep.pctx, prep.allTasks); err != nil {
+				closePrepConnectors(preps)
 				return err
 			}
+		}
+		closePrepConnectors(preps)
+		return nil
+	}
+
+	// No drift detected — nothing to apply. Tally stats and exit.
+	if allNoChange(allPlanned) {
+		for _, t := range allPlanned {
+			stats.Tasks++
+			if t.Status == "will_skip" {
+				stats.Skipped++
+			} else {
+				stats.OK++
+			}
+		}
+		closePrepConnectors(preps)
+		return nil
+	}
+
+	// Single global approval prompt — runs on the main thread, never inside
+	// a per-host goroutine. Closes the latent stdin race in --forks > 1
+	// mode that existed before this change.
+	if !e.AutoApprove {
+		if !e.Output.PromptApproval() {
+			e.Output.Info("Apply cancelled.")
+			closePrepConnectors(preps)
+			return nil
+		}
+	}
+
+	// --- Apply phase ---
+	hosts := play.Hosts
+
+	if forks <= 1 {
+		// Serial apply.
+		for _, host := range hosts {
+			prep := preps[host]
+			if prep == nil || prep.err != nil || prep.pctx == nil {
+				continue
+			}
+			if err := e.applyHostPlan(ctx, prep.pctx, stats, prep.allTasks, prep.allHandlers); err != nil {
+				_ = prep.conn.Close()
+				prep.conn = nil
+				// Close remaining hosts' connections that we won't use.
+				closePrepConnectors(preps)
+				return err
+			}
+			_ = prep.conn.Close()
+			prep.conn = nil
 		}
 		return nil
 	}
 
-	// Parallel execution with worker pool
+	// Parallel apply. Each goroutine runs apply for one host; output is
+	// buffered and flushed in host order after the pool drains.
 	pool := NewWorkerPool(forks)
-	hosts := play.Hosts
-
 	for _, host := range hosts {
-		host := host // capture loop variable
-		var prep *hostPrep
-		if preps != nil {
-			prep = preps[host]
-		}
+		host := host
+		prep := preps[host]
 
-		// If the discovery pre-pass already failed for this host, skip apply
-		// and surface the failure in the recap (per-host isolation).
-		if prep != nil && prep.err != nil {
-			err := prep.err
+		// Pre-pass already failed for this host — record as a failure with
+		// no apply attempt.
+		if prep == nil || prep.err != nil {
+			var perr error
+			if prep != nil {
+				perr = prep.err
+			}
 			pool.Submit(ctx, func(ctx context.Context) *HostResult {
 				return &HostResult{
 					Host:    host,
 					Success: false,
-					Error:   err,
+					Error:   perr,
 					Output:  &bytes.Buffer{},
 				}
 			})
@@ -493,8 +588,16 @@ func (e *Executor) runPlay(ctx context.Context, play *playbook.Play, stats *Stat
 			hostOutput.SetVerbose(e.Verbose)
 			hostOutput.SetDiff(e.ShowDiff)
 
+			// Re-target the prepared pctx's emitter to the per-host buffer
+			// for the apply phase. The pre-pass emitter (which was buffered
+			// and already flushed) is no longer relevant.
+			prep.pctx.Output = hostOutput
+			hostOutput.HostStart(host, play.GetConnection())
+
 			hostStats := &Stats{}
-			err := e.runPlayOnHost(ctx, play, hostStats, roles, host, playbookDir, hostOutput, prep)
+			err := e.applyHostPlan(ctx, prep.pctx, hostStats, prep.allTasks, prep.allHandlers)
+			_ = prep.conn.Close()
+			prep.conn = nil
 
 			return &HostResult{
 				Host:    host,
@@ -537,20 +640,19 @@ func (e *Executor) runPlay(ctx context.Context, play *playbook.Play, stats *Stat
 	return nil
 }
 
-// runPlayOnHost executes a play against a single host.
-// The emitter parameter controls where output is written — either the main
-// emitter (serial mode) or a per-host buffered emitter (parallel mode).
+// preparePlayContext builds the per-host PlayContext: merges play/role/
+// inventory/vault vars, opens (or reuses) the connector, gathers facts, and
+// initializes the SSM client. Caller is responsible for closing pctx.Connector.
 //
-// If prep is non-nil, the connector has already been opened and facts have
-// already been gathered by the discovery pre-pass; runPlayOnHost reuses
-// them and skips the inline Connect/Gather calls. The connector is still
-// closed via defer when the play finishes.
-func (e *Executor) runPlayOnHost(ctx context.Context, play *playbook.Play, stats *Stats, roles []*playbook.Role, host string, playbookDir string, emitter output.Emitter, prep *hostPrep) error {
-	emitter.HostStart(host, play.GetConnection())
-
-	// Create play context
+// When prep != nil, the discovery pre-pass already opened the connector and
+// gathered facts; preparePlayContext reuses them and emits no "Gathering
+// Facts" line (the pre-pass already did so into its own buffer). When prep
+// is nil, this method runs the inline Connect + facts.Gather path used by
+// single-host plays and the local connection.
+func (e *Executor) preparePlayContext(ctx context.Context, play *playbook.Play, roles []*playbook.Role, host string, playbookDir string, emitter output.Emitter, prep *hostPrep) (*PlayContext, error) {
 	pctx := &PlayContext{
 		Play:             play,
+		Host:             host,
 		Vars:             make(map[string]any),
 		Facts:            make(map[string]any),
 		Registered:       make(map[string]any),
@@ -566,7 +668,7 @@ func (e *Executor) runPlayOnHost(ctx context.Context, play *playbook.Play, stats
 	if len(play.VarsFiles) > 0 {
 		vfVars, err := e.loadVarsFiles(play, playbookDir, pctx.Vars)
 		if err != nil {
-			return fmt.Errorf("vars_files: %w", err)
+			return nil, fmt.Errorf("vars_files: %w", err)
 		}
 		for k, v := range vfVars {
 			pctx.Vars[k] = v
@@ -596,7 +698,7 @@ func (e *Executor) runPlayOnHost(ctx context.Context, play *playbook.Play, stats
 	if play.VaultFile != "" {
 		vaultVars, err := e.loadVaultVars(play, playbookDir)
 		if err != nil {
-			return fmt.Errorf("vault: %w", err)
+			return nil, fmt.Errorf("vault: %w", err)
 		}
 		for k, v := range vaultVars {
 			if _, exists := pctx.Vars[k]; !exists {
@@ -612,24 +714,22 @@ func (e *Executor) runPlayOnHost(ctx context.Context, play *playbook.Play, stats
 	// did this work for us, reuse its connector + facts and skip the inline
 	// path entirely (the pre-pass also already emitted the "Gathering Facts"
 	// task line for this host).
-	var conn connector.Connector
 	if prep != nil {
-		conn = prep.conn
-		pctx.Connector = conn
+		pctx.Connector = prep.conn
 		if prep.facts != nil {
 			pctx.Facts = prep.facts
 			pctx.Vars["facts"] = prep.facts
 		}
 	} else {
-		var err error
-		conn, err = e.GetConnector(play, host)
+		conn, err := e.GetConnector(play, host)
 		if err != nil {
-			return fmt.Errorf("failed to create connector for host %s: %w", host, err)
+			return nil, fmt.Errorf("failed to create connector for host %s: %w", host, err)
 		}
 		pctx.Connector = conn
 
 		if err := conn.Connect(ctx); err != nil {
-			return fmt.Errorf("failed to connect to %s: %w", host, err)
+			_ = conn.Close()
+			return nil, fmt.Errorf("failed to connect to %s: %w", host, err)
 		}
 
 		if play.ShouldGatherFacts() {
@@ -638,14 +738,13 @@ func (e *Executor) runPlayOnHost(ctx context.Context, play *playbook.Play, stats
 			if err != nil {
 				emitter.TaskResult("Gathering Facts", "failed", false, err.Error())
 				_ = conn.Close()
-				return fmt.Errorf("failed to gather facts: %w", err)
+				return nil, fmt.Errorf("failed to gather facts: %w", err)
 			}
 			pctx.Facts = f
 			pctx.Vars["facts"] = f
 			emitter.TaskResult("Gathering Facts", "ok", false, "")
 		}
 	}
-	defer conn.Close()
 
 	// Create lazy SSM Parameter Store client.
 	// Region priority: play.SSM.Region > ec2_region fact > AWS SDK default.
@@ -657,15 +756,40 @@ func (e *Executor) runPlayOnHost(ctx context.Context, play *playbook.Play, stats
 	}
 	pctx.SSMParams = ssmparams.New(ssmRegion)
 
+	return pctx, nil
+}
+
+// computeHostPlan produces a host's full plan slice (tasks + handlers).
+func (e *Executor) computeHostPlan(ctx context.Context, pctx *PlayContext, allTasks, allHandlers []*playbook.Task) []output.PlannedTask {
+	planned := e.planTasks(ctx, pctx, allTasks, pctx.Output)
+	if len(allHandlers) > 0 {
+		planned = append(planned, e.planHandlers(pctx.Host, allTasks, planned, allHandlers)...)
+	}
+	return planned
+}
+
+// runPlayOnHost executes a play against a single host. Used for single-host
+// plays and the local-connection path; it owns rendering the plan, prompting
+// for approval, and dispatching the apply phase.
+//
+// The emitter parameter controls where output is written. When prep is
+// non-nil the discovery pre-pass already opened the connector and gathered
+// facts; runPlayOnHost reuses them.
+func (e *Executor) runPlayOnHost(ctx context.Context, play *playbook.Play, stats *Stats, roles []*playbook.Role, host string, playbookDir string, emitter output.Emitter, prep *hostPrep) error {
+	emitter.HostStart(host, play.GetConnection())
+
+	pctx, err := e.preparePlayContext(ctx, play, roles, host, playbookDir, emitter, prep)
+	if err != nil {
+		return err
+	}
+	defer pctx.Connector.Close()
+
 	// Expand role tasks and handlers
 	allTasks := playbook.ExpandRoleTasks(roles, play.Tasks)
 	allHandlers := playbook.ExpandRoleHandlers(roles, play.Handlers)
 
 	// --- Plan phase ---
-	planned := e.planTasks(ctx, pctx, allTasks, emitter)
-	if len(allHandlers) > 0 {
-		planned = append(planned, e.planHandlers(allTasks, planned, allHandlers)...)
-	}
+	planned := e.computeHostPlan(ctx, pctx, allTasks, allHandlers)
 	emitter.DisplayPlan(planned, e.DryRun)
 
 	// Dry run stops after showing the plan, but assert failures still fail
@@ -698,7 +822,15 @@ func (e *Executor) runPlayOnHost(ctx context.Context, play *playbook.Play, stats
 		}
 	}
 
-	// --- Apply phase ---
+	return e.applyHostPlan(ctx, pctx, stats, allTasks, allHandlers)
+}
+
+// applyHostPlan runs the apply phase on a prepared PlayContext. The pctx
+// must already have its connector connected and facts gathered. The caller
+// owns lifecycle of pctx.Connector (apply does not Close it).
+func (e *Executor) applyHostPlan(ctx context.Context, pctx *PlayContext, stats *Stats, allTasks, allHandlers []*playbook.Task) error {
+	emitter := pctx.Output
+	play := pctx.Play
 	playTags := play.Tags
 	for _, task := range allTasks {
 		// Handle block directive
@@ -1413,6 +1545,7 @@ func (e *Executor) planTasks(ctx context.Context, pctx *PlayContext, tasks []*pl
 		eTags := effectiveTags(task, playTags, inheritedBlockTags)
 		if !shouldRunTask(eTags, e.Tags, e.SkipTags) {
 			plan = append(plan, output.PlannedTask{
+				Host:   pctx.Host,
 				Name:   task.String(),
 				Module: task.Module,
 				Status: "will_skip",
@@ -1427,6 +1560,7 @@ func (e *Executor) planTasks(ctx context.Context, pctx *PlayContext, tasks []*pl
 		// Handle include tasks in plan phase
 		if task.Include != "" {
 			pt := output.PlannedTask{
+				Host:   pctx.Host,
 				Name:   task.String(),
 				Module: "include_tasks",
 				Status: "will_run",
@@ -1457,6 +1591,7 @@ func (e *Executor) planTasks(ctx context.Context, pctx *PlayContext, tasks []*pl
 		// Handle assert built-in task in plan phase
 		if task.IsAssert() {
 			pt := output.PlannedTask{
+				Host:   pctx.Host,
 				Name:   task.String(),
 				Module: "assert",
 				Status: "will_run",
@@ -1481,6 +1616,7 @@ func (e *Executor) planTasks(ctx context.Context, pctx *PlayContext, tasks []*pl
 		}
 
 		pt := output.PlannedTask{
+			Host:   pctx.Host,
 			Name:   task.String(),
 			Module: task.Module,
 		}
@@ -1641,6 +1777,7 @@ func (e *Executor) planBlock(ctx context.Context, pctx *PlayContext, task *playb
 
 	// Block header
 	plan = append(plan, output.PlannedTask{
+		Host:      pctx.Host,
 		Name:      "BLOCK: " + blockName,
 		Status:    blockStatus,
 		Indent:    indent,
@@ -1670,6 +1807,7 @@ func (e *Executor) planBlock(ctx context.Context, pctx *PlayContext, task *playb
 	// Plan rescue tasks if present
 	if len(task.Rescue) > 0 {
 		plan = append(plan, output.PlannedTask{
+			Host:      pctx.Host,
 			Name:      "RESCUE: " + blockName,
 			Status:    "conditional",
 			Indent:    indent,
@@ -1691,6 +1829,7 @@ func (e *Executor) planBlock(ctx context.Context, pctx *PlayContext, task *playb
 	// Plan always tasks if present
 	if len(task.Always) > 0 {
 		plan = append(plan, output.PlannedTask{
+			Host:      pctx.Host,
 			Name:      "ALWAYS: " + blockName,
 			Status:    "will_run",
 			Indent:    indent,
@@ -1726,7 +1865,7 @@ func (e *Executor) conditionReferencesRegistered(condition string, registered ma
 // planHandlers produces plan entries for notifiable handlers.
 // It uses task definitions and their plan results to determine whether
 // any notifying task would actually produce a change.
-func (e *Executor) planHandlers(tasks []*playbook.Task, taskPlan []output.PlannedTask, handlers []*playbook.Task) []output.PlannedTask {
+func (e *Executor) planHandlers(host string, tasks []*playbook.Task, taskPlan []output.PlannedTask, handlers []*playbook.Task) []output.PlannedTask {
 	// Build a set of handler names that could potentially be notified.
 	// A handler could be notified if at least one task that lists it in
 	// notify has a plan status that implies change (will_change, always_runs,
@@ -1753,6 +1892,7 @@ func (e *Executor) planHandlers(tasks []*playbook.Task, taskPlan []output.Planne
 			continue
 		}
 		plan = append(plan, output.PlannedTask{
+			Host:   host,
 			Name:   h.String(),
 			Module: h.Module,
 			Status: "conditional",

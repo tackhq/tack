@@ -240,3 +240,23 @@ Fact gathering runs concurrently across all target hosts regardless of `--forks`
 This is most visible on slow connectors like SSM, where each round-trip costs several seconds. A four-host SSM play that previously waited `4 × t` for serial fact gather now waits roughly `t` (bounded by the slowest host).
 
 The pre-pass is skipped for single-host plays, `connection: local`, and plays with `gather_facts: false`. Concurrency is internally capped at 20 to avoid overwhelming AWS API limits on very large fleets.
+
+### Multi-host Plan & Approval
+
+Plays targeting more than one host render a single consolidated plan with per-line host attribution and prompt for approval **once globally**, not per-host. Output looks like:
+
+```
+PLAN
+web1: + apt: install nginx
+web2: ~ command: rotate cert
+
+Plan: 1 to change, 1 to run across 2 hosts.
+
+Do you want to apply these changes? (yes/no):
+```
+
+Hostnames are column-aligned (capped at 30 characters; longer names truncate with `…`). Hosts whose plan contains only no-op tasks contribute zero body lines and are counted in the footer as `(N unchanged)`.
+
+The approval prompt always runs on the main thread, even with `--forks > 1`. SIGINT during the prompt aborts the play with zero hosts applied.
+
+Single-host plays continue to use the existing per-host plan format (no host prefix), so common-case output is unchanged.

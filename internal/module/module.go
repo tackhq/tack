@@ -103,6 +103,13 @@ type CheckResult struct {
 
 // Checker is an optional interface for check/dry-run support.
 // Check() must be read-only — it queries remote state but MUST NOT modify it.
+//
+// Check() must be safe for concurrent calls across hosts. The multi-host
+// orchestration runs Check() in per-host goroutines during the discovery
+// pre-pass; each goroutine has its own Connector instance so connector
+// state isn't shared, but module implementations must avoid package-level
+// mutable state, shared maps without synchronization, or temp-file paths
+// that could collide across hosts.
 type Checker interface {
 	Check(ctx context.Context, conn connector.Connector, params map[string]any) (*CheckResult, error)
 }

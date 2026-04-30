@@ -203,6 +203,12 @@ func (o *Output) printf(format string, args ...any) {
 
 // PlannedTask describes a task as evaluated during the plan phase.
 type PlannedTask struct {
+	// Host identifies the target host this plan entry was computed for.
+	// Empty in single-host plays where attribution is implicit. The
+	// multi-host renderer uses Host as a per-line prefix; the single-host
+	// renderer ignores it.
+	Host string
+
 	Name      string
 	Module    string
 	Status    string // "will_run", "will_skip", "conditional", "will_change", "no_change", "always_runs"
@@ -349,6 +355,296 @@ func (o *Output) DisplayPlan(tasks []PlannedTask, dryRun bool) {
 	o.printf("\n%s %s\n",
 		o.color(colorBold, "Plan:"),
 		strings.Join(summaryParts, ", ")+".")
+}
+
+// hostColumnMax caps the host-prefix column width so pathological hostnames
+// (e.g. fully-qualified DNS names) don't blow past terminal width. Hostnames
+// longer than this are truncated with a single-character ellipsis.
+const hostColumnMax = 30
+
+// formatHostPrefix returns the host name padded to colWidth. If the host is
+// longer than colWidth it is truncated to colWidth-1 chars + "…".
+func formatHostPrefix(host string, colWidth int) string {
+	if len(host) > colWidth {
+		if colWidth <= 1 {
+			return "…"
+		}
+		return host[:colWidth-1] + "…"
+	}
+	if len(host) < colWidth {
+		return host + strings.Repeat(" ", colWidth-len(host))
+	}
+	return host
+}
+
+// hostColumnWidth returns the column width for the host prefix. It pads to
+// the longest hostname among hosts that contribute lines to the rendered
+// plan, capped at hostColumnMax.
+func hostColumnWidth(hosts []string) int {
+	maxLen := 0
+	for _, h := range hosts {
+		n := len(h)
+		if n > maxLen {
+			maxLen = n
+		}
+	}
+	if maxLen > hostColumnMax {
+		maxLen = hostColumnMax
+	}
+	return maxLen
+}
+
+// hostHasChanges returns true if at least one PlannedTask for the given host
+// is non-no-op (anything other than no_change / will_skip and excluding
+// section headers).
+func hostHasChanges(tasks []PlannedTask, host string) bool {
+	for _, t := range tasks {
+		if t.Host != host || t.IsSection {
+			continue
+		}
+		switch t.Status {
+		case "will_change", "will_run", "always_runs", "conditional":
+			return true
+		}
+	}
+	return false
+}
+
+// DisplayMultiHostPlan renders a consolidated plan for plays targeting more
+// than one host. Each task line is prefixed with the host name, padded for
+// column alignment. Hosts with zero non-no-op tasks contribute no body lines
+// and are only counted in the "(M unchanged)" footer suffix.
+func (o *Output) DisplayMultiHostPlan(tasks []PlannedTask, hosts []string, dryRun bool) {
+	label := "PLAN"
+	if dryRun {
+		label = "PLAN (dry run)"
+	}
+	o.printf("\n%s\n", o.color(colorBold, label))
+
+	// Determine which hosts have body content. Hosts with no changes are
+	// suppressed from the per-line listing and only counted in the footer.
+	changing := make(map[string]bool, len(hosts))
+	for _, h := range hosts {
+		if hostHasChanges(tasks, h) {
+			changing[h] = true
+		}
+	}
+
+	// Compute column width from the changing hosts only. If no host has
+	// changes, column width is 0 (footer-only output).
+	var changingHosts []string
+	for _, h := range hosts {
+		if changing[h] {
+			changingHosts = append(changingHosts, h)
+		}
+	}
+	colWidth := hostColumnWidth(changingHosts)
+
+	// Group tasks by host. Walk hosts in caller-specified order so output is
+	// deterministic.
+	byHost := make(map[string][]PlannedTask, len(hosts))
+	for _, t := range tasks {
+		byHost[t.Host] = append(byHost[t.Host], t)
+	}
+
+	// Counters span all hosts (including no-op hosts whose tasks didn't
+	// render). The footer summarizes the play, not just the visible body.
+	var willRun, willSkip, conditional, willChange, noChange, alwaysRuns int
+	for _, t := range tasks {
+		if t.IsSection {
+			continue
+		}
+		switch t.Status {
+		case "will_change":
+			willChange++
+		case "no_change":
+			noChange++
+		case "always_runs":
+			alwaysRuns++
+		case "will_run":
+			willRun++
+		case "will_skip":
+			willSkip++
+		case "conditional":
+			conditional++
+		}
+	}
+
+	// Render per-host bodies (skip hosts with no changes).
+	for _, host := range hosts {
+		if !changing[host] {
+			continue
+		}
+		prefix := formatHostPrefix(host, colWidth) + ": "
+		for _, t := range byHost[host] {
+			o.renderMultiHostPlanLine(t, prefix, colWidth)
+		}
+	}
+
+	// Footer
+	var summaryParts []string
+	if willChange > 0 {
+		summaryParts = append(summaryParts, fmt.Sprintf("%d to change", willChange))
+	}
+	if noChange > 0 {
+		summaryParts = append(summaryParts, fmt.Sprintf("%d ok", noChange))
+	}
+	toRun := alwaysRuns + willRun
+	if toRun > 0 {
+		summaryParts = append(summaryParts, fmt.Sprintf("%d to run", toRun))
+	}
+	if conditional > 0 {
+		summaryParts = append(summaryParts, fmt.Sprintf("%d conditional", conditional))
+	}
+	if willSkip > 0 {
+		summaryParts = append(summaryParts, fmt.Sprintf("%d to skip", willSkip))
+	}
+	if len(summaryParts) == 0 {
+		summaryParts = append(summaryParts, "nothing to do")
+	}
+
+	unchanged := len(hosts) - len(changingHosts)
+	footer := fmt.Sprintf("%s across %d hosts", strings.Join(summaryParts, ", "), len(hosts))
+	if unchanged > 0 {
+		footer += fmt.Sprintf(" (%d unchanged)", unchanged)
+	}
+	o.printf("\n%s %s.\n", o.color(colorBold, "Plan:"), footer)
+}
+
+// renderMultiHostPlanLine renders a single PlannedTask as a host-prefixed
+// line plus its parameters and checksum/diff continuation. The prefix is the
+// pre-padded "<host>: " string. colWidth is used to pad continuation lines.
+func (o *Output) renderMultiHostPlanLine(t PlannedTask, prefix string, colWidth int) {
+	// Continuation lines (params, diffs, checksums) align under the task
+	// indicator: one column for the host prefix, then the standard 6-space
+	// param indent used by DisplayPlan.
+	contIndent := strings.Repeat(" ", colWidth+2) + strings.Repeat("  ", t.Indent) + "      "
+
+	indicator, col := planIndicatorAndColor(t.Status)
+
+	if t.IsSection {
+		indent := strings.Repeat("  ", t.Indent)
+		o.printf("%s%s%s\n", prefix, indent, o.color(colorBold, t.Name))
+		return
+	}
+
+	module := ""
+	if t.Module != "" {
+		module = fmt.Sprintf("%s: ", t.Module)
+	}
+
+	suffix := planLineSuffix(t)
+
+	indent := strings.Repeat("  ", t.Indent)
+	line := fmt.Sprintf("%s%s  %s %s%s", prefix, indent, indicator, module, t.Name)
+	if suffix != "" {
+		line += " - " + suffix
+	}
+	o.printf("%s\n", o.color(col, strings.TrimRight(line, " ")))
+
+	// Show task parameters
+	for _, paramLine := range formatTaskParams(t.Module, t.Params) {
+		o.printf("%s%s\n", contIndent, o.color(colorGray, paramLine))
+	}
+
+	// Show checksums or diff when content differs
+	showDiff := o.verbose || o.diff
+	destPath := extractDestPath(t.Module, t.Params)
+
+	if t.OldChecksum != "" && t.NewChecksum != "" && t.OldChecksum != t.NewChecksum {
+		if showDiff && t.OldContent != "" && t.NewContent != "" {
+			o.printDiffWithIndent(contIndent, destPath, destPath, t.OldContent, t.NewContent)
+		} else {
+			o.printf("%s%s\n", contIndent, o.color(colorRed, "old: "+t.OldChecksum))
+			o.printf("%s%s\n", contIndent, o.color(colorGreen, "new: "+t.NewChecksum))
+		}
+	} else if t.OldChecksum == "" && t.NewChecksum != "" {
+		if showDiff && t.NewContent != "" {
+			o.printDiffWithIndent(contIndent, "/dev/null", destPath, "", t.NewContent)
+		} else {
+			o.printf("%s%s\n", contIndent, o.color(colorYellow, "new: "+t.NewChecksum))
+		}
+	}
+}
+
+// planIndicatorAndColor returns the symbol + color for a planned task status.
+// Mirrors the switch inside DisplayPlan; extracted so the multi-host renderer
+// stays in sync. (Counter increments stay inline at the call site since
+// counting is interleaved with rendering in DisplayPlan.)
+func planIndicatorAndColor(status string) (string, string) {
+	switch status {
+	case "will_change":
+		return "+", colorYellow
+	case "no_change":
+		return "=", colorGreen
+	case "always_runs":
+		return "~", colorYellow
+	case "will_run":
+		return "+", colorYellow
+	case "will_skip":
+		return "○", colorCyan
+	case "conditional":
+		return "?", colorYellow
+	default:
+		return "?", colorGray
+	}
+}
+
+// planLineSuffix derives the "- reason" suffix shown after a planned task name.
+func planLineSuffix(t PlannedTask) string {
+	suffix := ""
+	switch t.Status {
+	case "will_skip":
+		if t.Reason != "" {
+			suffix = t.Reason
+		}
+	case "conditional":
+		if t.Reason != "" {
+			suffix = fmt.Sprintf("when: %s", t.Reason)
+		}
+	case "no_change", "always_runs", "will_change":
+		if t.Reason != "" {
+			suffix = t.Reason
+		}
+	}
+	if t.LoopCount > 0 {
+		if suffix != "" {
+			suffix += " "
+		}
+		suffix += fmt.Sprintf("%d items", t.LoopCount)
+	}
+	return suffix
+}
+
+// printDiffWithIndent is printDiff with a custom continuation-line indent.
+// Used by the multi-host renderer where indent depends on the host column
+// width. Single-host DisplayPlan keeps using printDiff with its hard-coded
+// 6-space indent.
+func (o *Output) printDiffWithIndent(indent, oldPath, newPath, oldContent, newContent string) {
+	if isBinary(oldContent) || isBinary(newContent) {
+		o.printf("%s%s\n", indent, o.color(colorYellow, "Binary files differ"))
+		return
+	}
+	if len(oldContent) > maxDiffSize || len(newContent) > maxDiffSize {
+		o.printf("%s%s\n", indent, o.color(colorYellow, "(file too large for diff)"))
+		return
+	}
+	o.printf("%s%s\n", indent, o.color(colorRed, "--- "+oldPath))
+	o.printf("%s%s\n", indent, o.color(colorGreen, "+++ "+newPath))
+	for _, diffLine := range unifiedDiff(oldContent, newContent) {
+		var diffColor string
+		switch {
+		case strings.HasPrefix(diffLine, "+"):
+			diffColor = colorGreen
+		case strings.HasPrefix(diffLine, "-"):
+			diffColor = colorRed
+		case strings.HasPrefix(diffLine, "@@"):
+			diffColor = colorCyan
+		default:
+			diffColor = colorGray
+		}
+		o.printf("%s%s\n", indent, o.color(diffColor, diffLine))
+	}
 }
 
 // formatTaskParams returns display lines for key parameters of a task, based on module type.

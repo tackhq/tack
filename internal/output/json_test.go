@@ -36,6 +36,91 @@ func TestJSONEmitter_PlaybookStart(t *testing.T) {
 	if m["version"] == nil {
 		t.Error("expected version field")
 	}
+	if got := int(m["version"].(float64)); got != jsonSchemaVersion {
+		t.Errorf("expected version=%d, got %d", jsonSchemaVersion, got)
+	}
+}
+
+func TestJSONEmitter_HostAttribution(t *testing.T) {
+	var buf bytes.Buffer
+	j := NewJSONEmitter(&buf, &bytes.Buffer{})
+
+	j.HostStart("web1", "ssh")
+	j.TaskStart("install nginx", "apt")
+	j.TaskResult("install nginx", "changed", true, "installed")
+	j.HostStart("web2", "ssh")
+	j.TaskStart("install nginx", "apt")
+
+	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
+	if len(lines) != 5 {
+		t.Fatalf("expected 5 events, got %d", len(lines))
+	}
+
+	// host_start carries host
+	hs := parseJSONLine(t, lines[0])
+	if hs["host"] != "web1" {
+		t.Errorf("expected host=web1 on host_start, got %v", hs["host"])
+	}
+
+	// task_start after first HostStart carries host=web1
+	ts := parseJSONLine(t, lines[1])
+	if ts["host"] != "web1" {
+		t.Errorf("expected task_start host=web1, got %v", ts["host"])
+	}
+
+	// task_result inherits host=web1
+	tr := parseJSONLine(t, lines[2])
+	if tr["host"] != "web1" {
+		t.Errorf("expected task_result host=web1, got %v", tr["host"])
+	}
+
+	// After second HostStart, subsequent events carry host=web2
+	ts2 := parseJSONLine(t, lines[4])
+	if ts2["host"] != "web2" {
+		t.Errorf("expected task_start host=web2, got %v", ts2["host"])
+	}
+}
+
+func TestJSONEmitter_PlanTaskHost(t *testing.T) {
+	var buf bytes.Buffer
+	j := NewJSONEmitter(&buf, &bytes.Buffer{})
+
+	plans := []PlannedTask{
+		{Host: "web1", Name: "install nginx", Module: "apt", Status: "will_change"},
+		{Host: "web2", Name: "install nginx", Module: "apt", Status: "will_run"},
+	}
+	j.DisplayMultiHostPlan(plans, []string{"web1", "web2"}, false)
+
+	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 plan_task events, got %d", len(lines))
+	}
+	for i, line := range lines {
+		m := parseJSONLine(t, line)
+		if m["type"] != "plan_task" {
+			t.Errorf("line %d: expected type=plan_task, got %v", i, m["type"])
+		}
+		if m["host"] != plans[i].Host {
+			t.Errorf("line %d: expected host=%s, got %v", i, plans[i].Host, m["host"])
+		}
+	}
+}
+
+func TestJSONEmitter_PlanTaskNoHost(t *testing.T) {
+	// Single-host plays use DisplayPlan with PlannedTask.Host == "" — the
+	// `host` field must be omitted, not emitted as empty string.
+	var buf bytes.Buffer
+	j := NewJSONEmitter(&buf, &bytes.Buffer{})
+
+	plans := []PlannedTask{
+		{Name: "install nginx", Module: "apt", Status: "will_change"},
+	}
+	j.DisplayPlan(plans, false)
+
+	m := parseJSONLine(t, strings.TrimSpace(buf.String()))
+	if _, ok := m["host"]; ok {
+		t.Error("expected no host field when PlannedTask.Host is empty")
+	}
 }
 
 func TestJSONEmitter_PlaybookRecap(t *testing.T) {
