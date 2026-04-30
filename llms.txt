@@ -613,6 +613,64 @@ Registered result fields: `changed`, `before_sha`, `after_sha`, `remote_url`,
     cmd: "echo deployed {{ repo.after_sha }}"
 ```
 
+### cron
+
+Manage individual cron entries idempotently on Linux targets. User crontabs
+(via `crontab -l` / `crontab -`) and `/etc/cron.d/` drop-in files are both
+supported. Entries are located by a `# TACK: <name>` marker comment placed
+on the line immediately above the managed schedule line. Linux only; the
+module fails on macOS/BSD/Windows targets. Requires the `crontab` binary
+on the target (Debian/Ubuntu: `cron`; RHEL: `cronie`).
+
+| Param        | Type   | Required | Default | Description                                                                                  |
+|--------------|--------|----------|---------|----------------------------------------------------------------------------------------------|
+| name         | string | yes      | -       | Marker identifier (≤200 chars; no newlines, `#`, or non-printable)                           |
+| job          | string | when present | -   | Command to run; for `env: true`, a `KEY=VALUE` line                                          |
+| state        | string | no       | present | `present` or `absent`                                                                        |
+| minute       | string | no       | `*`     | Minute schedule field                                                                        |
+| hour         | string | no       | `*`     | Hour schedule field                                                                          |
+| day          | string | no       | `*`     | Day-of-month schedule field                                                                  |
+| month        | string | no       | `*`     | Month schedule field                                                                         |
+| weekday      | string | no       | `*`     | Day-of-week schedule field                                                                   |
+| special_time | string | no       | -       | One of `reboot`, `yearly`, `annually`, `monthly`, `weekly`, `daily`, `hourly`. Mutually exclusive with time fields |
+| user         | string | no       | -       | Without `cron_file`: target crontab user (`crontab -u`). With `cron_file`: line user field (default `root`) |
+| cron_file    | string | no       | -       | Absolute path to `/etc/cron.d/` drop-in. Basename must match `[A-Za-z0-9_-]+` (no dots)      |
+| disabled     | bool   | no       | false   | Comment out the managed line; preserves marker                                               |
+| env          | bool   | no       | false   | Manage a `KEY=VALUE` env line (rejects schedule fields)                                      |
+
+Registered result fields: `changed`, `action` (one of `created`,
+`updated`, `removed`, `disabled`, `enabled`, `unchanged`, `already-absent`),
+`file`, `name`.
+
+```yaml
+- name: Daily backup in current user's crontab
+  cron:
+    name: backup
+    job: /usr/local/bin/backup.sh
+    hour: "2"
+    minute: "0"
+
+- name: Hourly health check via /etc/cron.d
+  cron:
+    name: health-check
+    cron_file: /etc/cron.d/healthcheck
+    user: root
+    job: /usr/local/bin/healthcheck.sh
+    special_time: hourly
+  sudo: true
+
+- name: Pin PATH for cron jobs
+  cron:
+    name: path
+    env: true
+    job: "PATH=/usr/local/bin:/usr/bin:/bin"
+
+- name: Drop an obsolete entry
+  cron:
+    name: old-cleanup
+    state: absent
+```
+
 ---
 
 ## CLI

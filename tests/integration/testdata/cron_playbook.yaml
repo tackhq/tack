@@ -1,0 +1,180 @@
+name: Cron Module Integration Test
+hosts: tack-integration-test
+connection: docker
+gather_facts: false
+
+tasks:
+  # ============================================
+  # Section 1: User crontab (root) — create, idempotency, update, disable, enable, remove
+  # ============================================
+  - name: Create a daily backup entry
+    cron:
+      name: backup
+      job: /usr/local/bin/backup.sh
+      hour: "2"
+      minute: "0"
+    register: create_result
+
+  - name: Verify creation reported changed
+    assert:
+      that:
+        - "create_result.changed == true"
+        - "create_result.action == 'created'"
+
+  - name: Run again — should be a no-op
+    cron:
+      name: backup
+      job: /usr/local/bin/backup.sh
+      hour: "2"
+      minute: "0"
+    register: rerun_result
+
+  - name: Verify second run was unchanged
+    assert:
+      that:
+        - "rerun_result.changed == false"
+
+  - name: Update the schedule (hour 3 instead of 2)
+    cron:
+      name: backup
+      job: /usr/local/bin/backup.sh
+      hour: "3"
+      minute: "0"
+    register: update_result
+
+  - name: Verify update reported changed
+    assert:
+      that:
+        - "update_result.changed == true"
+        - "update_result.action == 'updated'"
+
+  - name: Disable the entry
+    cron:
+      name: backup
+      job: /usr/local/bin/backup.sh
+      hour: "3"
+      minute: "0"
+      disabled: true
+    register: disable_result
+
+  - name: Verify disable reported changed
+    assert:
+      that:
+        - "disable_result.changed == true"
+        - "disable_result.action == 'disabled'"
+
+  - name: Disable again — should be a no-op
+    cron:
+      name: backup
+      job: /usr/local/bin/backup.sh
+      hour: "3"
+      minute: "0"
+      disabled: true
+    register: disable_rerun
+
+  - name: Verify second disable was unchanged
+    assert:
+      that:
+        - "disable_rerun.changed == false"
+
+  - name: Re-enable the entry
+    cron:
+      name: backup
+      job: /usr/local/bin/backup.sh
+      hour: "3"
+      minute: "0"
+      disabled: false
+    register: enable_result
+
+  - name: Verify enable reported changed
+    assert:
+      that:
+        - "enable_result.changed == true"
+        - "enable_result.action == 'enabled'"
+
+  - name: Add a PATH env line
+    cron:
+      name: path
+      env: true
+      job: "PATH=/usr/local/bin:/usr/bin:/bin"
+    register: env_result
+
+  - name: Verify env line creation reported changed
+    assert:
+      that:
+        - "env_result.changed == true"
+
+  - name: Remove the backup entry
+    cron:
+      name: backup
+      state: absent
+    register: remove_result
+
+  - name: Verify removal reported changed
+    assert:
+      that:
+        - "remove_result.changed == true"
+        - "remove_result.action == 'removed'"
+
+  - name: Remove again — should be a no-op
+    cron:
+      name: backup
+      state: absent
+    register: remove_rerun
+
+  - name: Verify second remove was unchanged
+    assert:
+      that:
+        - "remove_rerun.changed == false"
+
+  # ============================================
+  # Section 2: /etc/cron.d drop-in — create, idempotency, delete on removal
+  # ============================================
+  - name: Create an /etc/cron.d drop-in with @hourly health check
+    cron:
+      name: health-check
+      cron_file: /etc/cron.d/healthcheck
+      user: root
+      job: /usr/local/bin/healthcheck.sh
+      special_time: hourly
+    register: dropin_create
+
+  - name: Verify drop-in creation reported changed
+    assert:
+      that:
+        - "dropin_create.changed == true"
+        - "dropin_create.action == 'created'"
+
+  - name: Re-run drop-in task — should be a no-op
+    cron:
+      name: health-check
+      cron_file: /etc/cron.d/healthcheck
+      user: root
+      job: /usr/local/bin/healthcheck.sh
+      special_time: hourly
+    register: dropin_rerun
+
+  - name: Verify drop-in re-run was unchanged
+    assert:
+      that:
+        - "dropin_rerun.changed == false"
+
+  - name: Confirm drop-in file exists with expected content
+    command:
+      cmd: grep -q '@hourly root /usr/local/bin/healthcheck.sh' /etc/cron.d/healthcheck
+
+  - name: Remove the drop-in entry (should delete the file)
+    cron:
+      name: health-check
+      cron_file: /etc/cron.d/healthcheck
+      state: absent
+    register: dropin_remove
+
+  - name: Verify drop-in removal reported changed
+    assert:
+      that:
+        - "dropin_remove.changed == true"
+
+  - name: Confirm drop-in file no longer exists
+    command:
+      cmd: test ! -e /etc/cron.d/healthcheck
