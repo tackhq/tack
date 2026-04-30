@@ -2,6 +2,7 @@ package output
 
 import (
 	"bytes"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -494,5 +495,63 @@ func TestIsApproval(t *testing.T) {
 		if IsApproval(input) {
 			t.Errorf("expected %q to be rejected", input)
 		}
+	}
+}
+
+// withStdin temporarily replaces os.Stdin with a pipe whose read-end the
+// test owns. Returns a cleanup function that restores the original Stdin.
+func withStdin(t *testing.T, input string) func() {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	if _, err := w.WriteString(input); err != nil {
+		t.Fatalf("write to pipe: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("close pipe write end: %v", err)
+	}
+	orig := os.Stdin
+	os.Stdin = r
+	return func() {
+		os.Stdin = orig
+		_ = r.Close()
+	}
+}
+
+func TestPromptApproval_PromptIncludesTarget(t *testing.T) {
+	cleanup := withStdin(t, "yes\n")
+	defer cleanup()
+
+	var buf bytes.Buffer
+	o := New(&buf)
+	o.SetColor(false) // strip ANSI for predictable string matching
+
+	if !o.PromptApproval("web1.prod (ssh)") {
+		t.Error("expected approval for 'yes' input")
+	}
+	got := buf.String()
+	if !strings.Contains(got, "Apply these changes to web1.prod (ssh)?") {
+		t.Errorf("prompt should contain target; got %q", got)
+	}
+	if !strings.Contains(got, "(yes/no):") {
+		t.Errorf("prompt should still ask (yes/no); got %q", got)
+	}
+}
+
+func TestPromptApproval_NoInputReturnsFalse(t *testing.T) {
+	cleanup := withStdin(t, "")
+	defer cleanup()
+
+	var buf bytes.Buffer
+	o := New(&buf)
+	o.SetColor(false)
+
+	if o.PromptApproval("4 hosts (web1, web2, web3, web4)") {
+		t.Error("expected non-approval when stdin is empty")
+	}
+	if !strings.Contains(buf.String(), "Apply these changes to 4 hosts (web1, web2, web3, web4)?") {
+		t.Errorf("prompt should contain multi-host target; got %q", buf.String())
 	}
 }

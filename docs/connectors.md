@@ -252,8 +252,14 @@ web2: ~ command: rotate cert
 
 Plan: 1 to change, 1 to run across 2 hosts.
 
-Do you want to apply these changes? (yes/no):
+Apply these changes to 2 hosts (web1, web2)? (yes/no):
 ```
+
+The prompt names the targets directly so you can confirm the right hosts
+without scrolling. Single-host plays use the form `Apply these changes to
+<host> (<connection>)?`. Multi-host plays show the count plus the first
+five names; if more than five hosts are targeted, the rest are abbreviated
+to `, ...`.
 
 Hostnames are column-aligned (capped at 30 characters; longer names truncate with `…`). Hosts whose plan contains only no-op tasks contribute zero body lines and are counted in the footer as `(N unchanged)`.
 

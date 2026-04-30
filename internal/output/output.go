@@ -784,11 +784,13 @@ func IsApproval(input string) bool {
 	return strings.EqualFold(input, "y") || strings.EqualFold(input, "yes")
 }
 
-// PromptApproval asks the user to confirm applying changes.
+// PromptApproval asks the user to confirm applying changes. The target
+// argument names the host(s) the changes will be applied to and is shown
+// in the prompt line — see Emitter.PromptApproval for the format.
 // Returns true if the user types "y" or "yes" (case-insensitive).
 // Responds immediately to SIGINT/SIGTERM.
-func (o *Output) PromptApproval() bool {
-	o.printf("\n%s ", o.color(colorBold, "Do you want to apply these changes?"))
+func (o *Output) PromptApproval(target string) bool {
+	o.printf("\n%s ", o.color(colorBold, fmt.Sprintf("Apply these changes to %s?", target)))
 	fmt.Fprint(o.w, "(yes/no): ")
 
 	// Read input in a goroutine so we can race against signals
