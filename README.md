@@ -40,7 +40,7 @@ tasks:
 ## Features
 
 - **Simple YAML playbooks** with Ansible-compatible role structure
-- **Idempotent modules** -- apt, brew, yum, file, copy, command, systemd, template, lineinfile, blockinfile, wait_for, assert
+- **Idempotent modules** -- apt, brew, yum, file, copy, command, cron, systemd, template, lineinfile, blockinfile, wait_for, assert
 - **Cross-platform** -- macOS (brew) and Linux (apt, yum, systemd)
 - **Multiple connectors** -- Local, Docker, SSH, AWS SSM with tag-based discovery
 - **Plan/apply workflow** -- preview changes before applying, `--auto-approve` for CI
@@ -368,6 +368,7 @@ See [`examples/dynamic-inventory/`](examples/dynamic-inventory/) for complete sa
 | `yum` | Manage packages on RHEL/CentOS/Fedora (auto-detects dnf) |
 | `command` | Execute shell commands |
 | `copy` | Copy files or write inline content |
+| `cron` | Manage cron entries idempotently (Linux user crontabs and `/etc/cron.d` drop-ins) |
 | `file` | Manage files, directories, and symlinks |
 | `git` | Check out git repositories idempotently by branch/tag/SHA |
 | `lineinfile` | Ensure a specific line is present or absent in a file |

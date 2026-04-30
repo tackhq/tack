@@ -63,20 +63,20 @@
 - [x] 10.2 Unit tests for parameter validation (every mutually-exclusive rule + name + file name + special_time + env)
 - [x] 10.3 Unit tests for render functions (time fields, special_time, env mode, drop-in with user field)
 - [x] 10.4 Module tests with mock connector covering: create, update, remove, disable/enable, already-matching (idempotency), empty-crontab handling, drop-in create/delete
-- [ ] 10.5 Integration test against Docker container (debian with cron installed) — `tests/integration/cron_playbook.yaml` + Go test
+- [x] 10.5 Integration test against Docker container (debian with cron installed) — `tests/integration/cron_playbook.yaml` + Go test
 - [x] 10.6 Non-Linux smoke test — assert module returns error against macOS os_type fact
 - [x] 10.7 `go test -race ./...` passes
 
 ## 11. Documentation
 
-- [ ] 11.1 Add `docs/modules/cron.md` with params table, examples (backup, PATH env, /etc/cron.d drop-in, disabled entry)
-- [ ] 11.2 Update `README.md` feature list and module table
-- [ ] 11.3 Update `llms.txt` with cron syntax
+- [x] 11.1 Add `docs/modules/cron.md` with params table, examples (backup, PATH env, /etc/cron.d drop-in, disabled entry)
+- [x] 11.2 Update `README.md` feature list and module table
+- [x] 11.3 Update `llms.txt` with cron syntax
 - [x] 11.4 Add example playbook `examples/cron-backup.yaml`
 - [x] 11.5 Update `ROADMAP.md` — mark `cron` module as implemented
 
 ## 12. Release
 
-- [ ] 12.1 Run `make lint` and `make test`
-- [ ] 12.2 Validate example playbooks with `tack validate`
-- [ ] 12.3 Manual smoke test against local Docker cron container
+- [x] 12.1 Run `make lint` and `make test`
+- [x] 12.2 Validate example playbooks with `tack validate`
+- [x] 12.3 Manual smoke test against local Docker cron container
