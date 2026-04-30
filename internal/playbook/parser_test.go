@@ -1,6 +1,7 @@
 package playbook
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -140,6 +141,250 @@ tasks:
 				}
 			}
 		})
+	}
+}
+
+func TestParsePlaybookDefaults(t *testing.T) {
+	t.Run("mapping format with all defaults applied", func(t *testing.T) {
+		yamlData := `
+hosts: webservers
+connection: ssh
+sudo: true
+vars:
+  env: prod
+  tier: web
+plays:
+  - name: First
+    tasks:
+      - command:
+          cmd: echo one
+  - name: Second
+    tasks:
+      - command:
+          cmd: echo two
+`
+		pb, err := ParseRaw([]byte(yamlData), "test.yaml")
+		if err != nil {
+			t.Fatalf("parse error: %v", err)
+		}
+		if pb.Defaults == nil {
+			t.Fatal("expected non-nil Defaults")
+		}
+		if got := pb.Defaults.Connection; got != "ssh" {
+			t.Errorf("Defaults.Connection: want ssh, got %q", got)
+		}
+		if !pb.Defaults.Sudo {
+			t.Error("Defaults.Sudo: want true")
+		}
+		if len(pb.Plays) != 2 {
+			t.Fatalf("expected 2 plays, got %d", len(pb.Plays))
+		}
+		for i, p := range pb.Plays {
+			if len(p.Hosts) != 1 || p.Hosts[0] != "webservers" {
+				t.Errorf("play[%d].Hosts: want [webservers], got %v", i, p.Hosts)
+			}
+			if p.Connection != "ssh" {
+				t.Errorf("play[%d].Connection: want ssh, got %q", i, p.Connection)
+			}
+			if !p.Sudo {
+				t.Errorf("play[%d].Sudo: want true", i)
+			}
+			if p.Vars["env"] != "prod" || p.Vars["tier"] != "web" {
+				t.Errorf("play[%d].Vars: want {env:prod, tier:web}, got %v", i, p.Vars)
+			}
+		}
+	})
+
+	t.Run("plays override each default field", func(t *testing.T) {
+		yamlData := `
+hosts: webservers
+connection: ssh
+sudo: true
+plays:
+  - name: Override hosts
+    hosts: dbservers
+    tasks:
+      - command:
+          cmd: echo one
+  - name: Override connection
+    connection: local
+    tasks:
+      - command:
+          cmd: echo two
+`
+		pb, err := ParseRaw([]byte(yamlData), "test.yaml")
+		if err != nil {
+			t.Fatalf("parse error: %v", err)
+		}
+		if got := pb.Plays[0].Hosts; len(got) != 1 || got[0] != "dbservers" {
+			t.Errorf("play[0].Hosts: want [dbservers], got %v", got)
+		}
+		if got := pb.Plays[0].Connection; got != "ssh" {
+			t.Errorf("play[0].Connection: want ssh (inherited), got %q", got)
+		}
+		if got := pb.Plays[1].Connection; got != "local" {
+			t.Errorf("play[1].Connection: want local (override), got %q", got)
+		}
+		if got := pb.Plays[1].Hosts; len(got) != 1 || got[0] != "webservers" {
+			t.Errorf("play[1].Hosts: want [webservers] (inherited), got %v", got)
+		}
+	})
+
+	t.Run("vars merge with play-level precedence", func(t *testing.T) {
+		yamlData := `
+hosts: webservers
+vars:
+  env: prod
+  tier: web
+plays:
+  - name: Override tier
+    vars:
+      tier: api
+      extra: yes
+    tasks:
+      - command:
+          cmd: echo hello
+`
+		pb, err := ParseRaw([]byte(yamlData), "test.yaml")
+		if err != nil {
+			t.Fatalf("parse error: %v", err)
+		}
+		v := pb.Plays[0].Vars
+		if v["env"] != "prod" {
+			t.Errorf("env: want prod, got %v", v["env"])
+		}
+		if v["tier"] != "api" {
+			t.Errorf("tier (play wins): want api, got %v", v["tier"])
+		}
+		if v["extra"] != true && v["extra"] != "yes" {
+			t.Errorf("extra: want truthy, got %v", v["extra"])
+		}
+	})
+
+	t.Run("playbook hosts as list", func(t *testing.T) {
+		yamlData := `
+hosts: [web1, web2]
+plays:
+  - name: One
+    tasks:
+      - command:
+          cmd: echo hello
+`
+		pb, err := ParseRaw([]byte(yamlData), "test.yaml")
+		if err != nil {
+			t.Fatalf("parse error: %v", err)
+		}
+		got := pb.Plays[0].Hosts
+		if len(got) != 2 || got[0] != "web1" || got[1] != "web2" {
+			t.Errorf("Hosts: want [web1 web2], got %v", got)
+		}
+	})
+
+	t.Run("sequence format unchanged: no defaults", func(t *testing.T) {
+		yamlData := `
+- name: Play 1
+  hosts: localhost
+  tasks:
+    - command:
+        cmd: echo one
+- name: Play 2
+  hosts: localhost
+  tasks:
+    - command:
+        cmd: echo two
+`
+		pb, err := ParseRaw([]byte(yamlData), "test.yaml")
+		if err != nil {
+			t.Fatalf("parse error: %v", err)
+		}
+		if pb.Defaults != nil {
+			t.Errorf("Defaults: want nil for sequence format, got %+v", pb.Defaults)
+		}
+		if len(pb.Plays) != 2 {
+			t.Fatalf("expected 2 plays, got %d", len(pb.Plays))
+		}
+	})
+
+	t.Run("mapping without plays parses as single play", func(t *testing.T) {
+		yamlData := `
+name: Single
+hosts: localhost
+tasks:
+  - command:
+      cmd: echo hello
+`
+		pb, err := ParseRaw([]byte(yamlData), "test.yaml")
+		if err != nil {
+			t.Fatalf("parse error: %v", err)
+		}
+		if pb.Defaults != nil {
+			t.Errorf("Defaults: want nil for single-play mapping, got %+v", pb.Defaults)
+		}
+		if len(pb.Plays) != 1 {
+			t.Fatalf("expected 1 play, got %d", len(pb.Plays))
+		}
+	})
+
+	t.Run("malformed plays is non-sequence errors", func(t *testing.T) {
+		yamlData := `
+hosts: webservers
+plays:
+  not_a_sequence: true
+`
+		if _, err := ParseRaw([]byte(yamlData), "test.yaml"); err == nil {
+			t.Fatal("expected error for non-sequence plays, got nil")
+		}
+	})
+
+	t.Run("playbook hosts wrong type errors", func(t *testing.T) {
+		yamlData := `
+hosts: 42
+plays:
+  - tasks: []
+`
+		if _, err := ParseRaw([]byte(yamlData), "test.yaml"); err == nil {
+			t.Fatal("expected error for non-string/list hosts, got nil")
+		}
+	})
+
+	t.Run("playbook sudo: false is a no-op against play-level sudo: true", func(t *testing.T) {
+		// playbook-level `sudo: false` cannot disable a play's `sudo: true`
+		// (documented behavior: only `sudo: true` propagates).
+		yamlData := `
+hosts: webservers
+sudo: false
+plays:
+  - name: One
+    sudo: true
+    tasks:
+      - command:
+          cmd: echo hello
+`
+		pb, err := ParseRaw([]byte(yamlData), "test.yaml")
+		if err != nil {
+			t.Fatalf("parse error: %v", err)
+		}
+		if !pb.Plays[0].Sudo {
+			t.Error("play.Sudo: want true (play-level set), got false")
+		}
+	})
+}
+
+func TestPlayValidateMissingHosts(t *testing.T) {
+	// A non-local play with no hosts at any level fails validation.
+	yamlData := `
+- name: No hosts
+  connection: ssh
+  tasks:
+    - command:
+        cmd: echo hello
+`
+	_, err := ParseRaw([]byte(yamlData), "test.yaml")
+	if err == nil {
+		t.Fatal("expected validation error for missing hosts, got nil")
+	}
+	if !strings.Contains(err.Error(), "playbook level") {
+		t.Errorf("error should mention playbook-level option, got: %v", err)
 	}
 }
 

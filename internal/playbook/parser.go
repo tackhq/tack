@@ -89,25 +89,72 @@ func ParseFileRaw(path string) (*Playbook, error) {
 }
 
 // ParseRaw parses a playbook with proper module detection.
+//
+// Two top-level shapes are accepted:
+//
+//  1. A YAML sequence of plays (legacy): each element is a play.
+//  2. A YAML mapping with a `plays:` sequence (new): the mapping carries
+//     playbook-level defaults (`hosts`, `connection`, `sudo`, `vars`) that
+//     are merged into each play under `plays:` at parse time.
+//
+// A YAML mapping at the root without a `plays:` key is treated as a single
+// play (existing fallback) with no defaults applied.
 func ParseRaw(data []byte, path string) (*Playbook, error) {
-	// First, try to unmarshal as a list of raw play maps
-	var rawPlays []map[string]any
-	if err := yaml.Unmarshal(data, &rawPlays); err != nil {
-		// Try as single play
-		var rawPlay map[string]any
-		if err := yaml.Unmarshal(data, &rawPlay); err != nil {
-			return nil, fmt.Errorf("invalid playbook format: %w", err)
-		}
-		rawPlays = []map[string]any{rawPlay}
+	var root yaml.Node
+	if err := yaml.Unmarshal(data, &root); err != nil {
+		return nil, fmt.Errorf("invalid playbook format: %w", err)
 	}
 
-	playbook := &Playbook{Path: path}
+	// Unwrap document node.
+	node := &root
+	if node.Kind == yaml.DocumentNode {
+		if len(node.Content) == 0 {
+			return nil, fmt.Errorf("invalid playbook format: empty document")
+		}
+		node = node.Content[0]
+	}
+
+	var (
+		rawPlays []map[string]any
+		defaults *PlaybookDefaults
+	)
+
+	switch node.Kind {
+	case yaml.SequenceNode:
+		// Legacy sequence-of-plays format.
+		if err := node.Decode(&rawPlays); err != nil {
+			return nil, fmt.Errorf("invalid playbook format: %w", err)
+		}
+
+	case yaml.MappingNode:
+		var rawTop map[string]any
+		if err := node.Decode(&rawTop); err != nil {
+			return nil, fmt.Errorf("invalid playbook format: %w", err)
+		}
+		if _, hasPlays := rawTop["plays"]; hasPlays {
+			d, plays, err := parsePlaybookMapping(rawTop)
+			if err != nil {
+				return nil, err
+			}
+			defaults = d
+			rawPlays = plays
+		} else {
+			// Single-play map at root (legacy fallback).
+			rawPlays = []map[string]any{rawTop}
+		}
+
+	default:
+		return nil, fmt.Errorf("invalid playbook format: expected a sequence of plays or a mapping with a 'plays:' key")
+	}
+
+	playbook := &Playbook{Path: path, Defaults: defaults}
 
 	for i, rawPlay := range rawPlays {
 		play, err := parseRawPlay(rawPlay)
 		if err != nil {
 			return nil, fmt.Errorf("play %d: %w", i+1, err)
 		}
+		applyPlaybookDefaults(play, defaults)
 		if err := play.Validate(); err != nil {
 			return nil, fmt.Errorf("play %d: %w", i+1, err)
 		}
@@ -115,6 +162,92 @@ func ParseRaw(data []byte, path string) (*Playbook, error) {
 	}
 
 	return playbook, nil
+}
+
+// parsePlaybookMapping pulls playbook-level defaults out of a mapping-format
+// playbook and returns the raw plays slice. The caller has already verified
+// that `plays` is present in raw.
+func parsePlaybookMapping(raw map[string]any) (*PlaybookDefaults, []map[string]any, error) {
+	playsRaw, ok := raw["plays"].([]any)
+	if !ok {
+		return nil, nil, fmt.Errorf("invalid playbook format: 'plays' must be a sequence of plays")
+	}
+
+	rawPlays := make([]map[string]any, 0, len(playsRaw))
+	for i, item := range playsRaw {
+		m, ok := item.(map[string]any)
+		if !ok {
+			return nil, nil, fmt.Errorf("invalid playbook format: plays[%d] must be a mapping", i)
+		}
+		rawPlays = append(rawPlays, m)
+	}
+
+	defaults := &PlaybookDefaults{}
+
+	if v, ok := raw["hosts"]; ok {
+		hosts := parseStringOrList(v)
+		if hosts == nil {
+			return nil, nil, fmt.Errorf("invalid playbook format: 'hosts' must be a string or list of strings")
+		}
+		defaults.Hosts = hosts
+	}
+
+	if v, ok := raw["connection"]; ok {
+		s, ok := v.(string)
+		if !ok {
+			return nil, nil, fmt.Errorf("invalid playbook format: 'connection' must be a string")
+		}
+		defaults.Connection = s
+	}
+
+	if v, ok := raw["sudo"]; ok {
+		b, ok := asBool(v)
+		if !ok {
+			return nil, nil, fmt.Errorf("invalid playbook format: 'sudo' must be a boolean")
+		}
+		defaults.Sudo = b
+	}
+
+	if v, ok := raw["vars"]; ok {
+		vars, ok := v.(map[string]any)
+		if !ok {
+			return nil, nil, fmt.Errorf("invalid playbook format: 'vars' must be a mapping")
+		}
+		defaults.Vars = vars
+	}
+
+	return defaults, rawPlays, nil
+}
+
+// applyPlaybookDefaults merges playbook-level defaults into a play, leaving
+// fields the play already set untouched. Only `Hosts`, `Connection`, `Sudo`,
+// and `Vars` participate in inheritance — see design.md for rationale.
+func applyPlaybookDefaults(play *Play, defaults *PlaybookDefaults) {
+	if defaults == nil {
+		return
+	}
+	if len(play.Hosts) == 0 && len(defaults.Hosts) > 0 {
+		play.Hosts = append([]string(nil), defaults.Hosts...)
+	}
+	if play.Connection == "" && defaults.Connection != "" {
+		play.Connection = defaults.Connection
+	}
+	if defaults.Sudo && !play.Sudo {
+		// Playbook-level `sudo: false` is intentionally a no-op (see design.md):
+		// we cannot distinguish "unset" from "false" on a plain bool, so only
+		// `sudo: true` propagates.
+		play.Sudo = true
+	}
+	if len(defaults.Vars) > 0 {
+		merged := make(map[string]any, len(defaults.Vars)+len(play.Vars))
+		for k, v := range defaults.Vars {
+			merged[k] = v
+		}
+		for k, v := range play.Vars {
+			merged[k] = v
+		}
+		play.Vars = merged
+	}
 }
 
 // parseRawPlay parses a single play from a raw map.

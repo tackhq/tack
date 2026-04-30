@@ -12,9 +12,18 @@ func TestPlayValidate(t *testing.T) {
 		errMsg  string
 	}{
 		{
-			name:    "missing hosts allowed (validated later with overrides)",
+			name:    "missing hosts allowed for default (local) connection",
 			play:    Play{},
 			wantErr: false,
+		},
+		{
+			name: "missing hosts on non-local connection fails with clear message",
+			play: Play{
+				Connection: "ssh",
+				Tasks:      []*Task{{Module: "command", Params: map[string]any{"cmd": "echo"}}},
+			},
+			wantErr: true,
+			errMsg:  "playbook level",
 		},
 		{
 			name: "valid local connection",

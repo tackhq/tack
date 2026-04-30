@@ -1,0 +1,49 @@
+---
+# Example: mapping-format playbook.
+#
+# When every play in a playbook targets the same hosts (and shares the same
+# connection / sudo / vars), declare those once at the top of the file and
+# let each play inherit them. Plays can still override any field locally.
+#
+# Equivalent to repeating `hosts: webservers`, `connection: ssh`, and
+# `sudo: true` on each of the three plays below.
+hosts: webservers
+connection: ssh
+sudo: true
+vars:
+  app_dir: /opt/app
+  release_channel: stable
+
+plays:
+  - name: Install base packages
+    gather_facts: false
+    tasks:
+      - apt:
+          name: nginx
+          state: present
+      - apt:
+          name: ufw
+          state: present
+
+  - name: Deploy application
+    gather_facts: false
+    tasks:
+      - file:
+          path: "{{ app_dir }}"
+          state: directory
+          mode: "0755"
+      - copy:
+          dest: "{{ app_dir }}/CHANNEL"
+          content: "{{ release_channel }}\n"
+          mode: "0644"
+
+  # Plays can override any inherited default. Here we run a smoke check
+  # locally instead of on the webservers group.
+  - name: Smoke check (local)
+    hosts: localhost
+    connection: local
+    sudo: false
+    gather_facts: false
+    tasks:
+      - command:
+          cmd: echo "deploy complete"
