@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -301,5 +302,48 @@ func TestGatherFactsParallel_OutputBuffersInHostOrder(t *testing.T) {
 		idxA, idxB, idxC)
 
 	// Sanity: cleanup connectors.
+	closePrepConnectors(preps)
+}
+
+// ansiPattern matches CSI escape sequences (e.g. "\x1b[1m" or "\x1b[0m").
+// Used by tests that assert on visible output regardless of color setting.
+var ansiPattern = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+func stripANSI(s string) string {
+	return ansiPattern.ReplaceAllString(s, "")
+}
+
+func TestGatherFactsParallel_BannerInlinedPerHost(t *testing.T) {
+	// Each host's buffered emitter should produce a single-line HOST banner
+	// with the fact-gathering result inlined, terminated by a newline.
+	factory := func(play *playbook.Play, host string) (connector.Connector, error) {
+		return &fakeConnector{host: host, executeDelay: 5 * time.Millisecond}, nil
+	}
+	e := newFakeExecutor(factory)
+	hosts := []string{"web1", "web2", "web3"}
+	play := &playbook.Play{Hosts: hosts, Connection: "ssh"}
+
+	preps := e.gatherFactsParallel(context.Background(), play)
+	require.NotNil(t, preps)
+
+	var buf bytes.Buffer
+	flushPrepBuffers(&buf, hosts, preps)
+
+	// Strip ANSI escape codes for stable substring matching across
+	// color-enabled and color-disabled executor configurations.
+	out := stripANSI(buf.String())
+	for _, h := range hosts {
+		// Each host's banner must appear as a single line ending in
+		// "gathering facts ✓\n".
+		want := "HOST " + h + " [ssh] - gathering facts ✓\n"
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %q in flushed output; got %q", want, out)
+		}
+	}
+	// No legacy "Gathering Facts" task lines should be present.
+	if strings.Contains(out, "Gathering Facts") {
+		t.Errorf("legacy 'Gathering Facts' task line should be retired; got %q", out)
+	}
+
 	closePrepConnectors(preps)
 }

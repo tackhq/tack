@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/tackhq/tack/internal/playbook"
 )
 
 func TestNewOutput(t *testing.T) {
@@ -273,6 +275,110 @@ func TestPlaybookEnd(t *testing.T) {
 	}
 	if !strings.Contains(output, "2.50s") {
 		t.Error("expected duration in output")
+	}
+}
+
+func TestHostStartAndFactsResult(t *testing.T) {
+	t.Run("success appends inline checkmark and newline", func(t *testing.T) {
+		var buf bytes.Buffer
+		o := New(&buf)
+		o.SetColor(false)
+
+		o.HostStart("web1.prod", "ssh")
+		o.HostFactsResult("web1.prod", true, "")
+
+		got := buf.String()
+		want := "\nHOST web1.prod [ssh] - gathering facts ✓\n"
+		if got != want {
+			t.Errorf("HostStart+HostFactsResult: got %q, want %q", got, want)
+		}
+	})
+
+	t.Run("failure appends cross and prints error on follow-up line", func(t *testing.T) {
+		var buf bytes.Buffer
+		o := New(&buf)
+		o.SetColor(false)
+
+		o.HostStart("web1", "ssh")
+		o.HostFactsResult("web1", false, "connection refused")
+
+		got := buf.String()
+		if !strings.Contains(got, "HOST web1 [ssh] - gathering facts ✗\n") {
+			t.Errorf("expected failed banner, got %q", got)
+		}
+		if !strings.Contains(got, "connection refused") {
+			t.Errorf("expected error message in output, got %q", got)
+		}
+	})
+}
+
+func TestHostStartDoneClosesBanner(t *testing.T) {
+	var buf bytes.Buffer
+	o := New(&buf)
+	o.SetColor(false)
+
+	o.HostStart("web1", "ssh")
+	o.HostStartDone("web1")
+
+	got := buf.String()
+	want := "\nHOST web1 [ssh]\n"
+	if got != want {
+		t.Errorf("HostStart+HostStartDone: got %q, want %q", got, want)
+	}
+}
+
+func TestPlayStartOnlyEmitsForNamedPlay(t *testing.T) {
+	t.Run("named play prints PLAY banner", func(t *testing.T) {
+		var buf bytes.Buffer
+		o := New(&buf)
+		o.SetColor(false)
+
+		o.PlayStart(&playbook.Play{Name: "Configure web servers", Hosts: []string{"web1", "web2"}})
+
+		got := buf.String()
+		if !strings.Contains(got, "PLAY Configure web servers") {
+			t.Errorf("expected PLAY banner, got %q", got)
+		}
+	})
+
+	t.Run("anonymous play emits nothing", func(t *testing.T) {
+		var buf bytes.Buffer
+		o := New(&buf)
+		o.SetColor(false)
+
+		o.PlayStart(&playbook.Play{Hosts: []string{"web1", "web2"}})
+
+		if got := buf.String(); got != "" {
+			t.Errorf("expected no output for anonymous play, got %q", got)
+		}
+	})
+}
+
+func TestPlayHosts(t *testing.T) {
+	tests := []struct {
+		name  string
+		hosts []string
+		want  string
+	}{
+		{"single host emits nothing", []string{"web1"}, ""},
+		{"empty hosts emits nothing", nil, ""},
+		{"two hosts inline", []string{"web1", "web2"}, "HOSTS web1, web2\n"},
+		{"five hosts inline", []string{"web1", "web2", "web3", "web4", "web5"}, "HOSTS web1, web2, web3, web4, web5\n"},
+		{"six hosts overflow", []string{"web1", "web2", "web3", "web4", "web5", "web6"}, "HOSTS web1, web2, web3, web4, web5 (and 1 more)\n"},
+		{"twelve hosts overflow", []string{"web1", "web2", "web3", "web4", "web5", "web6", "web7", "web8", "web9", "web10", "web11", "web12"}, "HOSTS web1, web2, web3, web4, web5 (and 7 more)\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			o := New(&buf)
+			o.SetColor(false)
+
+			o.PlayHosts(tt.hosts)
+
+			if got := buf.String(); got != tt.want {
+				t.Errorf("PlayHosts(%v) = %q, want %q", tt.hosts, got, tt.want)
+			}
+		})
 	}
 }
 

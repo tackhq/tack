@@ -246,6 +246,11 @@ The pre-pass is skipped for single-host plays, `connection: local`, and plays wi
 Plays targeting more than one host render a single consolidated plan with per-line host attribution and prompt for approval **once globally**, not per-host. Output looks like:
 
 ```
+PLAY Configure web servers
+HOSTS web1, web2
+HOST web1 [ssh] - gathering facts ✓
+HOST web2 [ssh] - gathering facts ✓
+
 PLAN
 web1: + apt: install nginx
 web2: ~ command: rotate cert
@@ -254,6 +259,8 @@ Plan: 1 to change, 1 to run across 2 hosts.
 
 Apply these changes to 2 hosts (web1, web2)? (yes/no):
 ```
+
+The `PLAY` line is shown only when the play has a `name:` field; anonymous plays start at `HOSTS` (multi-host) or directly at the `HOST` banner (single-host). The `HOSTS` summary line lists up to five names; for larger fleets it shows `HOSTS h1, h2, h3, h4, h5 (and N more)`. Fact-gathering completion is reported inline on the `HOST` line — no separate `Gathering Facts` task line appears in text mode (JSON consumers receive a `host_facts` event instead).
 
 The prompt names the targets directly so you can confirm the right hosts
 without scrolling. Single-host plays use the form `Apply these changes to

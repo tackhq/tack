@@ -242,6 +242,9 @@ func (n *nullEmitter) PlaybookStart(path string)                                
 func (n *nullEmitter) PlaybookEnd(stats output.Stats)                              {}
 func (n *nullEmitter) PlayStart(play *playbook.Play)                               {}
 func (n *nullEmitter) HostStart(host, conn string)                                 {}
+func (n *nullEmitter) HostFactsResult(host string, ok bool, errMsg string)         {}
+func (n *nullEmitter) HostStartDone(host string)                                   {}
+func (n *nullEmitter) PlayHosts(hosts []string)                                    {}
 func (n *nullEmitter) TaskStart(name, module string)                               {}
 func (n *nullEmitter) TaskResult(name, status string, changed bool, detail string) {}
 func (n *nullEmitter) DisplayPlan(tasks []output.PlannedTask, dryRun bool)         {}

@@ -452,8 +452,13 @@ func (e *Executor) runMultiHostPlay(ctx context.Context, play *playbook.Play, st
 		return fmt.Errorf("multi-host orchestration: discover+plan returned no preps")
 	}
 
-	// Flush per-host pre-pass output (HostStart + Gathering Facts) in host
-	// order. Plan output is rendered separately on the main thread below.
+	// Multi-host summary banner — emitted once on the main thread before
+	// the per-host buffers flush.
+	e.Output.PlayHosts(play.Hosts)
+
+	// Flush per-host pre-pass output (HostStart + fact-gathering result)
+	// in host order. Plan output is rendered separately on the main thread
+	// below.
 	flushPrepBuffers(os.Stdout, play.Hosts, preps)
 
 	if ctx.Err() != nil {
@@ -723,26 +728,31 @@ func (e *Executor) preparePlayContext(ctx context.Context, play *playbook.Play, 
 	} else {
 		conn, err := e.GetConnector(play, host)
 		if err != nil {
+			// HostStart left the banner line open; close it via the
+			// fact-result API so the error renders on its own line.
+			emitter.HostFactsResult(host, false, err.Error())
 			return nil, fmt.Errorf("failed to create connector for host %s: %w", host, err)
 		}
 		pctx.Connector = conn
 
 		if err := conn.Connect(ctx); err != nil {
+			emitter.HostFactsResult(host, false, err.Error())
 			_ = conn.Close()
 			return nil, fmt.Errorf("failed to connect to %s: %w", host, err)
 		}
 
 		if play.ShouldGatherFacts() {
-			emitter.TaskStart("Gathering Facts", "")
 			f, err := facts.Gather(ctx, conn)
 			if err != nil {
-				emitter.TaskResult("Gathering Facts", "failed", false, err.Error())
+				emitter.HostFactsResult(host, false, err.Error())
 				_ = conn.Close()
 				return nil, fmt.Errorf("failed to gather facts: %w", err)
 			}
 			pctx.Facts = f
 			pctx.Vars["facts"] = f
-			emitter.TaskResult("Gathering Facts", "ok", false, "")
+			emitter.HostFactsResult(host, true, "")
+		} else {
+			emitter.HostStartDone(host)
 		}
 	}
 

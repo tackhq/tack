@@ -113,18 +113,64 @@ func (o *Output) PlaybookEnd(stats Stats) {
 	o.printf(" %s\n", o.color(colorGray, fmt.Sprintf("(%.2fs)", stats.GetDuration().Seconds())))
 }
 
-// HostStart prints the host banner before each host's plan/execute block.
+// HostStart writes the per-host banner without a trailing newline; the
+// line is closed by either HostFactsResult (when facts are gathered) or
+// HostStartDone (when gather_facts: false).
 func (o *Output) HostStart(host, connType string) {
-	o.printf("\n%s %s\n", o.color(colorBold, "HOST"), host+" ["+connType+"]")
+	o.printf("\n%s %s", o.color(colorBold, "HOST"), host+" ["+connType+"]")
 }
 
-// PlayStart prints the play start banner.
-func (o *Output) PlayStart(play *playbook.Play) {
-	name := play.Name
-	if name == "" {
-		name = strings.Join(play.Hosts, ", ")
+// HostFactsResult appends fact-gathering status to the open HostStart
+// banner. On failure the error message is printed on a follow-up line via
+// Error so it picks up the standard red-error formatting.
+func (o *Output) HostFactsResult(_ string, ok bool, errMsg string) {
+	if ok {
+		o.printf(" - gathering facts %s\n", o.color(colorGreen, "✓"))
+		return
 	}
-	o.printf("\n%s %s\n", o.color(colorBold, "PLAY"), name)
+	o.printf(" - gathering facts %s\n", o.color(colorRed, "✗"))
+	if errMsg != "" {
+		o.Error("%s", errMsg)
+	}
+}
+
+// HostStartDone closes the open HostStart banner with a newline. Used when
+// gather_facts: false skips the fact step so the banner is still terminated.
+func (o *Output) HostStartDone(_ string) {
+	fmt.Fprintln(o.w)
+}
+
+// PlayStart prints the play start banner. Anonymous plays (no name field)
+// emit nothing; the host identity is conveyed by the HOST line (single-host)
+// or the PlayHosts summary line (multi-host) that follows.
+func (o *Output) PlayStart(play *playbook.Play) {
+	if play.Name == "" {
+		return
+	}
+	o.printf("\n%s %s\n", o.color(colorBold, "PLAY"), play.Name)
+}
+
+// playHostsVisibleCap caps how many host names are listed inline on the
+// HOSTS summary banner; the rest are summarized as "(and N more)".
+const playHostsVisibleCap = 5
+
+// PlayHosts emits the multi-host summary banner. Callers should invoke
+// this only for plays with two or more hosts.
+func (o *Output) PlayHosts(hosts []string) {
+	if len(hosts) < 2 {
+		return
+	}
+	visible := hosts
+	overflow := 0
+	if len(hosts) > playHostsVisibleCap {
+		visible = hosts[:playHostsVisibleCap]
+		overflow = len(hosts) - playHostsVisibleCap
+	}
+	list := strings.Join(visible, ", ")
+	if overflow > 0 {
+		list = fmt.Sprintf("%s (and %d more)", list, overflow)
+	}
+	o.printf("%s %s\n", o.color(colorBold, "HOSTS"), list)
 }
 
 // TaskStart is called when a task begins (no output in compact mode).
