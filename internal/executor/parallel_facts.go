@@ -98,7 +98,7 @@ func (e *Executor) gatherFactsParallel(ctx context.Context, play *playbook.Play)
 			conn, err := factory(play, host)
 			if err != nil {
 				prep.err = fmt.Errorf("failed to create connector: %w", err)
-				hostOutput.TaskResult("Gathering Facts", "failed", false, prep.err.Error())
+				hostOutput.HostFactsResult(host, false, prep.err.Error())
 				mu.Lock()
 				results[host] = prep
 				mu.Unlock()
@@ -107,7 +107,7 @@ func (e *Executor) gatherFactsParallel(ctx context.Context, play *playbook.Play)
 
 			if err := conn.Connect(ctx); err != nil {
 				prep.err = fmt.Errorf("failed to connect: %w", err)
-				hostOutput.TaskResult("Gathering Facts", "failed", false, prep.err.Error())
+				hostOutput.HostFactsResult(host, false, prep.err.Error())
 				_ = conn.Close()
 				mu.Lock()
 				results[host] = prep
@@ -115,11 +115,10 @@ func (e *Executor) gatherFactsParallel(ctx context.Context, play *playbook.Play)
 				return &HostResult{Host: host, Success: false, Error: prep.err}
 			}
 
-			hostOutput.TaskStart("Gathering Facts", "")
 			f, err := facts.Gather(ctx, conn)
 			if err != nil {
 				prep.err = fmt.Errorf("failed to gather facts: %w", err)
-				hostOutput.TaskResult("Gathering Facts", "failed", false, err.Error())
+				hostOutput.HostFactsResult(host, false, err.Error())
 				_ = conn.Close()
 				mu.Lock()
 				results[host] = prep
@@ -129,7 +128,7 @@ func (e *Executor) gatherFactsParallel(ctx context.Context, play *playbook.Play)
 
 			prep.conn = conn
 			prep.facts = f
-			hostOutput.TaskResult("Gathering Facts", "ok", false, "")
+			hostOutput.HostFactsResult(host, true, "")
 
 			mu.Lock()
 			results[host] = prep
@@ -235,7 +234,7 @@ func (e *Executor) discoverAndPlanParallel(ctx context.Context, play *playbook.P
 			conn, err := factory(play, host)
 			if err != nil {
 				prep.err = fmt.Errorf("failed to create connector: %w", err)
-				hostOutput.TaskResult("Gathering Facts", "failed", false, prep.err.Error())
+				hostOutput.HostFactsResult(host, false, prep.err.Error())
 				mu.Lock()
 				results[host] = prep
 				mu.Unlock()
@@ -243,7 +242,7 @@ func (e *Executor) discoverAndPlanParallel(ctx context.Context, play *playbook.P
 			}
 			if err := conn.Connect(ctx); err != nil {
 				prep.err = fmt.Errorf("failed to connect: %w", err)
-				hostOutput.TaskResult("Gathering Facts", "failed", false, prep.err.Error())
+				hostOutput.HostFactsResult(host, false, prep.err.Error())
 				_ = conn.Close()
 				mu.Lock()
 				results[host] = prep
@@ -253,11 +252,10 @@ func (e *Executor) discoverAndPlanParallel(ctx context.Context, play *playbook.P
 			prep.conn = conn
 
 			if play.ShouldGatherFacts() {
-				hostOutput.TaskStart("Gathering Facts", "")
 				f, gerr := facts.Gather(ctx, conn)
 				if gerr != nil {
 					prep.err = fmt.Errorf("failed to gather facts: %w", gerr)
-					hostOutput.TaskResult("Gathering Facts", "failed", false, gerr.Error())
+					hostOutput.HostFactsResult(host, false, gerr.Error())
 					_ = conn.Close()
 					prep.conn = nil
 					mu.Lock()
@@ -266,7 +264,9 @@ func (e *Executor) discoverAndPlanParallel(ctx context.Context, play *playbook.P
 					return &HostResult{Host: host, Success: false, Error: prep.err}
 				}
 				prep.facts = f
-				hostOutput.TaskResult("Gathering Facts", "ok", false, "")
+				hostOutput.HostFactsResult(host, true, "")
+			} else {
+				hostOutput.HostStartDone(host)
 			}
 
 			// Build PlayContext (reuses prep.conn + prep.facts).

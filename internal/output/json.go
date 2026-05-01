@@ -94,6 +94,30 @@ func (j *JSONEmitter) HostStart(host, connType string) {
 	})
 }
 
+// HostFactsResult emits a host_facts event recording the outcome of
+// fact-gathering for the current host. JSON consumers used to derive this
+// from the legacy "Gathering Facts" task_start/task_result pair; the new
+// event is more direct.
+func (j *JSONEmitter) HostFactsResult(host string, ok bool, errMsg string) {
+	event := map[string]any{
+		"type": "host_facts",
+		"host": host,
+		"ok":   ok,
+	}
+	if !ok && errMsg != "" {
+		event["error"] = errMsg
+	}
+	j.emit(event)
+}
+
+// HostStartDone is a no-op in JSON mode — host_start was already emitted
+// as a discrete event.
+func (j *JSONEmitter) HostStartDone(_ string) {}
+
+// PlayHosts is a no-op in JSON mode — play_start already carries the
+// full hosts slice for downstream consumers.
+func (j *JSONEmitter) PlayHosts(_ []string) {}
+
 // TaskStart emits a task_start event tagged with the current host.
 func (j *JSONEmitter) TaskStart(name, moduleName string) {
 	event := map[string]any{
