@@ -70,6 +70,11 @@ type Executor struct {
 	// ShowDiff enables file content diffs in plan output.
 	ShowDiff bool
 
+	// SkipFacts forces fact gathering off for every play, regardless of the
+	// play's gather_facts setting. Set from the --no-facts CLI flag to speed
+	// up runs that don't depend on system facts.
+	SkipFacts bool
+
 	// Forks is the number of hosts to execute concurrently.
 	// Values <= 1 mean serial execution (default).
 	Forks int
@@ -128,6 +133,13 @@ func New() *Executor {
 		Output:        output.New(os.Stdout),
 		vaultVarCache: make(map[string]map[string]any),
 	}
+}
+
+// shouldGatherFacts reports whether facts should be gathered for the play,
+// honoring both the play's gather_facts setting and the executor-wide
+// SkipFacts override (--no-facts).
+func (e *Executor) shouldGatherFacts(play *playbook.Play) bool {
+	return !e.SkipFacts && play.ShouldGatherFacts()
 }
 
 // RunResult holds the result of a playbook run.
@@ -741,7 +753,7 @@ func (e *Executor) preparePlayContext(ctx context.Context, play *playbook.Play, 
 			return nil, fmt.Errorf("failed to connect to %s: %w", host, err)
 		}
 
-		if play.ShouldGatherFacts() {
+		if e.shouldGatherFacts(play) {
 			f, err := facts.Gather(ctx, conn)
 			if err != nil {
 				emitter.HostFactsResult(host, false, err.Error())

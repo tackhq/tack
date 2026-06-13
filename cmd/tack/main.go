@@ -142,8 +142,6 @@ func init() {
 	rootCmd.AddCommand(vaultCmd)
 	rootCmd.AddCommand(inventoryCmd)
 	rootCmd.AddCommand(exportCmd)
-
-	validateCmd.Flags().Bool("skip-discovery", false, "Do not auto-discover site.yaml in the current directory")
 }
 
 // runCmd executes a playbook
@@ -177,14 +175,10 @@ func discoverDefaultFile(kind string, names []string) (string, error) {
 
 // resolvePlaybookRef returns the playbook/role reference to use: the explicit
 // positional argument when present, otherwise the discovered default playbook
-// in the current directory. Discovery is skipped when --skip-discovery is set,
-// in which case a missing argument is an error.
-func resolvePlaybookRef(cmd *cobra.Command, args []string) (string, error) {
+// in the current directory.
+func resolvePlaybookRef(_ *cobra.Command, args []string) (string, error) {
 	if len(args) >= 1 {
 		return args[0], nil
-	}
-	if skip, _ := cmd.Flags().GetBool("skip-discovery"); skip {
-		return "", fmt.Errorf("no playbook specified (discovery disabled via --skip-discovery)")
 	}
 	discovered, err := discoverDefaultFile("playbook", defaultPlaybookNames)
 	if err != nil {
@@ -206,8 +200,7 @@ var runCmd = &cobra.Command{
 If no playbook argument is given, tack looks for site.yaml (or site.yml)
 in the current directory. If no -i/--inventory is given, tack looks for
 inventory.yaml (or inventory.yml) in the current directory and uses it if
-present. An explicit argument or flag always overrides discovery, and
---skip-discovery disables it entirely.
+present. An explicit argument or flag always overrides discovery.
 
 If the argument is a directory, it is treated as a role and wrapped in
 a temporary playbook. Connection and host settings come from CLI flags.
@@ -256,7 +249,7 @@ func init() {
 	// Connection override flags
 	addConnectionFlags(runCmd)
 	runCmd.Flags().BoolVarP(&autoApprove, "auto-approve", "y", false, "Skip interactive approval prompt (also via TACK_AUTO_APPROVE)")
-	runCmd.Flags().Bool("skip-discovery", false, "Do not auto-discover site.yaml/inventory.yaml in the current directory")
+	runCmd.Flags().Bool("no-facts", false, "Skip gathering system facts; speeds up runs that don't depend on facts")
 	runCmd.Flags().IntP("forks", "f", 1, "Number of hosts to execute concurrently")
 
 	// Inventory flags
@@ -328,8 +321,7 @@ func runPlaybook(cmd *cobra.Command, args []string) error {
 	// Load inventory sources: explicit -i flags, or discover ./inventory.yaml.
 	var inv *inventory.Inventory
 	inventoryPaths, _ := cmd.Flags().GetStringArray("inventory")
-	skipDiscovery, _ := cmd.Flags().GetBool("skip-discovery")
-	if len(inventoryPaths) == 0 && !skipDiscovery {
+	if len(inventoryPaths) == 0 {
 		discovered, derr := discoverDefaultFile("inventory", defaultInventoryNames)
 		if derr != nil {
 			return derr
@@ -400,6 +392,7 @@ func runPlaybook(cmd *cobra.Command, args []string) error {
 	exec.Forks = forks
 	exec.Overrides = overrides
 	exec.Inventory = inv
+	exec.SkipFacts, _ = cmd.Flags().GetBool("no-facts")
 	exec.PromptSudoPassword = func() (string, error) {
 		fmt.Fprint(os.Stderr, "Sudo password: ")
 		passBytes, err := term.ReadPassword(int(syscall.Stdin))
@@ -795,7 +788,6 @@ func init() {
 	testCmd.Flags().String("image", "ubuntu:24.04", "Docker image to use for the test container")
 	testCmd.Flags().Bool("new", false, "Force a fresh container (remove existing first)")
 	testCmd.Flags().Bool("rm", false, "Remove the container after the test run")
-	testCmd.Flags().Bool("skip-discovery", false, "Do not auto-discover site.yaml in the current directory")
 }
 
 // flagOrEnv returns the flag value if changed, otherwise the environment variable value.

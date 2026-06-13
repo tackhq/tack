@@ -56,7 +56,7 @@ type hostPrep struct {
 //   - !play.ShouldGatherFacts() (gather disabled)
 func (e *Executor) gatherFactsParallel(ctx context.Context, play *playbook.Play) map[string]*hostPrep {
 	hosts := play.Hosts
-	if play.GetConnection() == "local" || len(hosts) <= 1 || !play.ShouldGatherFacts() {
+	if play.GetConnection() == "local" || len(hosts) <= 1 || !e.shouldGatherFacts(play) {
 		return nil
 	}
 
@@ -251,7 +251,7 @@ func (e *Executor) discoverAndPlanParallel(ctx context.Context, play *playbook.P
 			}
 			prep.conn = conn
 
-			if play.ShouldGatherFacts() {
+			if e.shouldGatherFacts(play) {
 				f, gerr := facts.Gather(ctx, conn)
 				if gerr != nil {
 					prep.err = fmt.Errorf("failed to gather facts: %w", gerr)

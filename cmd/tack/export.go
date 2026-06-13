@@ -53,7 +53,6 @@ func init() {
 	exportCmd.Flags().StringSlice("skip-tags", nil, "Skip tasks with these tags")
 	exportCmd.Flags().String("connection", "", "Connection type for fact gathering (local, ssh, ssm, docker)")
 	exportCmd.Flags().StringArrayP("inventory", "i", nil, "Inventory source")
-	exportCmd.Flags().Bool("skip-discovery", false, "Do not auto-discover site.yaml in the current directory")
 }
 
 func runExport(cmd *cobra.Command, args []string) error {
