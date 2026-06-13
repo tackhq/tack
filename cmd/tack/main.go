@@ -142,6 +142,8 @@ func init() {
 	rootCmd.AddCommand(vaultCmd)
 	rootCmd.AddCommand(inventoryCmd)
 	rootCmd.AddCommand(exportCmd)
+
+	validateCmd.Flags().Bool("skip-discovery", false, "Do not auto-discover site.yaml in the current directory")
 }
 
 // runCmd executes a playbook
@@ -173,6 +175,29 @@ func discoverDefaultFile(kind string, names []string) (string, error) {
 	}
 }
 
+// resolvePlaybookRef returns the playbook/role reference to use: the explicit
+// positional argument when present, otherwise the discovered default playbook
+// in the current directory. Discovery is skipped when --skip-discovery is set,
+// in which case a missing argument is an error.
+func resolvePlaybookRef(cmd *cobra.Command, args []string) (string, error) {
+	if len(args) >= 1 {
+		return args[0], nil
+	}
+	if skip, _ := cmd.Flags().GetBool("skip-discovery"); skip {
+		return "", fmt.Errorf("no playbook specified (discovery disabled via --skip-discovery)")
+	}
+	discovered, err := discoverDefaultFile("playbook", defaultPlaybookNames)
+	if err != nil {
+		return "", err
+	}
+	if discovered == "" {
+		return "", fmt.Errorf("no playbook specified and no %s found in current directory",
+			strings.Join(defaultPlaybookNames, "/"))
+	}
+	fmt.Fprintf(os.Stderr, "Using playbook: %s\n", discovered)
+	return discovered, nil
+}
+
 var runCmd = &cobra.Command{
 	Use:   "run [playbook.yaml | role-dir]",
 	Short: "Run a playbook or role",
@@ -181,7 +206,8 @@ var runCmd = &cobra.Command{
 If no playbook argument is given, tack looks for site.yaml (or site.yml)
 in the current directory. If no -i/--inventory is given, tack looks for
 inventory.yaml (or inventory.yml) in the current directory and uses it if
-present. An explicit argument or flag always overrides discovery.
+present. An explicit argument or flag always overrides discovery, and
+--skip-discovery disables it entirely.
 
 If the argument is a directory, it is treated as a role and wrapped in
 a temporary playbook. Connection and host settings come from CLI flags.
@@ -229,7 +255,8 @@ func init() {
 	runCmd.Flags().StringSlice("skip-tags", nil, "Skip tasks with these tags")
 	// Connection override flags
 	addConnectionFlags(runCmd)
-	runCmd.Flags().BoolVar(&autoApprove, "auto-approve", false, "Skip interactive approval prompt (for CI/scripting)")
+	runCmd.Flags().BoolVarP(&autoApprove, "auto-approve", "y", false, "Skip interactive approval prompt (also via TACK_AUTO_APPROVE)")
+	runCmd.Flags().Bool("skip-discovery", false, "Do not auto-discover site.yaml/inventory.yaml in the current directory")
 	runCmd.Flags().IntP("forks", "f", 1, "Number of hosts to execute concurrently")
 
 	// Inventory flags
@@ -247,20 +274,9 @@ func init() {
 
 func runPlaybook(cmd *cobra.Command, args []string) error {
 	// Determine the playbook ref: explicit arg, or discover ./site.yaml.
-	playbookRef := ""
-	if len(args) == 1 {
-		playbookRef = args[0]
-	} else {
-		discovered, derr := discoverDefaultFile("playbook", defaultPlaybookNames)
-		if derr != nil {
-			return derr
-		}
-		if discovered == "" {
-			return fmt.Errorf("no playbook specified and no %s found in current directory",
-				strings.Join(defaultPlaybookNames, "/"))
-		}
-		playbookRef = discovered
-		fmt.Fprintf(os.Stderr, "Using playbook: %s\n", playbookRef)
+	playbookRef, err := resolvePlaybookRef(cmd, args)
+	if err != nil {
+		return err
 	}
 
 	// Resolve playbook source (local, git, s3, http)
@@ -312,7 +328,8 @@ func runPlaybook(cmd *cobra.Command, args []string) error {
 	// Load inventory sources: explicit -i flags, or discover ./inventory.yaml.
 	var inv *inventory.Inventory
 	inventoryPaths, _ := cmd.Flags().GetStringArray("inventory")
-	if len(inventoryPaths) == 0 {
+	skipDiscovery, _ := cmd.Flags().GetBool("skip-discovery")
+	if len(inventoryPaths) == 0 && !skipDiscovery {
 		discovered, derr := discoverDefaultFile("inventory", defaultInventoryNames)
 		if derr != nil {
 			return derr
@@ -345,6 +362,11 @@ func runPlaybook(cmd *cobra.Command, args []string) error {
 	emitter, err := output.NewEmitter(outputMode)
 	if err != nil {
 		return err
+	}
+
+	// Env var fills in when the flag is not set.
+	if envApprove := os.Getenv("TACK_AUTO_APPROVE"); envApprove == "1" || envApprove == "true" || envApprove == "yes" {
+		autoApprove = true
 	}
 
 	// JSON mode implies auto-approve (no interactive prompts on stdout)
@@ -469,15 +491,11 @@ Examples:
 
 func validatePlaybooks(cmd *cobra.Command, args []string) error {
 	if len(args) == 0 {
-		discovered, derr := discoverDefaultFile("playbook", defaultPlaybookNames)
-		if derr != nil {
-			return derr
+		ref, err := resolvePlaybookRef(cmd, args)
+		if err != nil {
+			return err
 		}
-		if discovered == "" {
-			return fmt.Errorf("no playbook specified and no %s found in current directory",
-				strings.Join(defaultPlaybookNames, "/"))
-		}
-		args = []string{discovered}
+		args = []string{ref}
 	}
 
 	var hasErrors bool
@@ -752,20 +770,9 @@ Examples:
 		newFlag, _ := cmd.Flags().GetBool("new")
 		rmFlag, _ := cmd.Flags().GetBool("rm")
 
-		target := ""
-		if len(args) == 1 {
-			target = args[0]
-		} else {
-			discovered, derr := discoverDefaultFile("playbook", defaultPlaybookNames)
-			if derr != nil {
-				return derr
-			}
-			if discovered == "" {
-				return fmt.Errorf("no playbook or role specified and no %s found in current directory",
-					strings.Join(defaultPlaybookNames, "/"))
-			}
-			target = discovered
-			fmt.Fprintf(os.Stderr, "Using playbook: %s\n", target)
+		target, err := resolvePlaybookRef(cmd, args)
+		if err != nil {
+			return err
 		}
 
 		ctx, cancel := signalContext(context.Background())
@@ -788,6 +795,7 @@ func init() {
 	testCmd.Flags().String("image", "ubuntu:24.04", "Docker image to use for the test container")
 	testCmd.Flags().Bool("new", false, "Force a fresh container (remove existing first)")
 	testCmd.Flags().Bool("rm", false, "Remove the container after the test run")
+	testCmd.Flags().Bool("skip-discovery", false, "Do not auto-discover site.yaml in the current directory")
 }
 
 // flagOrEnv returns the flag value if changed, otherwise the environment variable value.

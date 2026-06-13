@@ -53,6 +53,7 @@ func init() {
 	exportCmd.Flags().StringSlice("skip-tags", nil, "Skip tasks with these tags")
 	exportCmd.Flags().String("connection", "", "Connection type for fact gathering (local, ssh, ssm, docker)")
 	exportCmd.Flags().StringArrayP("inventory", "i", nil, "Inventory source")
+	exportCmd.Flags().Bool("skip-discovery", false, "Do not auto-discover site.yaml in the current directory")
 }
 
 func runExport(cmd *cobra.Command, args []string) error {
@@ -85,20 +86,9 @@ func runExport(cmd *cobra.Command, args []string) error {
 	}
 
 	// Determine the playbook ref: explicit arg, or discover ./site.yaml.
-	playbookRef := ""
-	if len(args) == 1 {
-		playbookRef = args[0]
-	} else {
-		discovered, derr := discoverDefaultFile("playbook", defaultPlaybookNames)
-		if derr != nil {
-			return derr
-		}
-		if discovered == "" {
-			return fmt.Errorf("no playbook specified and no %s found in current directory",
-				strings.Join(defaultPlaybookNames, "/"))
-		}
-		playbookRef = discovered
-		fmt.Fprintf(os.Stderr, "Using playbook: %s\n", playbookRef)
+	playbookRef, err := resolvePlaybookRef(cmd, args)
+	if err != nil {
+		return err
 	}
 
 	// Resolve playbook source
