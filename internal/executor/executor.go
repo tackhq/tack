@@ -880,34 +880,33 @@ func (e *Executor) applyHostPlan(ctx context.Context, pctx *PlayContext, stats *
 				if !task.IgnoreErrors {
 					return err
 				}
-				emitter.TaskResult(task.String(), "failed (ignored)", false, err.Error())
+				emitter.TaskResult(task.String(), "failed (ignored)", false, err.Error(), effectiveTags(task, playTags, nil))
 			}
 			continue
 		}
 
+		// Tag filtering (effective tags also drive inline display)
+		eTags := effectiveTags(task, playTags, nil)
+
 		// Handle include directive
 		if task.Include != "" {
-			// Tag filtering for include tasks
-			eTags := effectiveTags(task, playTags, nil)
 			if !shouldRunTask(eTags, e.Tags, e.SkipTags) {
-				emitter.TaskResult(task.String(), "skipped", false, "skipped (tag)")
+				emitter.TaskResult(task.String(), "skipped", false, "skipped (tag)", eTags)
 				stats.Tasks++
 				stats.Skipped++
 				continue
 			}
-			if err := e.runInclude(ctx, pctx, task, stats, nil); err != nil {
+			if err := e.runInclude(ctx, pctx, task, stats, nil, playTags, nil); err != nil {
 				if !task.IgnoreErrors {
 					return err
 				}
-				emitter.TaskResult(task.String(), "failed (ignored)", false, err.Error())
+				emitter.TaskResult(task.String(), "failed (ignored)", false, err.Error(), eTags)
 			}
 			continue
 		}
 
-		// Tag filtering
-		eTags := effectiveTags(task, playTags, nil)
 		if !shouldRunTask(eTags, e.Tags, e.SkipTags) {
-			emitter.TaskResult(task.String(), "skipped", false, "skipped (tag)")
+			emitter.TaskResult(task.String(), "skipped", false, "skipped (tag)", eTags)
 			stats.Tasks++
 			stats.Skipped++
 			continue
@@ -915,13 +914,13 @@ func (e *Executor) applyHostPlan(ctx context.Context, pctx *PlayContext, stats *
 
 		stats.Tasks++
 
-		taskResult, err := e.runTask(ctx, pctx, task)
+		taskResult, err := e.runTask(ctx, pctx, task, eTags)
 		if err != nil {
 			stats.Failed++
 			if !task.IgnoreErrors {
 				return err
 			}
-			emitter.TaskResult(task.String(), "failed (ignored)", false, err.Error())
+			emitter.TaskResult(task.String(), "failed (ignored)", false, err.Error(), eTags)
 			continue
 		}
 
@@ -944,8 +943,9 @@ type TaskResult struct {
 	Error   error
 }
 
-// runTask executes a single task.
-func (e *Executor) runTask(ctx context.Context, pctx *PlayContext, task *playbook.Task) (*TaskResult, error) {
+// runTask executes a single task. eTags is the task's effective tag set, shown
+// inline so users can see what -t/--skip-tags would match.
+func (e *Executor) runTask(ctx context.Context, pctx *PlayContext, task *playbook.Task, eTags []string) (*TaskResult, error) {
 	taskName := task.String()
 
 	// Check 'when' condition
@@ -955,14 +955,14 @@ func (e *Executor) runTask(ctx context.Context, pctx *PlayContext, task *playboo
 			return nil, fmt.Errorf("failed to evaluate 'when' condition: %w", err)
 		}
 		if !shouldRun {
-			pctx.Output.TaskResult(taskName, "skipped", false, "when condition not met")
+			pctx.Output.TaskResult(taskName, "skipped", false, "when condition not met", eTags)
 			return &TaskResult{Status: "skipped"}, nil
 		}
 	}
 
 	// Assert built-in task keyword: evaluate locally, bypass connector/module.
 	if task.IsAssert() {
-		return e.executeAssert(ctx, pctx, task)
+		return e.executeAssert(ctx, pctx, task, eTags)
 	}
 
 	// Resolve loop expression (e.g. "{{ windmill_files }}") to a concrete list
@@ -977,15 +977,16 @@ func (e *Executor) runTask(ctx context.Context, pctx *PlayContext, task *playboo
 
 	// Handle loops
 	if len(task.Loop) > 0 {
-		return e.runTaskLoop(ctx, pctx, task)
+		return e.runTaskLoop(ctx, pctx, task, eTags)
 	}
 
 	// Run single task
-	return e.runSingleTask(ctx, pctx, task)
+	return e.runSingleTask(ctx, pctx, task, eTags)
 }
 
-// runSingleTask executes a task once.
-func (e *Executor) runSingleTask(ctx context.Context, pctx *PlayContext, task *playbook.Task) (*TaskResult, error) {
+// runSingleTask executes a task once. eTags is the task's effective tag set,
+// forwarded to the result line for inline display.
+func (e *Executor) runSingleTask(ctx context.Context, pctx *PlayContext, task *playbook.Task, eTags []string) (*TaskResult, error) {
 	taskName := task.String()
 	pctx.Output.TaskStart(taskName, task.Module)
 
@@ -1004,14 +1005,14 @@ func (e *Executor) runSingleTask(ctx context.Context, pctx *PlayContext, task *p
 	mod := module.Get(task.Module)
 	if mod == nil {
 		err := fmt.Errorf("unknown module: %s", task.Module)
-		pctx.Output.TaskResult(taskName, "failed", false, err.Error())
+		pctx.Output.TaskResult(taskName, "failed", false, err.Error(), eTags)
 		return nil, err
 	}
 
 	// Interpolate variables in params
 	params, err := e.interpolateParams(ctx, task.Params, pctx)
 	if err != nil {
-		pctx.Output.TaskResult(taskName, "failed", false, err.Error())
+		pctx.Output.TaskResult(taskName, "failed", false, err.Error(), eTags)
 		return nil, fmt.Errorf("failed to interpolate parameters: %w", err)
 	}
 
@@ -1030,7 +1031,7 @@ func (e *Executor) runSingleTask(ctx context.Context, pctx *PlayContext, task *p
 
 	// Handle dry run
 	if e.DryRun {
-		pctx.Output.TaskResult(taskName, "skipped (dry run)", false, "")
+		pctx.Output.TaskResult(taskName, "skipped (dry run)", false, "", eTags)
 		return &TaskResult{Status: "skipped"}, nil
 	}
 
@@ -1055,7 +1056,7 @@ func (e *Executor) runSingleTask(ctx context.Context, pctx *PlayContext, task *p
 	}
 
 	if lastErr != nil {
-		pctx.Output.TaskResult(taskName, "failed", false, lastErr.Error())
+		pctx.Output.TaskResult(taskName, "failed", false, lastErr.Error(), eTags)
 		return &TaskResult{Status: "failed", Error: lastErr}, lastErr
 	}
 
@@ -1092,7 +1093,7 @@ func (e *Executor) runSingleTask(ctx context.Context, pctx *PlayContext, task *p
 		status = "changed"
 	}
 
-	pctx.Output.TaskResult(taskName, status, result.Changed, result.Message)
+	pctx.Output.TaskResult(taskName, status, result.Changed, result.Message, eTags)
 
 	return &TaskResult{
 		Status:  status,
@@ -1102,7 +1103,7 @@ func (e *Executor) runSingleTask(ctx context.Context, pctx *PlayContext, task *p
 }
 
 // runTaskLoop executes a task for each item in a loop.
-func (e *Executor) runTaskLoop(ctx context.Context, pctx *PlayContext, task *playbook.Task) (*TaskResult, error) {
+func (e *Executor) runTaskLoop(ctx context.Context, pctx *PlayContext, task *playbook.Task, eTags []string) (*TaskResult, error) {
 	loopVar := task.GetLoopVar()
 	var anyChanged bool
 
@@ -1111,7 +1112,7 @@ func (e *Executor) runTaskLoop(ctx context.Context, pctx *PlayContext, task *pla
 		pctx.Vars[loopVar] = item
 		pctx.Vars["loop_index"] = i
 
-		result, err := e.runSingleTask(ctx, pctx, task)
+		result, err := e.runSingleTask(ctx, pctx, task, eTags)
 		if err != nil {
 			return result, err
 		}
@@ -1146,11 +1147,12 @@ func (e *Executor) runHandlersExpanded(ctx context.Context, pctx *PlayContext, s
 			continue
 		}
 
+		eTags := effectiveTags(handler, pctx.Play.Tags, nil)
+
 		// Handlers ignore --tags but respect --skip-tags
 		if len(e.SkipTags) > 0 {
-			eTags := effectiveTags(handler, pctx.Play.Tags, nil)
 			if !shouldRunTask(eTags, nil, e.SkipTags) {
-				pctx.Output.TaskResult(handler.String(), "skipped", false, "skipped (tag)")
+				pctx.Output.TaskResult(handler.String(), "skipped", false, "skipped (tag)", eTags)
 				stats.Tasks++
 				stats.Skipped++
 				continue
@@ -1159,7 +1161,7 @@ func (e *Executor) runHandlersExpanded(ctx context.Context, pctx *PlayContext, s
 
 		stats.Tasks++
 
-		result, err := e.runSingleTask(ctx, pctx, handler)
+		result, err := e.runSingleTask(ctx, pctx, handler, eTags)
 		if err != nil {
 			stats.Failed++
 			return fmt.Errorf("handler '%s' failed: %w", handler.Name, err)
@@ -1178,7 +1180,7 @@ func (e *Executor) runBlock(ctx context.Context, pctx *PlayContext, task *playbo
 	// Compute block-level effective tags for the block itself
 	blockETags := effectiveTags(task, playTags, inheritedBlockTags)
 	if !shouldRunTask(blockETags, e.Tags, e.SkipTags) {
-		pctx.Output.TaskResult(blockName, "skipped", false, "skipped (tag)")
+		pctx.Output.TaskResult(blockName, "skipped", false, "skipped (tag)", blockETags)
 		stats.Tasks++
 		stats.Skipped++
 		return nil
@@ -1191,7 +1193,7 @@ func (e *Executor) runBlock(ctx context.Context, pctx *PlayContext, task *playbo
 			return fmt.Errorf("failed to evaluate block 'when' condition: %w", err)
 		}
 		if !shouldRun {
-			pctx.Output.TaskResult(blockName, "skipped", false, "when condition not met")
+			pctx.Output.TaskResult(blockName, "skipped", false, "when condition not met", blockETags)
 			stats.Tasks++
 			stats.Skipped++
 			return nil
@@ -1307,29 +1309,29 @@ func (e *Executor) runBlockTask(ctx context.Context, pctx *PlayContext, task *pl
 	// Tag filtering for block child tasks
 	eTags := effectiveTags(task, playTags, blockTags)
 	if !shouldRunTask(eTags, e.Tags, e.SkipTags) {
-		pctx.Output.TaskResult(task.String(), "skipped", false, "skipped (tag)")
+		pctx.Output.TaskResult(task.String(), "skipped", false, "skipped (tag)", eTags)
 		stats.Tasks++
 		stats.Skipped++
 		return nil
 	}
 
 	if task.Include != "" {
-		if err := e.runInclude(ctx, pctx, task, stats, visitedPaths); err != nil {
+		if err := e.runInclude(ctx, pctx, task, stats, visitedPaths, playTags, blockTags); err != nil {
 			if !task.IgnoreErrors {
 				return err
 			}
-			pctx.Output.TaskResult(task.String(), "failed (ignored)", false, err.Error())
+			pctx.Output.TaskResult(task.String(), "failed (ignored)", false, err.Error(), eTags)
 		}
 		return nil
 	}
 
 	stats.Tasks++
-	taskResult, err := e.runTask(ctx, pctx, task)
+	taskResult, err := e.runTask(ctx, pctx, task, eTags)
 	if err != nil {
 		if !task.IgnoreErrors {
 			return err
 		}
-		pctx.Output.TaskResult(task.String(), "failed (ignored)", false, err.Error())
+		pctx.Output.TaskResult(task.String(), "failed (ignored)", false, err.Error(), eTags)
 		return nil
 	}
 	stats.RecordResult(taskResult.Status)
@@ -1341,7 +1343,7 @@ const maxIncludeDepth = 64
 
 // runInclude handles an include/include_tasks directive during the apply phase.
 // visitedPaths tracks the include chain for circular detection.
-func (e *Executor) runInclude(ctx context.Context, pctx *PlayContext, task *playbook.Task, stats *Stats, visitedPaths []string) error {
+func (e *Executor) runInclude(ctx context.Context, pctx *PlayContext, task *playbook.Task, stats *Stats, visitedPaths []string, playTags, blockTags []string) error {
 	taskName := task.String()
 
 	// Check 'when' condition
@@ -1351,7 +1353,7 @@ func (e *Executor) runInclude(ctx context.Context, pctx *PlayContext, task *play
 			return fmt.Errorf("failed to evaluate 'when' condition: %w", err)
 		}
 		if !shouldRun {
-			pctx.Output.TaskResult(taskName, "skipped", false, "when condition not met")
+			pctx.Output.TaskResult(taskName, "skipped", false, "when condition not met", effectiveTags(task, playTags, blockTags))
 			stats.Tasks++
 			stats.Skipped++
 			return nil
@@ -1360,14 +1362,14 @@ func (e *Executor) runInclude(ctx context.Context, pctx *PlayContext, task *play
 
 	// Handle loop on include_tasks
 	if len(task.Loop) > 0 || task.LoopExpr != "" {
-		return e.runIncludeLoop(ctx, pctx, task, stats, visitedPaths)
+		return e.runIncludeLoop(ctx, pctx, task, stats, visitedPaths, playTags, blockTags)
 	}
 
-	return e.runIncludeOnce(ctx, pctx, task, stats, visitedPaths)
+	return e.runIncludeOnce(ctx, pctx, task, stats, visitedPaths, playTags, blockTags)
 }
 
 // runIncludeLoop executes an include directive once per loop iteration.
-func (e *Executor) runIncludeLoop(ctx context.Context, pctx *PlayContext, task *playbook.Task, stats *Stats, visitedPaths []string) error {
+func (e *Executor) runIncludeLoop(ctx context.Context, pctx *PlayContext, task *playbook.Task, stats *Stats, visitedPaths []string, playTags, blockTags []string) error {
 	taskName := task.String()
 
 	// Resolve loop expression if needed
@@ -1391,7 +1393,7 @@ func (e *Executor) runIncludeLoop(ctx context.Context, pctx *PlayContext, task *
 		pctx.Vars[loopVar] = item
 		pctx.Vars["loop_index"] = i
 
-		if err := e.runIncludeOnce(ctx, pctx, task, stats, visitedPaths); err != nil {
+		if err := e.runIncludeOnce(ctx, pctx, task, stats, visitedPaths, playTags, blockTags); err != nil {
 			return err
 		}
 	}
@@ -1405,7 +1407,7 @@ func (e *Executor) runIncludeLoop(ctx context.Context, pctx *PlayContext, task *
 }
 
 // runIncludeOnce executes a single include with vars scoping and circular detection.
-func (e *Executor) runIncludeOnce(ctx context.Context, pctx *PlayContext, task *playbook.Task, stats *Stats, visitedPaths []string) error {
+func (e *Executor) runIncludeOnce(ctx context.Context, pctx *PlayContext, task *playbook.Task, stats *Stats, visitedPaths []string, playTags, blockTags []string) error {
 	taskName := task.String()
 
 	// Interpolate variables in the include path
@@ -1471,7 +1473,7 @@ func (e *Executor) runIncludeOnce(ctx context.Context, pctx *PlayContext, task *
 		return fmt.Errorf("failed to parse included tasks from %q: %w", includeStr, err)
 	}
 
-	pctx.Output.TaskResult(taskName, "ok", false, fmt.Sprintf("included %d tasks from %s", len(includedTasks), includeStr))
+	pctx.Output.TaskResult(taskName, "ok", false, fmt.Sprintf("included %d tasks from %s", len(includedTasks), includeStr), effectiveTags(task, playTags, blockTags))
 
 	// Scope variables from IncludeVars: snapshot, merge, execute, restore
 	var savedVars map[string]any
@@ -1488,30 +1490,33 @@ func (e *Executor) runIncludeOnce(ctx context.Context, pctx *PlayContext, task *
 		}
 	}
 
-	// Execute each included task inline
+	// Execute each included task inline. Included tasks inherit the include's
+	// tag context (play + block tags) for both filtering and display.
 	for _, inclTask := range includedTasks {
+		inclETags := effectiveTags(inclTask, playTags, blockTags)
+
 		// Handle nested includes
 		if inclTask.Include != "" {
-			if err := e.runInclude(ctx, pctx, inclTask, stats, newVisited); err != nil {
+			if err := e.runInclude(ctx, pctx, inclTask, stats, newVisited, playTags, blockTags); err != nil {
 				if !inclTask.IgnoreErrors {
 					e.restoreIncludeVars(pctx, savedVars, injectedKeys)
 					return err
 				}
-				pctx.Output.TaskResult(inclTask.String(), "failed (ignored)", false, err.Error())
+				pctx.Output.TaskResult(inclTask.String(), "failed (ignored)", false, err.Error(), inclETags)
 			}
 			continue
 		}
 
 		stats.Tasks++
 
-		taskResult, err := e.runTask(ctx, pctx, inclTask)
+		taskResult, err := e.runTask(ctx, pctx, inclTask, inclETags)
 		if err != nil {
 			stats.Failed++
 			if !inclTask.IgnoreErrors {
 				e.restoreIncludeVars(pctx, savedVars, injectedKeys)
 				return err
 			}
-			pctx.Output.TaskResult(inclTask.String(), "failed (ignored)", false, err.Error())
+			pctx.Output.TaskResult(inclTask.String(), "failed (ignored)", false, err.Error(), inclETags)
 			continue
 		}
 
@@ -1591,6 +1596,7 @@ func (e *Executor) planTasks(ctx context.Context, pctx *PlayContext, tasks []*pl
 				Module: task.Module,
 				Status: "will_skip",
 				Reason: "skipped (tag)",
+				Tags:   eTags,
 			})
 			if task.Register != "" {
 				registeredNames[task.Register] = true
@@ -1606,6 +1612,7 @@ func (e *Executor) planTasks(ctx context.Context, pctx *PlayContext, tasks []*pl
 				Module: "include_tasks",
 				Status: "will_run",
 				Params: map[string]any{"source": task.Include},
+				Tags:   eTags,
 			}
 			if task.When != "" {
 				if e.conditionReferencesRegistered(task.When, registeredNames) {
@@ -1636,6 +1643,7 @@ func (e *Executor) planTasks(ctx context.Context, pctx *PlayContext, tasks []*pl
 				Name:   task.String(),
 				Module: "assert",
 				Status: "will_run",
+				Tags:   eTags,
 			}
 			if task.When != "" {
 				if e.conditionReferencesRegistered(task.When, registeredNames) {
@@ -1660,6 +1668,7 @@ func (e *Executor) planTasks(ctx context.Context, pctx *PlayContext, tasks []*pl
 			Host:   pctx.Host,
 			Name:   task.String(),
 			Module: task.Module,
+			Tags:   eTags,
 		}
 
 		// Resolve loop expression for plan display
@@ -1823,6 +1832,7 @@ func (e *Executor) planBlock(ctx context.Context, pctx *PlayContext, task *playb
 		Status:    blockStatus,
 		Indent:    indent,
 		IsSection: true,
+		Tags:      blockETags,
 	})
 
 	if blockStatus == "will_skip" {

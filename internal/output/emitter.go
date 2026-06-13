@@ -29,7 +29,10 @@ type Emitter interface {
 	// hold the HostStart line open may treat this as a no-op.
 	HostStartDone(host string)
 	TaskStart(name, moduleName string)
-	TaskResult(name, status string, changed bool, message string)
+	// TaskResult reports a task's outcome. tags is the task's effective tag set
+	// (own + inherited play/role/block tags); emitters render it inline so users
+	// can see what -t/--skip-tags would match. Empty when the task has no tags.
+	TaskResult(name, status string, changed bool, message string, tags []string)
 	// DisplayPlan renders a single-host plan. Used for plays targeting one
 	// host or local connection. Output for the single-host serial flow is
 	// byte-identical to historical behavior.

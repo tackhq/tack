@@ -47,7 +47,7 @@ func TestJSONEmitter_HostAttribution(t *testing.T) {
 
 	j.HostStart("web1", "ssh")
 	j.TaskStart("install nginx", "apt")
-	j.TaskResult("install nginx", "changed", true, "installed")
+	j.TaskResult("install nginx", "changed", true, "installed", nil)
 	j.HostStart("web2", "ssh")
 	j.TaskStart("install nginx", "apt")
 
@@ -155,7 +155,7 @@ func TestJSONEmitter_PlayStart(t *testing.T) {
 func TestJSONEmitter_TaskResult(t *testing.T) {
 	var buf bytes.Buffer
 	j := NewJSONEmitter(&buf, &bytes.Buffer{})
-	j.TaskResult("Install nginx", "changed", true, "installed nginx 1.24")
+	j.TaskResult("Install nginx", "changed", true, "installed nginx 1.24", []string{"web", "deploy"})
 	m := parseJSONLine(t, strings.TrimSpace(buf.String()))
 	if m["type"] != "task_result" {
 		t.Errorf("expected type=task_result, got %v", m["type"])
@@ -165,6 +165,10 @@ func TestJSONEmitter_TaskResult(t *testing.T) {
 	}
 	if m["status"] != "changed" {
 		t.Errorf("expected status=changed, got %v", m["status"])
+	}
+	tags, ok := m["tags"].([]any)
+	if !ok || len(tags) != 2 || tags[0] != "web" || tags[1] != "deploy" {
+		t.Errorf("expected tags=[web deploy], got %v", m["tags"])
 	}
 }
 

@@ -246,7 +246,7 @@ func (n *nullEmitter) HostFactsResult(host string, ok bool, errMsg string)      
 func (n *nullEmitter) HostStartDone(host string)                                   {}
 func (n *nullEmitter) PlayHosts(hosts []string)                                    {}
 func (n *nullEmitter) TaskStart(name, module string)                               {}
-func (n *nullEmitter) TaskResult(name, status string, changed bool, detail string) {}
+func (n *nullEmitter) TaskResult(name, status string, changed bool, detail string, tags []string) {}
 func (n *nullEmitter) DisplayPlan(tasks []output.PlannedTask, dryRun bool)         {}
 func (n *nullEmitter) DisplayMultiHostPlan(tasks []output.PlannedTask, hosts []string, dryRun bool) {
 }

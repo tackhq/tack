@@ -33,7 +33,7 @@ type capturedResult struct {
 }
 
 func (t *testOutputCapture) TaskStart(name, module string) {}
-func (t *testOutputCapture) TaskResult(name, status string, changed bool, detail string) {
+func (t *testOutputCapture) TaskResult(name, status string, changed bool, detail string, tags []string) {
 	t.results = append(t.results, capturedResult{name, status, detail, changed})
 }
 
@@ -87,7 +87,7 @@ func TestIncludeTasksWithVarsScoping(t *testing.T) {
 	}
 
 	stats := &Stats{}
-	err := exec.runInclude(context.Background(), pctx, task, stats, nil)
+	err := exec.runInclude(context.Background(), pctx, task, stats, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("runInclude failed: %v", err)
 	}
@@ -130,7 +130,7 @@ func TestIncludeTasksWithVarsOverride(t *testing.T) {
 	}
 
 	stats := &Stats{}
-	err := exec.runInclude(context.Background(), pctx, task, stats, nil)
+	err := exec.runInclude(context.Background(), pctx, task, stats, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("runInclude failed: %v", err)
 	}
@@ -164,7 +164,7 @@ func TestIncludeTasksWithLoop(t *testing.T) {
 	}
 
 	stats := &Stats{}
-	err := exec.runInclude(context.Background(), pctx, task, stats, nil)
+	err := exec.runInclude(context.Background(), pctx, task, stats, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("runInclude failed: %v", err)
 	}
@@ -208,7 +208,7 @@ func TestNestedIncludes(t *testing.T) {
 	}
 
 	stats := &Stats{}
-	err := exec.runInclude(context.Background(), pctx, task, stats, nil)
+	err := exec.runInclude(context.Background(), pctx, task, stats, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("nested include failed: %v", err)
 	}
@@ -244,7 +244,7 @@ func TestCircularIncludeRuntime(t *testing.T) {
 	}
 
 	stats := &Stats{}
-	err := exec.runInclude(context.Background(), pctx, task, stats, nil)
+	err := exec.runInclude(context.Background(), pctx, task, stats, nil, nil, nil)
 	if err == nil {
 		t.Fatal("expected circular include error, got nil")
 	}
@@ -276,7 +276,7 @@ func TestIncludeTasksWhenConditionSkip(t *testing.T) {
 	}
 
 	stats := &Stats{}
-	err := exec.runInclude(context.Background(), pctx, task, stats, nil)
+	err := exec.runInclude(context.Background(), pctx, task, stats, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("runInclude failed: %v", err)
 	}

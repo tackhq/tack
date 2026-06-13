@@ -46,7 +46,7 @@ func TestAssertPassSingleCondition(t *testing.T) {
 	pctx, _ := pctxForAssert(t, map[string]any{"x": 1})
 	task := &playbook.Task{Assert: &playbook.AssertSpec{That: []string{"x == 1"}}}
 
-	res, err := exec.executeAssert(context.Background(), pctx, task)
+	res, err := exec.executeAssert(context.Background(), pctx, task, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -63,7 +63,7 @@ func TestAssertFailSingleCondition(t *testing.T) {
 	pctx, _ := pctxForAssert(t, map[string]any{"x": 1})
 	task := &playbook.Task{Assert: &playbook.AssertSpec{That: []string{"x == 2"}}}
 
-	res, err := exec.executeAssert(context.Background(), pctx, task)
+	res, err := exec.executeAssert(context.Background(), pctx, task, nil)
 	if err == nil {
 		t.Fatal("expected error on failing assert")
 	}
@@ -80,7 +80,7 @@ func TestAssertListConditionsAllPass(t *testing.T) {
 	pctx, _ := pctxForAssert(t, map[string]any{"x": 1, "y": 2})
 	task := &playbook.Task{Assert: &playbook.AssertSpec{That: []string{"x == 1", "y == 2"}}}
 
-	res, err := exec.executeAssert(context.Background(), pctx, task)
+	res, err := exec.executeAssert(context.Background(), pctx, task, nil)
 	if err != nil || res.Status != "ok" {
 		t.Fatalf("expected pass, got status=%s err=%v", res.Status, err)
 	}
@@ -91,7 +91,7 @@ func TestAssertListMultipleFailures(t *testing.T) {
 	pctx, _ := pctxForAssert(t, map[string]any{"x": 0, "y": 0})
 	task := &playbook.Task{Assert: &playbook.AssertSpec{That: []string{"x == 1", "y == 2"}}}
 
-	_, err := exec.executeAssert(context.Background(), pctx, task)
+	_, err := exec.executeAssert(context.Background(), pctx, task, nil)
 	if err == nil {
 		t.Fatal("expected failure")
 	}
@@ -109,7 +109,7 @@ func TestAssertCustomFailMsg(t *testing.T) {
 		FailMsg: "OS must be Linux",
 	}}
 
-	_, err := exec.executeAssert(context.Background(), pctx, task)
+	_, err := exec.executeAssert(context.Background(), pctx, task, nil)
 	if err == nil || err.Error() != "OS must be Linux" {
 		t.Errorf("expected custom fail_msg, got: %v", err)
 	}
@@ -123,7 +123,7 @@ func TestAssertSuccessMsg(t *testing.T) {
 		SuccessMsg: "preconditions OK",
 	}}
 
-	if _, err := exec.executeAssert(context.Background(), pctx, task); err != nil {
+	if _, err := exec.executeAssert(context.Background(), pctx, task, nil); err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
 	if !strings.Contains(buf.String(), "preconditions OK") {
@@ -139,7 +139,7 @@ func TestAssertQuietModeOnSuccess(t *testing.T) {
 		Quiet: true,
 	}}
 
-	if _, err := exec.executeAssert(context.Background(), pctx, task); err != nil {
+	if _, err := exec.executeAssert(context.Background(), pctx, task, nil); err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
 	// quiet should suppress per-condition listing
@@ -156,7 +156,7 @@ func TestAssertQuietStillEmitsFailure(t *testing.T) {
 		Quiet: true,
 	}}
 
-	_, err := exec.executeAssert(context.Background(), pctx, task)
+	_, err := exec.executeAssert(context.Background(), pctx, task, nil)
 	if err == nil {
 		t.Fatal("expected failure even with quiet")
 	}
@@ -173,7 +173,7 @@ func TestAssertRegisterShapeOnPass(t *testing.T) {
 		Assert:   &playbook.AssertSpec{That: []string{"x == 1", "y == 2"}},
 	}
 
-	if _, err := exec.executeAssert(context.Background(), pctx, task); err != nil {
+	if _, err := exec.executeAssert(context.Background(), pctx, task, nil); err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
 	raw, ok := pctx.Registered["my_assert"].(map[string]any)
@@ -208,7 +208,7 @@ func TestAssertRegisterShapeOnFail(t *testing.T) {
 		Assert:   &playbook.AssertSpec{That: []string{"x == 1", "y == 2"}},
 	}
 
-	_, _ = exec.executeAssert(context.Background(), pctx, task)
+	_, _ = exec.executeAssert(context.Background(), pctx, task, nil)
 	raw := pctx.Registered["my_assert"].(map[string]any)
 	if raw["failed"] != true {
 		t.Errorf("expected failed=true, got %v", raw["failed"])
@@ -227,7 +227,7 @@ func TestAssertMalformedExpression(t *testing.T) {
 	pctx, _ := pctxForAssert(t, map[string]any{})
 	task := &playbook.Task{Assert: &playbook.AssertSpec{That: []string{"x =="}}}
 
-	_, err := exec.executeAssert(context.Background(), pctx, task)
+	_, err := exec.executeAssert(context.Background(), pctx, task, nil)
 	if err == nil {
 		t.Fatal("expected parser error")
 	}
@@ -259,7 +259,7 @@ func TestAssertOperatorParity(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			pctx, _ := pctxForAssert(t, vars)
 			task := &playbook.Task{Assert: &playbook.AssertSpec{That: []string{tc.cond}}}
-			_, err := exec.executeAssert(context.Background(), pctx, task)
+			_, err := exec.executeAssert(context.Background(), pctx, task, nil)
 			if tc.want && err != nil {
 				t.Errorf("expected pass for %q, got: %v", tc.cond, err)
 			}

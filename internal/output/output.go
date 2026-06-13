@@ -106,6 +106,25 @@ func (o *Output) color(c, s string) string {
 	return c + s + colorReset
 }
 
+// formatTags renders a task's effective tags as a "[a,b]" suffix, or "" when
+// there are none.
+func formatTags(tags []string) string {
+	if len(tags) == 0 {
+		return ""
+	}
+	return "[" + strings.Join(tags, ",") + "]"
+}
+
+// tagSuffix returns a leading-space, dimmed tag suffix for inline display, or
+// "" when the task has no tags.
+func (o *Output) tagSuffix(tags []string) string {
+	s := formatTags(tags)
+	if s == "" {
+		return ""
+	}
+	return " " + o.color(colorGray, s)
+}
+
 // PlaybookStart prints the playbook start banner.
 func (o *Output) PlaybookStart(path string) {
 	o.printf("\n%s %s\n", o.color(colorBold, "PLAYBOOK"), path)
@@ -220,16 +239,17 @@ func resolveStatus(status string) statusDisplay {
 
 // TaskResult prints the task result in a single line.
 // Format: [status] module | host | task name
-func (o *Output) TaskResult(name, status string, changed bool, message string) {
+func (o *Output) TaskResult(name, status string, changed bool, message string, tags []string) {
 	sd := resolveStatus(status)
+	suffix := o.tagSuffix(tags)
 
 	if o.spinnerOn() {
 		// Stop the spinner and overwrite its line in place with the final glyph.
 		o.stopSpinner()
-		fmt.Fprintf(o.w, "\r  %s %s\033[K\n", o.color(sd.color, sd.indicator), name)
+		fmt.Fprintf(o.w, "\r  %s %s%s\033[K\n", o.color(sd.color, sd.indicator), name, suffix)
 	} else {
 		// Print compact single line
-		o.printf("  %s %s\n", o.color(sd.color, sd.indicator), name)
+		o.printf("  %s %s%s\n", o.color(sd.color, sd.indicator), name, suffix)
 	}
 
 	// In debug mode, print additional details
@@ -299,6 +319,10 @@ type PlannedTask struct {
 
 	// IsSection marks this entry as a section header (e.g. "BLOCK:", "RESCUE:", "ALWAYS:").
 	IsSection bool
+
+	// Tags is the task's effective tag set (own + inherited play/role/block),
+	// rendered as a dimmed [a,b] suffix so users can see what -t would match.
+	Tags []string
 }
 
 // DisplayPlan renders the plan table showing what tasks will run.
@@ -375,7 +399,7 @@ func (o *Output) DisplayPlan(tasks []PlannedTask, dryRun bool) {
 		if suffix != "" {
 			line += " - " + suffix
 		}
-		o.printf("%s\n", o.color(col, strings.TrimRight(line, " ")))
+		o.printf("%s%s\n", o.color(col, strings.TrimRight(line, " ")), o.tagSuffix(t.Tags))
 
 		// Show task parameters
 		paramIndent := strings.Repeat("  ", t.Indent) + "      "
@@ -612,7 +636,7 @@ func (o *Output) renderMultiHostPlanLine(t PlannedTask, prefix string, colWidth 
 	if suffix != "" {
 		line += " - " + suffix
 	}
-	o.printf("%s\n", o.color(col, strings.TrimRight(line, " ")))
+	o.printf("%s%s\n", o.color(col, strings.TrimRight(line, " ")), o.tagSuffix(t.Tags))
 
 	// Show task parameters
 	for _, paramLine := range formatTaskParams(t.Module, t.Params) {

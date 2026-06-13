@@ -143,7 +143,7 @@ func (o assertOutcome) conditionsPayload() []map[string]any {
 // executeAssert evaluates an assert task's conditions against the play
 // context. It never invokes the connector. A single false condition fails
 // the task, which lets block/rescue/always semantics apply normally.
-func (e *Executor) executeAssert(ctx context.Context, pctx *PlayContext, task *playbook.Task) (*TaskResult, error) {
+func (e *Executor) executeAssert(ctx context.Context, pctx *PlayContext, task *playbook.Task, eTags []string) (*TaskResult, error) {
 	_ = ctx
 	taskName := assertTaskName(task)
 	pctx.Output.TaskStart(taskName, "assert")
@@ -151,7 +151,7 @@ func (e *Executor) executeAssert(ctx context.Context, pctx *PlayContext, task *p
 	spec := task.Assert
 	if spec == nil || len(spec.That) == 0 {
 		err := fmt.Errorf("assert: 'that' is required and must contain at least one condition")
-		pctx.Output.TaskResult(taskName, "failed", false, err.Error())
+		pctx.Output.TaskResult(taskName, "failed", false, err.Error(), eTags)
 		return &TaskResult{Status: "failed", Error: err}, err
 	}
 
@@ -170,14 +170,14 @@ func (e *Executor) executeAssert(ctx context.Context, pctx *PlayContext, task *p
 	}
 
 	if outcome.failed {
-		pctx.Output.TaskResult(taskName, "failed", false, outcome.msg)
+		pctx.Output.TaskResult(taskName, "failed", false, outcome.msg, eTags)
 		// Also print message so users can see why it failed.
 		pctx.Output.Info("%s", outcome.msg)
 		err := fmt.Errorf("%s", outcome.msg)
 		return &TaskResult{Status: "failed", Error: err}, err
 	}
 
-	pctx.Output.TaskResult(taskName, "ok", false, outcome.msg)
+	pctx.Output.TaskResult(taskName, "ok", false, outcome.msg, eTags)
 	if !spec.Quiet {
 		pctx.Output.Info("%s", outcome.msg)
 	} else if spec.SuccessMsg != "" {

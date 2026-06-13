@@ -132,13 +132,14 @@ func (j *JSONEmitter) TaskStart(name, moduleName string) {
 }
 
 // TaskResult emits a task_result event tagged with the current host.
-func (j *JSONEmitter) TaskResult(name, status string, changed bool, message string) {
+func (j *JSONEmitter) TaskResult(name, status string, changed bool, message string, tags []string) {
 	event := map[string]any{
 		"type":    "task_result",
 		"task":    name,
 		"status":  status,
 		"changed": changed,
 		"message": message,
+		"tags":    tags,
 	}
 	if j.currentHost != "" {
 		event["host"] = j.currentHost
@@ -179,6 +180,9 @@ func (j *JSONEmitter) planTaskEvent(t PlannedTask) map[string]any {
 	}
 	if t.Reason != "" {
 		event["reason"] = t.Reason
+	}
+	if len(t.Tags) > 0 {
+		event["tags"] = t.Tags
 	}
 	if t.OldChecksum != "" {
 		event["old_checksum"] = t.OldChecksum

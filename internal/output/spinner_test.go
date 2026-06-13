@@ -15,7 +15,7 @@ func TestTaskResult_NonInteractive(t *testing.T) {
 	o.SetColor(false)
 
 	o.TaskStart("install nginx", "apt") // no-op
-	o.TaskResult("install nginx", "changed", true, "")
+	o.TaskResult("install nginx", "changed", true, "", nil)
 
 	got := buf.String()
 	if want := "  ✓ install nginx\n"; got != want {
@@ -38,7 +38,7 @@ func TestTaskResult_Interactive(t *testing.T) {
 		o.TaskStart("install nginx", "apt")
 		// Let the spinner draw at least one frame.
 		time.Sleep(120 * time.Millisecond)
-		o.TaskResult("install nginx", "changed", true, "")
+		o.TaskResult("install nginx", "changed", true, "", nil)
 		close(done)
 	}()
 

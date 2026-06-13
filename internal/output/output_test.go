@@ -140,7 +140,7 @@ func TestTaskResult(t *testing.T) {
 			o.SetColor(false)
 			o.SetDebug(tt.debug)
 
-			o.TaskResult(tt.taskName, tt.status, false, tt.message)
+			o.TaskResult(tt.taskName, tt.status, false, tt.message, nil)
 
 			output := buf.String()
 			for _, want := range tt.wantIn {
