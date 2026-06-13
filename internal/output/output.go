@@ -14,6 +14,7 @@ import (
 
 	"github.com/tackhq/tack/internal/playbook"
 	"github.com/pmezard/go-difflib/difflib"
+	"golang.org/x/term"
 )
 
 // Colors for terminal output.
@@ -39,19 +40,32 @@ type Stats interface {
 
 // Output handles formatted output.
 type Output struct {
-	w        io.Writer
-	useColor bool
-	debug    bool
-	verbose  bool
-	diff     bool
+	w           io.Writer
+	useColor    bool
+	debug       bool
+	verbose     bool
+	diff        bool
+	interactive bool
+	spin        *spinner
 }
 
-// New creates a new output handler.
+// New creates a new output handler. When w is a terminal, task execution is
+// rendered with a live spinner; otherwise output is plain and line-buffered.
 func New(w io.Writer) *Output {
-	return &Output{
+	o := &Output{
 		w:        w,
 		useColor: true,
 	}
+	if f, ok := w.(*os.File); ok {
+		o.interactive = term.IsTerminal(int(f.Fd()))
+	}
+	return o
+}
+
+// spinnerOn reports whether live spinner animation should be used. Requires an
+// interactive terminal and color output (--no-color implies plain output).
+func (o *Output) spinnerOn() bool {
+	return o.interactive && o.useColor
 }
 
 // SetColor enables or disables color output.
@@ -173,10 +187,12 @@ func (o *Output) PlayHosts(hosts []string) {
 	o.printf("%s %s\n", o.color(colorBold, "HOSTS"), list)
 }
 
-// TaskStart is called when a task begins (no output in compact mode).
+// TaskStart is called when a task begins. In interactive mode it starts a live
+// spinner; otherwise it is a no-op (the result line is printed in TaskResult).
 func (o *Output) TaskStart(name, moduleName string) {
-	// In compact mode, we don't print anything on task start
-	// Output is printed in TaskResult
+	if o.spinnerOn() {
+		o.startSpinner(name)
+	}
 }
 
 // statusDisplay holds the visual representation of a task status.
@@ -207,8 +223,14 @@ func resolveStatus(status string) statusDisplay {
 func (o *Output) TaskResult(name, status string, changed bool, message string) {
 	sd := resolveStatus(status)
 
-	// Print compact single line
-	o.printf("  %s %s\n", o.color(sd.color, sd.indicator), name)
+	if o.spinnerOn() {
+		// Stop the spinner and overwrite its line in place with the final glyph.
+		o.stopSpinner()
+		fmt.Fprintf(o.w, "\r  %s %s\033[K\n", o.color(sd.color, sd.indicator), name)
+	} else {
+		// Print compact single line
+		o.printf("  %s %s\n", o.color(sd.color, sd.indicator), name)
+	}
 
 	// In debug mode, print additional details
 	if o.debug && message != "" {
@@ -244,6 +266,10 @@ func (o *Output) Debug(format string, args ...any) {
 }
 
 func (o *Output) printf(format string, args ...any) {
+	// Clear any in-progress spinner so stray output never collides with a frame.
+	if o.spin != nil {
+		o.stopSpinner()
+	}
 	fmt.Fprintf(o.w, format, args...)
 }
 
