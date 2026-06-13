@@ -17,15 +17,19 @@ import (
 )
 
 var exportCmd = &cobra.Command{
-	Use:   "export <playbook.yaml>",
+	Use:   "export [playbook.yaml]",
 	Short: "Compile a playbook into a standalone bash script",
 	Long: `Export compiles a playbook into a standalone bash script per host,
 resolving variables, templates, conditionals, and loops at export time.
+
+If no playbook argument is given, tack uses site.yaml (or site.yml) in the
+current directory.
 
 The emitted script is human-readable, deterministic, and suitable for
 security audits, air-gapped environments, and debugging.
 
 Examples:
+  tack export --host web01
   tack export setup.yaml --host web01
   tack export setup.yaml --host web01 --output /tmp/web01.sh
   tack export setup.yaml --all-hosts --output /tmp/scripts/
@@ -33,7 +37,7 @@ Examples:
   tack export setup.yaml --host web01 --check-only
   tack export setup.yaml --host web01 -e app_version=2.0
   tack export setup.yaml --host web01 --no-banner-timestamp`,
-	Args: cobra.ExactArgs(1),
+	Args: cobra.MaximumNArgs(1),
 	RunE: runExport,
 }
 
@@ -80,8 +84,25 @@ func runExport(cmd *cobra.Command, args []string) error {
 		extraVars[k] = v
 	}
 
+	// Determine the playbook ref: explicit arg, or discover ./site.yaml.
+	playbookRef := ""
+	if len(args) == 1 {
+		playbookRef = args[0]
+	} else {
+		discovered, derr := discoverDefaultFile("playbook", defaultPlaybookNames)
+		if derr != nil {
+			return derr
+		}
+		if discovered == "" {
+			return fmt.Errorf("no playbook specified and no %s found in current directory",
+				strings.Join(defaultPlaybookNames, "/"))
+		}
+		playbookRef = discovered
+		fmt.Fprintf(os.Stderr, "Using playbook: %s\n", playbookRef)
+	}
+
 	// Resolve playbook source
-	src, err := source.Resolve(args[0])
+	src, err := source.Resolve(playbookRef)
 	if err != nil {
 		return fmt.Errorf("invalid playbook source: %w", err)
 	}

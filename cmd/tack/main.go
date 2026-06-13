@@ -145,10 +145,43 @@ func init() {
 }
 
 // runCmd executes a playbook
+// Default file names searched in the current directory when a playbook or
+// inventory is not given explicitly. Listed in preference order.
+var (
+	defaultPlaybookNames  = []string{"site.yaml", "site.yml"}
+	defaultInventoryNames = []string{"inventory.yaml", "inventory.yml"}
+)
+
+// discoverDefaultFile returns the single existing file among names in the
+// current directory. It returns "" if none exist, and an error if more than
+// one variant exists (ambiguous — caller should tell the user to be explicit).
+func discoverDefaultFile(kind string, names []string) (string, error) {
+	var found []string
+	for _, n := range names {
+		if info, err := os.Stat(n); err == nil && !info.IsDir() {
+			found = append(found, n)
+		}
+	}
+	switch len(found) {
+	case 0:
+		return "", nil
+	case 1:
+		return found[0], nil
+	default:
+		return "", fmt.Errorf("ambiguous default %s: found %s; pass the path explicitly",
+			kind, strings.Join(found, " and "))
+	}
+}
+
 var runCmd = &cobra.Command{
-	Use:   "run <playbook.yaml | role-dir>",
+	Use:   "run [playbook.yaml | role-dir]",
 	Short: "Run a playbook or role",
 	Long: `Execute a playbook or role directory against the specified hosts.
+
+If no playbook argument is given, tack looks for site.yaml (or site.yml)
+in the current directory. If no -i/--inventory is given, tack looks for
+inventory.yaml (or inventory.yml) in the current directory and uses it if
+present. An explicit argument or flag always overrides discovery.
 
 If the argument is a directory, it is treated as a role and wrapped in
 a temporary playbook. Connection and host settings come from CLI flags.
@@ -173,6 +206,7 @@ confirmation before applying. Use --auto-approve to skip the prompt
 (useful for CI/scripting), or --check/--dry-run to show the plan without applying.
 
 Examples:
+  tack run                          # uses ./site.yaml + ./inventory.yaml if present
   tack run setup.yaml
   tack run setup.yaml --auto-approve
   tack run setup.yaml --debug
@@ -183,7 +217,7 @@ Examples:
   tack run setup.yaml -c ssh --hosts=web1,web2
   tack run setup.yaml --ssh-user=deploy --ssh-key=~/.ssh/deploy_key
   TACK_SSH_HOSTS=web1,web2 tack run setup.yaml`,
-	Args: cobra.ExactArgs(1),
+	Args: cobra.MaximumNArgs(1),
 	RunE: runPlaybook,
 }
 
@@ -212,8 +246,25 @@ func init() {
 }
 
 func runPlaybook(cmd *cobra.Command, args []string) error {
+	// Determine the playbook ref: explicit arg, or discover ./site.yaml.
+	playbookRef := ""
+	if len(args) == 1 {
+		playbookRef = args[0]
+	} else {
+		discovered, derr := discoverDefaultFile("playbook", defaultPlaybookNames)
+		if derr != nil {
+			return derr
+		}
+		if discovered == "" {
+			return fmt.Errorf("no playbook specified and no %s found in current directory",
+				strings.Join(defaultPlaybookNames, "/"))
+		}
+		playbookRef = discovered
+		fmt.Fprintf(os.Stderr, "Using playbook: %s\n", playbookRef)
+	}
+
 	// Resolve playbook source (local, git, s3, http)
-	src, err := source.Resolve(args[0])
+	src, err := source.Resolve(playbookRef)
 	if err != nil {
 		return fmt.Errorf("invalid playbook source: %w", err)
 	}
@@ -258,9 +309,20 @@ func runPlaybook(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Load inventory sources if provided
+	// Load inventory sources: explicit -i flags, or discover ./inventory.yaml.
 	var inv *inventory.Inventory
-	if inventoryPaths, _ := cmd.Flags().GetStringArray("inventory"); len(inventoryPaths) > 0 {
+	inventoryPaths, _ := cmd.Flags().GetStringArray("inventory")
+	if len(inventoryPaths) == 0 {
+		discovered, derr := discoverDefaultFile("inventory", defaultInventoryNames)
+		if derr != nil {
+			return derr
+		}
+		if discovered != "" {
+			inventoryPaths = []string{discovered}
+			fmt.Fprintf(os.Stderr, "Using inventory: %s\n", discovered)
+		}
+	}
+	if len(inventoryPaths) > 0 {
 		invTimeout, _ := cmd.Flags().GetInt("inventory-timeout")
 		var inventories []*inventory.Inventory
 		for _, invPath := range inventoryPaths {
@@ -384,9 +446,12 @@ func runPlaybook(cmd *cobra.Command, args []string) error {
 
 // validateCmd validates a playbook without running it
 var validateCmd = &cobra.Command{
-	Use:   "validate <playbook.yaml> [playbook2.yaml ...]",
+	Use:   "validate [playbook.yaml ...]",
 	Short: "Validate one or more playbooks",
 	Long: `Parse and validate playbooks without executing them.
+
+If no playbook argument is given, tack validates site.yaml (or site.yml)
+in the current directory.
 
 This checks for:
   - Valid YAML syntax
@@ -395,13 +460,26 @@ This checks for:
   - Task structure
 
 Examples:
+  tack validate
   tack validate setup.yaml
   tack validate *.yaml`,
-	Args: cobra.MinimumNArgs(1),
+	Args: cobra.ArbitraryArgs,
 	RunE: validatePlaybooks,
 }
 
 func validatePlaybooks(cmd *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		discovered, derr := discoverDefaultFile("playbook", defaultPlaybookNames)
+		if derr != nil {
+			return derr
+		}
+		if discovered == "" {
+			return fmt.Errorf("no playbook specified and no %s found in current directory",
+				strings.Join(defaultPlaybookNames, "/"))
+		}
+		args = []string{discovered}
+	}
+
 	var hasErrors bool
 
 	for _, playbookPath := range args {
@@ -647,7 +725,7 @@ func init() {
 
 // testCmd tests a role or playbook in an ephemeral Docker container.
 var testCmd = &cobra.Command{
-	Use:   "test <playbook.yaml | rolename>",
+	Use:   "test [playbook.yaml | rolename]",
 	Short: "Test a role or playbook in an ephemeral Docker container",
 	Long: `Run a role or playbook in a Docker container and report results.
 
@@ -668,17 +746,33 @@ Examples:
   tack test myrole --new --rm       # fresh + disposable (one-shot)
   tack test playbook.yaml
   tack test myrole --image debian:12`,
-	Args: cobra.ExactArgs(1),
+	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		image, _ := cmd.Flags().GetString("image")
 		newFlag, _ := cmd.Flags().GetBool("new")
 		rmFlag, _ := cmd.Flags().GetBool("rm")
 
+		target := ""
+		if len(args) == 1 {
+			target = args[0]
+		} else {
+			discovered, derr := discoverDefaultFile("playbook", defaultPlaybookNames)
+			if derr != nil {
+				return derr
+			}
+			if discovered == "" {
+				return fmt.Errorf("no playbook or role specified and no %s found in current directory",
+					strings.Join(defaultPlaybookNames, "/"))
+			}
+			target = discovered
+			fmt.Fprintf(os.Stderr, "Using playbook: %s\n", target)
+		}
+
 		ctx, cancel := signalContext(context.Background())
 		defer cancel()
 
 		return testrun.Run(ctx, testrun.Options{
-			Target:  args[0],
+			Target:  target,
 			Image:   image,
 			New:     newFlag,
 			Remove:  rmFlag,
