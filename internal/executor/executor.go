@@ -75,6 +75,10 @@ type Executor struct {
 	// up runs that don't depend on system facts.
 	SkipFacts bool
 
+	// SkipPlan skips the plan preview and approval prompt, applying directly.
+	// Ignored in dry-run/check mode. Set from the --no-plan CLI flag.
+	SkipPlan bool
+
 	// Forks is the number of hosts to execute concurrently.
 	// Values <= 1 mean serial execution (default).
 	Forks int
@@ -140,6 +144,12 @@ func New() *Executor {
 // SkipFacts override (--no-facts).
 func (e *Executor) shouldGatherFacts(play *playbook.Play) bool {
 	return !e.SkipFacts && play.ShouldGatherFacts()
+}
+
+// skipPlanPhase reports whether the plan preview + approval should be skipped
+// in favor of going straight to apply. Never skips in dry-run/check mode.
+func (e *Executor) skipPlanPhase() bool {
+	return e.SkipPlan && !e.DryRun
 }
 
 // RunResult holds the result of a playbook run.
@@ -491,59 +501,63 @@ func (e *Executor) runMultiHostPlay(ctx context.Context, play *playbook.Play, st
 		}
 	}
 
-	// Aggregate plans across hosts into a single slice. Hosts whose pre-pass
-	// failed contribute nothing (their failure is recorded separately).
-	var allPlanned []output.PlannedTask
-	for _, host := range play.Hosts {
-		prep := preps[host]
-		if prep == nil || prep.err != nil {
-			continue
-		}
-		allPlanned = append(allPlanned, prep.planned...)
-	}
-
-	// Render one consolidated plan with per-line host attribution.
-	e.Output.DisplayMultiHostPlan(allPlanned, play.Hosts, e.DryRun)
-
-	// Dry run: evaluate per-host asserts (preserves fail-fast for assert
-	// preconditions), then return.
-	if e.DryRun {
+	// Plan preview + approval. Skipped entirely with --no-plan, which falls
+	// straight through to the apply phase below.
+	if !e.skipPlanPhase() {
+		// Aggregate plans across hosts into a single slice. Hosts whose pre-pass
+		// failed contribute nothing (their failure is recorded separately).
+		var allPlanned []output.PlannedTask
 		for _, host := range play.Hosts {
 			prep := preps[host]
-			if prep == nil || prep.err != nil || prep.pctx == nil {
+			if prep == nil || prep.err != nil {
 				continue
 			}
-			if err := e.evaluateAssertsForDryRun(prep.pctx, prep.allTasks); err != nil {
-				closePrepConnectors(preps)
-				return err
-			}
+			allPlanned = append(allPlanned, prep.planned...)
 		}
-		closePrepConnectors(preps)
-		return nil
-	}
 
-	// No drift detected — nothing to apply. Tally stats and exit.
-	if allNoChange(allPlanned) {
-		for _, t := range allPlanned {
-			stats.Tasks++
-			if t.Status == "will_skip" {
-				stats.Skipped++
-			} else {
-				stats.OK++
+		// Render one consolidated plan with per-line host attribution.
+		e.Output.DisplayMultiHostPlan(allPlanned, play.Hosts, e.DryRun)
+
+		// Dry run: evaluate per-host asserts (preserves fail-fast for assert
+		// preconditions), then return.
+		if e.DryRun {
+			for _, host := range play.Hosts {
+				prep := preps[host]
+				if prep == nil || prep.err != nil || prep.pctx == nil {
+					continue
+				}
+				if err := e.evaluateAssertsForDryRun(prep.pctx, prep.allTasks); err != nil {
+					closePrepConnectors(preps)
+					return err
+				}
 			}
-		}
-		closePrepConnectors(preps)
-		return nil
-	}
-
-	// Single global approval prompt — runs on the main thread, never inside
-	// a per-host goroutine. Closes the latent stdin race in --forks > 1
-	// mode that existed before this change.
-	if !e.AutoApprove {
-		if !e.Output.PromptApproval(formatApprovalTarget(play.Hosts, play.GetConnection())) {
-			e.Output.Info("Apply cancelled.")
 			closePrepConnectors(preps)
 			return nil
+		}
+
+		// No drift detected — nothing to apply. Tally stats and exit.
+		if allNoChange(allPlanned) {
+			for _, t := range allPlanned {
+				stats.Tasks++
+				if t.Status == "will_skip" {
+					stats.Skipped++
+				} else {
+					stats.OK++
+				}
+			}
+			closePrepConnectors(preps)
+			return nil
+		}
+
+		// Single global approval prompt — runs on the main thread, never inside
+		// a per-host goroutine. Closes the latent stdin race in --forks > 1
+		// mode that existed before this change.
+		if !e.AutoApprove {
+			if !e.Output.PromptApproval(formatApprovalTarget(play.Hosts, play.GetConnection())) {
+				e.Output.Info("Apply cancelled.")
+				closePrepConnectors(preps)
+				return nil
+			}
 		}
 	}
 
@@ -809,6 +823,11 @@ func (e *Executor) runPlayOnHost(ctx context.Context, play *playbook.Play, stats
 	// Expand role tasks and handlers
 	allTasks := playbook.ExpandRoleTasks(roles, play.Tasks)
 	allHandlers := playbook.ExpandRoleHandlers(roles, play.Handlers)
+
+	// Skip the plan preview + approval entirely and go straight to apply.
+	if e.skipPlanPhase() {
+		return e.applyHostPlan(ctx, pctx, stats, allTasks, allHandlers)
+	}
 
 	// --- Plan phase ---
 	planned := e.computeHostPlan(ctx, pctx, allTasks, allHandlers)

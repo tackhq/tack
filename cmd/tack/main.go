@@ -222,12 +222,14 @@ Explicit flags (--ssh-user, --ssh-port, etc.) override URI-derived values.
 
 By default, tack shows a plan of what will run and prompts for
 confirmation before applying. Use --auto-approve to skip the prompt
-(useful for CI/scripting), or --check/--dry-run to show the plan without applying.
+(useful for CI/scripting), --no-plan to skip the preview and apply
+immediately, or --check/--dry-run to show the plan without applying.
 
 Examples:
   tack run                          # uses ./site.yaml + ./inventory.yaml if present
   tack run setup.yaml
   tack run setup.yaml --auto-approve
+  tack run setup.yaml --no-plan
   tack run setup.yaml --debug
   tack run setup.yaml --check
   tack run setup.yaml --dry-run
@@ -250,6 +252,7 @@ func init() {
 	addConnectionFlags(runCmd)
 	runCmd.Flags().BoolVarP(&autoApprove, "auto-approve", "y", false, "Skip interactive approval prompt (also via TACK_AUTO_APPROVE)")
 	runCmd.Flags().Bool("no-facts", false, "Skip gathering system facts; speeds up runs that don't depend on facts")
+	runCmd.Flags().Bool("no-plan", false, "Skip the plan preview and approval; apply immediately (ignored with --check/--dry-run)")
 	runCmd.Flags().IntP("forks", "f", 1, "Number of hosts to execute concurrently")
 
 	// Inventory flags
@@ -393,6 +396,7 @@ func runPlaybook(cmd *cobra.Command, args []string) error {
 	exec.Overrides = overrides
 	exec.Inventory = inv
 	exec.SkipFacts, _ = cmd.Flags().GetBool("no-facts")
+	exec.SkipPlan, _ = cmd.Flags().GetBool("no-plan")
 	exec.PromptSudoPassword = func() (string, error) {
 		fmt.Fprint(os.Stderr, "Sudo password: ")
 		passBytes, err := term.ReadPassword(int(syscall.Stdin))

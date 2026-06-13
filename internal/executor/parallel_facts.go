@@ -285,7 +285,9 @@ func (e *Executor) discoverAndPlanParallel(ctx context.Context, play *playbook.P
 			// Compute plan for this host.
 			prep.allTasks = playbook.ExpandRoleTasks(roles, play.Tasks)
 			prep.allHandlers = playbook.ExpandRoleHandlers(roles, play.Handlers)
-			prep.planned = e.computeHostPlan(ctx, pctx, prep.allTasks, prep.allHandlers)
+			if !e.skipPlanPhase() {
+				prep.planned = e.computeHostPlan(ctx, pctx, prep.allTasks, prep.allHandlers)
+			}
 
 			mu.Lock()
 			results[host] = prep

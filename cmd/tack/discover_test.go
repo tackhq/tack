@@ -154,3 +154,9 @@ func TestNoFacts_FlagPresent(t *testing.T) {
 		t.Fatal("expected --no-facts flag on run command")
 	}
 }
+
+func TestNoPlan_FlagPresent(t *testing.T) {
+	if runCmd.Flags().Lookup("no-plan") == nil {
+		t.Fatal("expected --no-plan flag on run command")
+	}
+}
