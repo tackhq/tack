@@ -248,6 +248,7 @@ func init() {
 	runCmd.Flags().StringSliceP("extra-vars", "e", nil, "Extra variables (key=value)")
 	runCmd.Flags().StringSlice("tags", nil, "Only run tasks with these tags")
 	runCmd.Flags().StringSlice("skip-tags", nil, "Skip tasks with these tags")
+	runCmd.Flags().StringSliceP("roles", "r", nil, "Only run tasks from these roles")
 	// Connection override flags
 	addConnectionFlags(runCmd)
 	runCmd.Flags().BoolVarP(&autoApprove, "auto-approve", "y", false, "Skip interactive approval prompt (also via TACK_AUTO_APPROVE)")
@@ -440,6 +441,10 @@ func runPlaybook(cmd *cobra.Command, args []string) error {
 	}
 	if skipTags, _ := cmd.Flags().GetStringSlice("skip-tags"); len(skipTags) > 0 {
 		exec.SkipTags = skipTags
+	}
+	// Wire role filter
+	if roles, _ := cmd.Flags().GetStringSlice("roles"); len(roles) > 0 {
+		exec.Roles = roles
 	}
 
 	exec.Output.SetColor(!noColor)

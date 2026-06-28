@@ -48,9 +48,11 @@ func LoadRole(name, rolesDir string) (*Role, error) {
 	if err != nil {
 		return nil, fmt.Errorf("role '%s': %w", name, err)
 	}
-	// Set RolePath on all tasks so they can find role files
+	// Set RolePath on all tasks so they can find role files, and RoleName so
+	// the --roles CLI filter can match them.
 	for _, task := range tasks {
 		task.RolePath = rolePath
+		task.RoleName = name
 	}
 	role.Tasks = tasks
 
@@ -59,9 +61,10 @@ func LoadRole(name, rolesDir string) (*Role, error) {
 	if err != nil {
 		return nil, fmt.Errorf("role '%s': %w", name, err)
 	}
-	// Set RolePath on all handlers
+	// Set RolePath and RoleName on all handlers
 	for _, handler := range handlers {
 		handler.RolePath = rolePath
+		handler.RoleName = name
 	}
 	role.Handlers = handlers
 

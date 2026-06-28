@@ -294,6 +294,18 @@ tasks:
 
 See [`examples/playbooks/tags-demo.yaml`](examples/playbooks/tags-demo.yaml) for a complete example.
 
+### Filtering by role
+
+When a play pulls in several roles, `-r`/`--roles` restricts the run to a chosen subset by name -- handy for iterating on a single role during development:
+
+```bash
+tack run site.yaml -r web              # only run the 'web' role's tasks
+tack run site.yaml --roles web,db      # OR logic: run the 'web' and 'db' roles
+tack run site.yaml -r web --tags deploy # AND with tags: 'web' role's deploy-tagged tasks
+```
+
+While `--roles` is active, tasks from other roles and play-level tasks are skipped (reported as `skipped (role)`). An unknown role name simply matches nothing rather than erroring. The filter composes with `--tags`/`--skip-tags` -- a task must pass both to run.
+
 ## Inventory
 
 Define hosts, groups, SSH config, and variables in a reusable file:

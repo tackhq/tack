@@ -138,6 +138,11 @@ type Task struct {
 	// RolePath is the path to the role this task belongs to (empty for play tasks).
 	RolePath string `yaml:"-"`
 
+	// RoleName is the name of the role this task was loaded from (empty for
+	// play-level tasks). Used by the --roles CLI filter to restrict a run to a
+	// subset of roles.
+	RoleName string `yaml:"-"`
+
 	// When is a conditional expression; task runs only if true.
 	When string `yaml:"when"`
 

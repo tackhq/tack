@@ -121,6 +121,10 @@ type Executor struct {
 	// SkipTags filters execution to skip tasks matching these tags.
 	SkipTags []string
 
+	// Roles, when non-empty, restricts execution to tasks loaded from the named
+	// roles. Play-level (non-role) tasks are skipped while this filter is active.
+	Roles []string
+
 	// Inventory holds the loaded inventory (optional). When set, group names
 	// in play.Hosts are expanded and per-host vars/SSH config are applied.
 	Inventory *inventory.Inventory
@@ -874,6 +878,16 @@ func (e *Executor) applyHostPlan(ctx context.Context, pctx *PlayContext, stats *
 	play := pctx.Play
 	playTags := play.Tags
 	for _, task := range allTasks {
+		// Role filtering: when --roles is active, only run tasks from the named
+		// roles. Applied at the top level so a filtered-out block is skipped as
+		// a unit (block sub-tasks do not carry a role name).
+		if !shouldRunRole(task.RoleName, e.Roles) {
+			emitter.TaskResult(task.String(), "skipped", false, "skipped (role)", effectiveTags(task, playTags, nil))
+			stats.Tasks++
+			stats.Skipped++
+			continue
+		}
+
 		// Handle block directive
 		if task.IsBlock() {
 			if err := e.runBlock(ctx, pctx, task, stats, nil, playTags, nil); err != nil {
@@ -1587,8 +1601,25 @@ func (e *Executor) planTasks(ctx context.Context, pctx *PlayContext, tasks []*pl
 	}
 
 	for _, task := range tasks {
-		// Tag filtering in plan phase
 		eTags := effectiveTags(task, playTags, inheritedBlockTags)
+
+		// Role filtering in plan phase (mirrors applyHostPlan)
+		if !shouldRunRole(task.RoleName, e.Roles) {
+			plan = append(plan, output.PlannedTask{
+				Host:   pctx.Host,
+				Name:   task.String(),
+				Module: task.Module,
+				Status: "will_skip",
+				Reason: "skipped (role)",
+				Tags:   eTags,
+			})
+			if task.Register != "" {
+				registeredNames[task.Register] = true
+			}
+			continue
+		}
+
+		// Tag filtering in plan phase
 		if !shouldRunTask(eTags, e.Tags, e.SkipTags) {
 			plan = append(plan, output.PlannedTask{
 				Host:   pctx.Host,

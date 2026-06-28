@@ -72,6 +72,26 @@ func shouldRunTask(eTags []string, tags []string, skipTags []string) bool {
 	return false
 }
 
+// shouldRunRole determines whether a task should execute based on the --roles
+// filter. roleName is the name of the role the task was loaded from (empty for
+// play-level tasks). roles is the list of role names passed to --roles.
+//
+// Rules:
+//   - If no roles filter is active (roles empty), all tasks pass.
+//   - Otherwise only tasks whose roleName is in the filter pass; play-level
+//     tasks (empty roleName) and tasks from other roles are skipped.
+func shouldRunRole(roleName string, roles []string) bool {
+	if len(roles) == 0 {
+		return true
+	}
+	for _, r := range roles {
+		if r == roleName {
+			return true
+		}
+	}
+	return false
+}
+
 func toSet(tags []string) map[string]bool {
 	if len(tags) == 0 {
 		return nil
