@@ -93,10 +93,7 @@ func (m *Module) Run(ctx context.Context, conn connector.Connector, params map[s
 	}
 
 	// Build the command with chdir if specified
-	fullCmd := cmd
-	if chdir != "" {
-		fullCmd = fmt.Sprintf("cd %s && %s", connector.ShellQuote(chdir), cmd)
-	}
+	fullCmd := buildFullCmd(cmd, chdir)
 
 	// Execute the command
 	result, err := conn.Execute(ctx, fullCmd)

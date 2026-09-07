@@ -26,7 +26,7 @@ func (m *Module) Emit(params map[string]any, vars map[string]any) (*module.EmitR
 	lines = append(lines, "if command -v dnf >/dev/null 2>&1; then _tack_pkg=dnf; else _tack_pkg=yum; fi")
 
 	if updateCache {
-		lines = append(lines, "${_tack_pkg} makecache -q")
+		lines = append(lines, buildMakecacheCmd("${_tack_pkg}"))
 	}
 
 	if upgrade == "yes" {

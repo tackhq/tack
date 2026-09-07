@@ -338,13 +338,21 @@ func (m *Module) Parameters() []module.ParamDoc {
 
 // ---- Backends ----
 
+// userCrontabCommand builds the base crontab command for a user's crontab.
+// Returns "crontab" for the current user, or "crontab -u <quoted user>" when
+// a user is given. Callers append the operation flag (" -l", " -"). This is the
+// shared leaf shell fragment used by both the Run backends and Emit.
+func userCrontabCommand(user string) string {
+	if user != "" {
+		return fmt.Sprintf("crontab -u %s", connector.ShellQuote(user))
+	}
+	return "crontab"
+}
+
 // readUserCrontab returns the content of a user's crontab.
 // A missing crontab ("no crontab for ...") returns "" with no error.
 func readUserCrontab(ctx context.Context, conn connector.Connector, user string) (string, error) {
-	cmd := "crontab -l"
-	if user != "" {
-		cmd = fmt.Sprintf("crontab -u %s -l", connector.ShellQuote(user))
-	}
+	cmd := userCrontabCommand(user) + " -l"
 	result, err := conn.Execute(ctx, cmd)
 	if err != nil {
 		return "", fmt.Errorf("failed to read crontab: %w", err)
@@ -365,10 +373,7 @@ func writeUserCrontab(ctx context.Context, conn connector.Connector, user, conte
 	// Use a heredoc so the content is fed on stdin through the shell.
 	// The EOF marker is unique enough to avoid collisions.
 	const eof = "__TACK_CRON_EOF__"
-	target := "crontab -"
-	if user != "" {
-		target = fmt.Sprintf("crontab -u %s -", connector.ShellQuote(user))
-	}
+	target := userCrontabCommand(user) + " -"
 	// The heredoc body must end with a newline before the delimiter.
 	body := content
 	if body != "" && !strings.HasSuffix(body, "\n") {

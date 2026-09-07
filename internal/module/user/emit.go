@@ -79,11 +79,7 @@ func (m *Module) Emit(params map[string]any, vars map[string]any) (*module.EmitR
 
 	case "absent":
 		lines = append(lines, fmt.Sprintf("if getent passwd %s >/dev/null 2>&1; then", qname))
-		delCmd := "userdel"
-		if remove {
-			delCmd += " -r"
-		}
-		lines = append(lines, fmt.Sprintf("  %s %s", delCmd, qname))
+		lines = append(lines, "  "+buildUserdelCmd(name, remove))
 		lines = append(lines, "  TACK_CHANGED=$((TACK_CHANGED+1))")
 		lines = append(lines, "fi")
 	}

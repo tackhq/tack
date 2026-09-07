@@ -30,17 +30,17 @@ func (m *Module) Emit(params map[string]any, vars map[string]any) (*module.EmitR
 	switch state {
 	case StateDirectory:
 		lines = append(lines, fmt.Sprintf("if [ ! -d %s ]; then", qpath))
-		lines = append(lines, fmt.Sprintf("  mkdir -p %s", qpath))
+		lines = append(lines, "  "+buildMkdirCmd(path, ""))
 		lines = append(lines, "  TACK_CHANGED=$((TACK_CHANGED+1))")
 		lines = append(lines, "fi")
 
 	case StateTouch:
-		lines = append(lines, fmt.Sprintf("touch %s", qpath))
+		lines = append(lines, buildTouchCmd(path))
 		lines = append(lines, "TACK_CHANGED=$((TACK_CHANGED+1))")
 
 	case StateAbsent:
 		lines = append(lines, fmt.Sprintf("if [ -e %s ]; then", qpath))
-		lines = append(lines, fmt.Sprintf("  rm -rf %s", qpath))
+		lines = append(lines, "  "+buildRemoveCmd(path, true))
 		lines = append(lines, "  TACK_CHANGED=$((TACK_CHANGED+1))")
 		lines = append(lines, "fi")
 
@@ -48,12 +48,12 @@ func (m *Module) Emit(params map[string]any, vars map[string]any) (*module.EmitR
 		qsrc := connector.ShellQuote(src)
 		if force {
 			lines = append(lines, fmt.Sprintf("if [ ! -L %s ] || [ \"$(readlink %s)\" != %s ]; then", qpath, qpath, qsrc))
-			lines = append(lines, fmt.Sprintf("  ln -sf %s %s", qsrc, qpath))
+			lines = append(lines, "  "+buildSymlinkCmd(src, path, true))
 			lines = append(lines, "  TACK_CHANGED=$((TACK_CHANGED+1))")
 			lines = append(lines, "fi")
 		} else {
 			lines = append(lines, fmt.Sprintf("if [ ! -L %s ]; then", qpath))
-			lines = append(lines, fmt.Sprintf("  ln -s %s %s", qsrc, qpath))
+			lines = append(lines, "  "+buildSymlinkCmd(src, path, false))
 			lines = append(lines, "  TACK_CHANGED=$((TACK_CHANGED+1))")
 			lines = append(lines, "fi")
 		}

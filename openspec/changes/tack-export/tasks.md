@@ -72,7 +72,7 @@
 
 ## 11. Module Emitter Implementations
 
-- [ ] 11.1 Refactor each supported module's Run path to call a pure `buildCommand(...)` function — shared between Run and Emit
+- [x] 11.1 Refactor each supported module's Run path to call a pure `buildCommand(...)` function — shared between Run and Emit
 - [x] 11.2 Implement `Emit` on `command` module (with changed_when + creates/removes guards)
 - [x] 11.3 Implement `Emit` on `apt` module (apt-get install/remove with dpkg-check-before)
 - [x] 11.4 Implement `Emit` on `brew` module
@@ -85,7 +85,7 @@
 - [x] 11.11 Implement `Emit` on `systemd` module (systemctl invocations with state/enabled check)
 - [x] 11.12 Implement `Emit` on `user` module (id + useradd/usermod/userdel pattern)
 - [x] 11.13 Implement `Emit` on `group` module (getent + groupadd/groupmod/groupdel)
-- [ ] 11.14 (When merged) Implement `Emit` on `assert` — emit bash guard that evaluates the conditions as shell tests
+- [~] 11.14 (When merged) Implement `Emit` on `assert` — N/A: no `assert` module exists in the codebase yet; implement when that module lands
 - [x] 11.15 (When merged) Implement `Emit` on `cron` module (crontab editor shell logic)
 - [x] 11.16 (When merged) Implement `Emit` on `git` module (clone/fetch/checkout with SHA guard)
 
@@ -107,19 +107,19 @@
 ## 14. Determinism
 
 - [x] 14.1 Sort all map iteration (task params when emitting, env vars, facts, tags)
-- [ ] 14.2 Unit test: same input → byte-identical output (with --no-banner-timestamp)
-- [ ] 14.3 Document determinism guarantees
+- [x] 14.2 Unit test: same input → byte-identical output (with --no-banner-timestamp)
+- [x] 14.3 Document determinism guarantees
 
 ## 15. Tests
 
 - [x] 15.1 Unit tests for each module's Emit (golden files per module + representative param sets)
-- [ ] 15.2 Golden-file tests: full playbook → full script for 3-5 representative playbooks
+- [x] 15.2 Golden-file tests: full playbook → full script for 3-5 representative playbooks
 - [x] 15.3 Unit tests for loop expansion (static list, variable list, runtime list)
 - [x] 15.4 Unit tests for when: pruning (true, false, runtime-var)
 - [x] 15.5 Unit tests for tag filtering applied during export
 - [x] 15.6 Unit tests for UNSUPPORTED emission (async, handlers, block/rescue/always, registry-miss)
-- [ ] 15.7 Unit tests for no_log wrapping and embedded-YAML redaction
-- [ ] 15.8 Unit tests for vault warning banner presence/absence
+- [x] 15.7 Unit tests for no_log wrapping and embedded-YAML redaction
+- [x] 15.8 Unit tests for vault warning banner presence/absence
 - [x] 15.9 Unit tests for `--no-facts` sentinel substitution + banner warning
 - [x] 15.10 Unit tests for deterministic output (diff between two export runs = empty)
 - [x] 15.11 Unit tests for `--check-only` exit codes
@@ -130,16 +130,16 @@
 
 ## 16. Documentation
 
-- [ ] 16.1 Add `docs/export.md` with overview, flag reference, supported/unsupported construct matrix, examples, security notes (vault, secrets in plaintext), air-gapped workflow, audit workflow
-- [ ] 16.2 Update `README.md` with an "Export" section
-- [ ] 16.3 Update `llms.txt` with `tack export` usage
-- [ ] 16.4 Add `examples/export-audit/` showing a playbook + exported script + diff-review workflow
-- [ ] 16.5 Update `ROADMAP.md` — mark `tack export` as implemented, celebrating P2 completion
+- [x] 16.1 Add `docs/export.md` with overview, flag reference, supported/unsupported construct matrix, examples, security notes (vault, secrets in plaintext), air-gapped workflow, audit workflow
+- [x] 16.2 Update `README.md` with an "Export" section
+- [x] 16.3 Update `llms.txt` with `tack export` usage
+- [x] 16.4 Add `examples/export-audit/` showing a playbook + exported script + diff-review workflow
+- [x] 16.5 Update `ROADMAP.md` — mark `tack export` as implemented, celebrating P2 completion
 
 ## 17. Release
 
-- [ ] 17.1 Run `make lint` and `make test`
-- [ ] 17.2 Manual smoke: export the vault example playbook, verify banner contains vault warning, inspect script for secrets
-- [ ] 17.3 Manual smoke: `--all-hosts` against a 3-host inventory; verify per-host variable substitution
-- [ ] 17.4 Manual smoke: run the emitted script in a clean Docker container and verify success
-- [ ] 17.5 Manual smoke: `--check-only` on a playbook with async task returns non-zero with clear report
+- [x] 17.1 Run `make lint` and `make test`
+- [x] 17.2 Manual smoke: export the vault example playbook, verify banner contains vault warning, inspect script for secrets
+- [x] 17.3 Manual smoke: `--all-hosts` against a 3-host inventory; verify per-host variable substitution
+- [x] 17.4 Manual smoke: run the emitted script in a clean Docker container and verify success
+- [x] 17.5 Manual smoke: `--check-only` on a playbook with async task returns non-zero with clear report

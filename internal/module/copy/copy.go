@@ -220,10 +220,22 @@ func (m *Module) Run(ctx context.Context, conn connector.Connector, params map[s
 	}), nil
 }
 
+// buildMkdirCmd builds the shell command that creates a directory (and any
+// missing parents). Shared by Run (createParentDirs / runDirSync) and Emit.
+func buildMkdirCmd(path string) string {
+	return "mkdir -p " + connector.ShellQuote(path)
+}
+
+// buildSymlinkCmd builds the shell command that creates or replaces a symlink
+// pointing at target. Shared by Run (runDirSync) and Emit (emitDir).
+func buildSymlinkCmd(target, dest string) string {
+	return fmt.Sprintf("ln -sfn %s %s", connector.ShellQuote(target), connector.ShellQuote(dest))
+}
+
 // createParentDirs creates parent directories for a path.
 func createParentDirs(ctx context.Context, conn connector.Connector, dest string) error {
 	dir := filepath.Dir(dest)
-	if _, err := connector.Run(ctx, conn, fmt.Sprintf("mkdir -p %s", connector.ShellQuote(dir))); err != nil {
+	if _, err := connector.Run(ctx, conn, buildMkdirCmd(dir)); err != nil {
 		return fmt.Errorf("failed to create parent directories: %w", err)
 	}
 	return nil
@@ -248,7 +260,7 @@ func syncRoot(srcParam, srcPath, dest string) string {
 func runDirSync(ctx context.Context, conn connector.Connector, srcParam, srcPath, dest, mode, dirMode, owner, group string, backup, deleteExtra bool) (*module.Result, error) {
 	remoteRoot := syncRoot(srcParam, srcPath, dest)
 
-	if _, err := connector.Run(ctx, conn, "mkdir -p "+connector.ShellQuote(remoteRoot)); err != nil {
+	if _, err := connector.Run(ctx, conn, buildMkdirCmd(remoteRoot)); err != nil {
 		return nil, fmt.Errorf("failed to create destination directory: %w", err)
 	}
 
@@ -277,7 +289,7 @@ func runDirSync(ctx context.Context, conn connector.Connector, srcParam, srcPath
 
 		switch {
 		case d.IsDir():
-			if _, err := connector.Run(ctx, conn, "mkdir -p "+connector.ShellQuote(remote)); err != nil {
+			if _, err := connector.Run(ctx, conn, buildMkdirCmd(remote)); err != nil {
 				return fmt.Errorf("failed to create directory '%s': %w", remote, err)
 			}
 			attrChanged, err := module.EnsureAttributes(ctx, conn, remote, dirMode, owner, group, false)
@@ -300,7 +312,7 @@ func runDirSync(ctx context.Context, conn connector.Connector, srcParam, srcPath
 			if cur.ExitCode == 0 && strings.TrimSpace(cur.Stdout) == target {
 				break
 			}
-			if _, err := connector.Run(ctx, conn, fmt.Sprintf("ln -sfn %s %s", connector.ShellQuote(target), connector.ShellQuote(remote))); err != nil {
+			if _, err := connector.Run(ctx, conn, buildSymlinkCmd(target, remote)); err != nil {
 				return fmt.Errorf("failed to create symlink '%s': %w", remote, err)
 			}
 			changed++

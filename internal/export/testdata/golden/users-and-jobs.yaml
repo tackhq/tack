@@ -1,0 +1,33 @@
+- name: Manage users and scheduled jobs
+  hosts:
+    - db01
+  gather_facts: false
+  vars:
+    admins:
+      - alice
+      - bob
+  tasks:
+    - name: Ensure ops group
+      group:
+        name: ops
+        state: present
+        system: true
+
+    - name: Create admin users
+      user:
+        name: "{{ item }}"
+        state: present
+        groups: ops
+        shell: /bin/bash
+      loop: "{{ admins }}"
+      tags:
+        - users
+
+    - name: Nightly backup job
+      cron:
+        name: nightly-backup
+        job: /usr/local/bin/backup.sh
+        hour: "2"
+        minute: "30"
+      tags:
+        - cron

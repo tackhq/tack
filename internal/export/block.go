@@ -48,35 +48,13 @@ func renderBlock(name string, tags []string, result *module.EmitResult, noLog bo
 	return sb.String()
 }
 
-// wrapNoLog wraps shell commands to suppress stdout/stderr.
+// wrapNoLog suppresses stdout/stderr for an entire task's shell by wrapping it
+// in a brace group with a single redirect. A brace group (unlike a subshell)
+// runs in the current shell, so variable mutations such as the TACK_CHANGED
+// counter still take effect, and multi-line constructs (heredocs, if/else)
+// stay syntactically valid — a per-line redirect would corrupt them.
 func wrapNoLog(shell string) string {
-	lines := strings.Split(strings.TrimRight(shell, "\n"), "\n")
-	var result []string
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		// Don't wrap comments, empty lines, or variable assignments
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") || isAssignment(trimmed) {
-			result = append(result, line)
-			continue
-		}
-		result = append(result, line+" >/dev/null 2>&1")
-	}
-	return strings.Join(result, "\n")
-}
-
-// isAssignment checks if a line is a simple variable assignment.
-func isAssignment(line string) bool {
-	if idx := strings.Index(line, "="); idx > 0 {
-		before := line[:idx]
-		// Simple var name (letters, digits, underscore)
-		for _, c := range before {
-			if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_') {
-				return false
-			}
-		}
-		return true
-	}
-	return false
+	return "{\n" + strings.TrimRight(shell, "\n") + "\n} >/dev/null 2>&1"
 }
 
 // renderUnsupportedTask renders an unsupported task as a comment block.
@@ -132,7 +110,17 @@ func taskToCommentYAML(task *playbook.Task) string {
 	}
 
 	if task.Params != nil {
-		m["params"] = task.Params
+		if task.NoLog {
+			// Redact all parameter values for no_log tasks; keep keys so the
+			// structure remains visible to auditors without leaking secrets.
+			redacted := make(map[string]any, len(task.Params))
+			for k := range task.Params {
+				redacted[k] = "<redacted: no_log>"
+			}
+			m["params"] = redacted
+		} else {
+			m["params"] = task.Params
+		}
 	}
 
 	data, err := yaml.Marshal(m)

@@ -75,7 +75,7 @@ func (m *Module) Emit(params map[string]any, vars map[string]any) (*module.EmitR
 	lines = append(lines, "  "+cloneCmd)
 
 	if recursive {
-		lines = append(lines, fmt.Sprintf("  %sgit -C %s submodule update --init --recursive", gitSSH, qdest))
+		lines = append(lines, "  "+buildSubmoduleUpdateCmd(gitSSH, dest))
 	}
 	lines = append(lines, "  TACK_CHANGED=$((TACK_CHANGED+1))")
 
@@ -83,20 +83,20 @@ func (m *Module) Emit(params map[string]any, vars map[string]any) (*module.EmitR
 	// Already cloned — fetch and checkout if version specified
 	if version != "" {
 		if force {
-			lines = append(lines, fmt.Sprintf("  %sgit -C %s fetch origin", gitSSH, qdest))
+			lines = append(lines, "  "+buildFetchOriginCmd(gitSSH, dest))
 			lines = append(lines, fmt.Sprintf("  %sgit -C %s reset --hard origin/%s 2>/dev/null || %sgit -C %s checkout --detach %s",
 				gitSSH, qdest, connector.ShellQuote(version), gitSSH, qdest, connector.ShellQuote(version)))
 		} else {
 			lines = append(lines, fmt.Sprintf("  _tack_head=$(%sgit -C %s rev-parse HEAD)", gitSSH, qdest))
 			lines = append(lines, fmt.Sprintf("  _tack_want=$(%sgit -C %s rev-parse %s 2>/dev/null || echo 'unknown')", gitSSH, qdest, connector.ShellQuote(version)))
 			lines = append(lines, "  if [ \"$_tack_head\" != \"$_tack_want\" ]; then")
-			lines = append(lines, fmt.Sprintf("    %sgit -C %s fetch origin", gitSSH, qdest))
+			lines = append(lines, "    "+buildFetchOriginCmd(gitSSH, dest))
 			lines = append(lines, fmt.Sprintf("    %sgit -C %s checkout --detach %s", gitSSH, qdest, connector.ShellQuote(version)))
 			lines = append(lines, "    TACK_CHANGED=$((TACK_CHANGED+1))")
 			lines = append(lines, "  fi")
 		}
 		if recursive {
-			lines = append(lines, fmt.Sprintf("  %sgit -C %s submodule update --init --recursive", gitSSH, qdest))
+			lines = append(lines, "  "+buildSubmoduleUpdateCmd(gitSSH, dest))
 		}
 	}
 	lines = append(lines, "fi")

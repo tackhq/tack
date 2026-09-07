@@ -1,0 +1,35 @@
+- name: Mixed supported and unsupported constructs
+  hosts:
+    - app01
+  gather_facts: false
+  vars:
+    repo_dest: /opt/app
+  tasks:
+    - name: Clone the app repo
+      git:
+        repo: https://example.com/app.git
+        dest: "{{ repo_dest }}"
+        version: main
+      tags:
+        - deploy
+
+    - name: Ensure a config line
+      lineinfile:
+        path: /etc/app.conf
+        line: "mode=production"
+        state: present
+      tags:
+        - config
+
+    - name: Wait for the database (unsupported)
+      wait_for:
+        host: db01
+        port: 5432
+      tags:
+        - deploy
+
+    - name: Run a command
+      command:
+        cmd: /opt/app/bin/migrate
+      tags:
+        - deploy

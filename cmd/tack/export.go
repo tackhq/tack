@@ -12,6 +12,7 @@ import (
 
 	"github.com/tackhq/tack/internal/connector/local"
 	"github.com/tackhq/tack/internal/export"
+	"github.com/tackhq/tack/internal/inventory"
 	"github.com/tackhq/tack/internal/playbook"
 	"github.com/tackhq/tack/internal/source"
 )
@@ -53,6 +54,7 @@ func init() {
 	exportCmd.Flags().StringSlice("skip-tags", nil, "Skip tasks with these tags")
 	exportCmd.Flags().String("connection", "", "Connection type for fact gathering (local, ssh, ssm, docker)")
 	exportCmd.Flags().StringArrayP("inventory", "i", nil, "Inventory source")
+	exportCmd.Flags().String("vault-password-file", "", "Path to file containing vault password (first line used)")
 }
 
 func runExport(cmd *cobra.Command, args []string) error {
@@ -129,8 +131,15 @@ func runExport(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Load inventory: explicit -i flags, or discover ./inventory.yaml. Used both
+	// to resolve --all-hosts and to supply per-host variables.
+	inv, err := loadExportInventory(ctx, cmd)
+	if err != nil {
+		return err
+	}
+
 	// Determine hosts
-	hosts, err := resolveExportHosts(pb, host, allHosts)
+	hosts, err := resolveExportHosts(pb, inv, host, allHosts)
 	if err != nil {
 		return err
 	}
@@ -150,8 +159,13 @@ func runExport(cmd *cobra.Command, args []string) error {
 		SkipTags:          skipTags,
 		ExtraVars:         extraVars,
 		Version:           version,
-		PlaybookPath:      args[0],
+		PlaybookPath:      playbookRef,
 		Timestamp:         timestamp,
+	}
+
+	var hostVars export.HostVars
+	if inv != nil {
+		hostVars = invHostVars{inv: inv}
 	}
 
 	// Compile each play for each host
@@ -173,6 +187,10 @@ func runExport(cmd *cobra.Command, args []string) error {
 			Opts:        opts,
 			Roles:       roles,
 			PlaybookDir: playbookDir,
+			Inventory:   hostVars,
+			// Resolved lazily and cached: only prompts when a play references a
+			// vault_file, and only once across all hosts.
+			ResolveVaultPassword: cachedVaultPassword(cmd),
 		}
 
 		for _, h := range hosts {
@@ -210,19 +228,109 @@ func runExport(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func resolveExportHosts(pb *playbook.Playbook, host string, allHosts bool) ([]string, error) {
+// cachedVaultPassword returns a resolver that acquires the vault password at
+// most once (via the standard env > file > prompt chain) and caches it for the
+// duration of the export run.
+func cachedVaultPassword(cmd *cobra.Command) func() ([]byte, error) {
+	var (
+		pw     []byte
+		err    error
+		called bool
+	)
+	return func() ([]byte, error) {
+		if !called {
+			pw, err = resolveVaultPassword(cmd, false)
+			called = true
+		}
+		return pw, err
+	}
+}
+
+// loadExportInventory loads inventory from explicit -i flags, or discovers a
+// default ./inventory.yaml. Returns nil (no error) when none is configured.
+func loadExportInventory(ctx context.Context, cmd *cobra.Command) (*inventory.Inventory, error) {
+	inventoryPaths, _ := cmd.Flags().GetStringArray("inventory")
+	if len(inventoryPaths) == 0 {
+		discovered, derr := discoverDefaultFile("inventory", defaultInventoryNames)
+		if derr != nil {
+			return nil, derr
+		}
+		if discovered != "" {
+			inventoryPaths = []string{discovered}
+			fmt.Fprintf(os.Stderr, "Using inventory: %s\n", discovered)
+		}
+	}
+	if len(inventoryPaths) == 0 {
+		return nil, nil
+	}
+
+	var inventories []*inventory.Inventory
+	for _, invPath := range inventoryPaths {
+		loaded, loadErr := inventory.LoadWithContext(ctx, invPath)
+		if loadErr != nil {
+			return nil, fmt.Errorf("failed to load inventory %s: %w", invPath, loadErr)
+		}
+		inventories = append(inventories, loaded)
+	}
+	return inventory.MergeInventories(inventories), nil
+}
+
+// invHostVars adapts an *inventory.Inventory to export.HostVars, merging group
+// vars (lower priority) under per-host vars (higher priority).
+type invHostVars struct {
+	inv *inventory.Inventory
+}
+
+func (a invHostVars) HostVars(host string) map[string]any {
+	out := make(map[string]any)
+	// Group vars first (lowest), then per-host vars override them.
+	for _, g := range a.inv.GetHostGroups(host) {
+		for k, v := range g.Vars {
+			out[k] = v
+		}
+	}
+	if entry := a.inv.GetHost(host); entry != nil {
+		for k, v := range entry.Vars {
+			out[k] = v
+		}
+	}
+	return out
+}
+
+// expandExportHost resolves a single playbook host token against the inventory:
+// "all" → every inventory host, a group name → its members, otherwise the token
+// itself. Without an inventory the token is returned verbatim.
+func expandExportHost(inv *inventory.Inventory, token string) []string {
+	if inv == nil {
+		return []string{token}
+	}
+	if token == "all" {
+		if all := inv.AllHosts(); len(all) > 0 {
+			return all
+		}
+		return []string{token}
+	}
+	if members, _, ok := inv.ExpandGroup(token); ok {
+		return members
+	}
+	return []string{token}
+}
+
+func resolveExportHosts(pb *playbook.Playbook, inv *inventory.Inventory, host string, allHosts bool) ([]string, error) {
 	if host != "" {
 		return []string{host}, nil
 	}
 
-	// Collect all hosts from plays
+	// Collect hosts from plays, expanding groups/"all" against the inventory.
 	var hosts []string
 	seen := make(map[string]bool)
 	for _, play := range pb.Plays {
 		for _, h := range play.Hosts {
-			if !seen[h] {
-				seen[h] = true
-				hosts = append(hosts, h)
+			for _, expanded := range expandExportHost(inv, h) {
+				if !seen[expanded] {
+					seen[expanded] = true
+					hosts = append(hosts, expanded)
+				}
 			}
 		}
 	}

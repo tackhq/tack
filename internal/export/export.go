@@ -4,14 +4,25 @@ package export
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/tackhq/tack/internal/connector"
 	"github.com/tackhq/tack/internal/module"
 	"github.com/tackhq/tack/internal/playbook"
+	"github.com/tackhq/tack/internal/vault"
 	"github.com/tackhq/tack/pkg/facts"
+	"gopkg.in/yaml.v3"
 )
+
+// HostVars supplies inventory-derived variables for a host. Implementations
+// return group vars (lower priority) already merged under per-host vars (higher
+// priority); the compiler injects the result as defaults beneath play vars.
+type HostVars interface {
+	HostVars(host string) map[string]any
+}
 
 // Options controls export behavior.
 type Options struct {
@@ -63,11 +74,22 @@ type Compiler struct {
 	Roles       []*playbook.Role
 	PlaybookDir string
 
+	// Inventory, when set, supplies per-host and group variables (injected as
+	// lower-priority defaults, matching runtime precedence).
+	Inventory HostVars
+
+	// ResolveVaultPassword returns the vault password on demand. When nil and a
+	// play references a vault_file, compilation fails with a clear error.
+	ResolveVaultPassword func() ([]byte, error)
+
 	// VaultUsed tracks whether any vault-decrypted values were resolved.
 	VaultUsed bool
 
 	// vars holds the merged variable context for the current host.
 	vars map[string]any
+
+	// vaultKeys holds the top-level variable names sourced from a vault file.
+	vaultKeys map[string]bool
 
 	// facts holds frozen facts for the current host.
 	facts map[string]any
@@ -99,6 +121,7 @@ func (c *Compiler) Compile(ctx context.Context, play *playbook.Play, host string
 
 	// Initialize state
 	c.registered = make(map[string]bool)
+	c.vaultKeys = make(map[string]bool)
 	c.VaultUsed = false
 
 	// Build variable context
@@ -276,7 +299,7 @@ func (c *Compiler) emitTaskBlock(task *playbook.Task, sortedTags []string, resul
 		result.Warnings = append(result.Warnings, fmt.Sprintf("task %q: %s", task.Name, w))
 	}
 
-	return renderBlock(task.Name, sortedTags, emitResult, false)
+	return renderBlock(task.Name, sortedTags, emitResult, task.NoLog)
 }
 
 // buildVars builds the variable context for a host.
@@ -286,6 +309,22 @@ func (c *Compiler) buildVars(play *playbook.Play, host string) error {
 	// Role defaults < role vars < play vars
 	c.vars = playbook.MergeRoleVars(c.Roles, play.Vars)
 
+	// Inventory group/host vars are lower-priority defaults: inject only where a
+	// play var isn't already set (play vars win, matching runtime precedence).
+	if c.Inventory != nil {
+		for k, v := range c.Inventory.HostVars(host) {
+			if _, exists := c.vars[k]; !exists {
+				c.vars[k] = v
+			}
+		}
+	}
+
+	// Vault vars override play/inventory vars (match runtime precedence — a play
+	// default must not silently shadow a same-named secret).
+	if err := c.loadVaultVars(play); err != nil {
+		return err
+	}
+
 	// Extra vars (highest precedence)
 	for k, v := range c.Opts.ExtraVars {
 		c.vars[k] = v
@@ -294,6 +333,54 @@ func (c *Compiler) buildVars(play *playbook.Play, host string) error {
 	// Add env
 	c.vars["env"] = getEnvMap()
 
+	return nil
+}
+
+// loadVaultVars decrypts the play's vault file (if any) and merges its
+// variables, recording their names so vault use can be detected during
+// interpolation.
+func (c *Compiler) loadVaultVars(play *playbook.Play) error {
+	if play.VaultFile == "" {
+		return nil
+	}
+
+	vaultPath := play.VaultFile
+	if !filepath.IsAbs(vaultPath) {
+		vaultPath = filepath.Join(c.PlaybookDir, vaultPath)
+	}
+
+	if c.ResolveVaultPassword == nil {
+		return fmt.Errorf("play references vault_file %q but no vault password source configured", play.VaultFile)
+	}
+	pw, err := c.ResolveVaultPassword()
+	if err != nil {
+		return fmt.Errorf("acquire vault password: %w", err)
+	}
+
+	data, err := os.ReadFile(vaultPath)
+	if err != nil {
+		return fmt.Errorf("read vault file %q: %w", vaultPath, err)
+	}
+
+	plaintext, err := vault.Decrypt(data, pw)
+	if err != nil {
+		return fmt.Errorf("decrypt vault %q: %w", vaultPath, err)
+	}
+	defer func() {
+		for i := range plaintext {
+			plaintext[i] = 0
+		}
+	}()
+
+	var vaultVars map[string]any
+	if err := yaml.Unmarshal(plaintext, &vaultVars); err != nil {
+		return fmt.Errorf("vault file %q contains invalid YAML (check password or file integrity): %w", vaultPath, err)
+	}
+
+	for k, v := range vaultVars {
+		c.vars[k] = v
+		c.vaultKeys[k] = true
+	}
 	return nil
 }
 
@@ -398,7 +485,15 @@ func (c *Compiler) interpolateValue(v any) any {
 }
 
 func (c *Compiler) interpolateString(s string) any {
-	return interpolateWithVars(s, c.vars, c.Opts.NoFacts)
+	return interpolateWithVars(s, c.vars, c.Opts.NoFacts, c.markVaultUse)
+}
+
+// markVaultUse records when a vault-sourced variable is resolved into the
+// output, so the banner can emit its secret-handling warning (Decision 13).
+func (c *Compiler) markVaultUse(rootKey string) {
+	if c.vaultKeys[rootKey] {
+		c.VaultUsed = true
+	}
 }
 
 func getEnvMap() map[string]string {

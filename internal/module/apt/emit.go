@@ -23,26 +23,21 @@ func (m *Module) Emit(params map[string]any, vars map[string]any) (*module.EmitR
 
 	// Update cache
 	if updateCache {
-		lines = append(lines, "DEBIAN_FRONTEND=noninteractive apt-get update -qq")
+		lines = append(lines, aptUpdateCmd)
 	}
 
 	// Upgrade
-	switch upgrade {
-	case "yes", "safe":
-		lines = append(lines, "DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -qq")
-	case "full":
-		lines = append(lines, "DEBIAN_FRONTEND=noninteractive apt-get full-upgrade -y -qq")
-	case "dist":
-		lines = append(lines, "DEBIAN_FRONTEND=noninteractive apt-get dist-upgrade -y -qq")
+	if c := buildUpgradeCmd(upgrade); c != "" {
+		lines = append(lines, c)
 	}
 
 	// Deb file
 	if debFile != "" {
 		if strings.HasPrefix(debFile, "http://") || strings.HasPrefix(debFile, "https://") {
-			lines = append(lines, fmt.Sprintf("curl -fsSL -o /tmp/tack-pkg.deb %s", connector.ShellQuote(debFile)))
-			lines = append(lines, "DEBIAN_FRONTEND=noninteractive dpkg -i /tmp/tack-pkg.deb || apt-get install -f -y -qq")
+			lines = append(lines, buildCurlDownload("/tmp/tack-pkg.deb", connector.ShellQuote(debFile)))
+			lines = append(lines, buildDpkgInstall("/tmp/tack-pkg.deb"))
 		} else {
-			lines = append(lines, fmt.Sprintf("DEBIAN_FRONTEND=noninteractive dpkg -i %s || apt-get install -f -y -qq", connector.ShellQuote(debFile)))
+			lines = append(lines, buildDpkgInstall(connector.ShellQuote(debFile)))
 		}
 	}
 
@@ -64,24 +59,24 @@ func (m *Module) Emit(params map[string]any, vars map[string]any) (*module.EmitR
 			// Check if already installed, install only if needed
 			for _, name := range names {
 				lines = append(lines, fmt.Sprintf("if ! dpkg-query -W -f='${Status}' %s 2>/dev/null | grep -q 'install ok installed'; then", connector.ShellQuote(name)))
-				lines = append(lines, fmt.Sprintf("  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq %s %s", recommends, connector.ShellQuote(name)))
+				lines = append(lines, "  "+buildInstallCmd(recommends, connector.ShellQuote(name)))
 				lines = append(lines, "  TACK_CHANGED=$((TACK_CHANGED+1))")
 				lines = append(lines, "fi")
 			}
 			if state == StateLatest {
-				lines = append(lines, fmt.Sprintf("DEBIAN_FRONTEND=noninteractive apt-get install -y -qq %s %s", recommends, pkgList))
+				lines = append(lines, buildInstallCmd(recommends, pkgList))
 			}
 		case StateAbsent:
 			for _, name := range names {
 				lines = append(lines, fmt.Sprintf("if dpkg-query -W -f='${Status}' %s 2>/dev/null | grep -q 'install ok installed'; then", connector.ShellQuote(name)))
-				lines = append(lines, fmt.Sprintf("  DEBIAN_FRONTEND=noninteractive apt-get remove -y -qq %s", connector.ShellQuote(name)))
+				lines = append(lines, "  "+buildRemoveCmd("remove", connector.ShellQuote(name)))
 				lines = append(lines, "  TACK_CHANGED=$((TACK_CHANGED+1))")
 				lines = append(lines, "fi")
 			}
 		case StatePurged:
 			for _, name := range names {
 				lines = append(lines, fmt.Sprintf("if dpkg-query -W %s 2>/dev/null; then", connector.ShellQuote(name)))
-				lines = append(lines, fmt.Sprintf("  DEBIAN_FRONTEND=noninteractive apt-get purge -y -qq %s", connector.ShellQuote(name)))
+				lines = append(lines, "  "+buildRemoveCmd("purge", connector.ShellQuote(name)))
 				lines = append(lines, "  TACK_CHANGED=$((TACK_CHANGED+1))")
 				lines = append(lines, "fi")
 			}
@@ -90,7 +85,7 @@ func (m *Module) Emit(params map[string]any, vars map[string]any) (*module.EmitR
 
 	// Autoremove
 	if autoremove {
-		lines = append(lines, "DEBIAN_FRONTEND=noninteractive apt-get autoremove -y -qq")
+		lines = append(lines, aptAutoremoveCmd)
 	}
 
 	return &module.EmitResult{

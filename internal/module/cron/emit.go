@@ -37,10 +37,7 @@ func (m *Module) Emit(params map[string]any, vars map[string]any) (*module.EmitR
 	}
 
 	// User crontab mode
-	crontabCmd := "crontab"
-	if user != "" {
-		crontabCmd = fmt.Sprintf("crontab -u %s", connector.ShellQuote(user))
-	}
+	crontabCmd := userCrontabCommand(user)
 
 	// Build the cron entry
 	var entry string

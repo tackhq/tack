@@ -96,7 +96,7 @@ func (m *Module) Run(ctx context.Context, conn connector.Connector, params map[s
 		if !info.Exists {
 			return module.Unchanged("group does not exist"), nil
 		}
-		if _, err := connector.Run(ctx, conn, fmt.Sprintf("groupdel %s", connector.ShellQuote(name))); err != nil {
+		if _, err := connector.Run(ctx, conn, buildGroupdelCmd(name)); err != nil {
 			return nil, fmt.Errorf("groupdel failed: %w", err)
 		}
 		return module.Changed(fmt.Sprintf("group '%s' removed", name)), nil
@@ -124,7 +124,7 @@ func (m *Module) Run(ctx context.Context, conn connector.Connector, params map[s
 
 	// Group exists — check if modification needed
 	if gidParam >= 0 && gidParam != info.GID {
-		cmd := fmt.Sprintf("groupmod -g %d %s", gidParam, connector.ShellQuote(name))
+		cmd := buildGroupmodCmd(gidParam, name)
 		if _, err := connector.Run(ctx, conn, cmd); err != nil {
 			return nil, fmt.Errorf("groupmod failed: %w", err)
 		}

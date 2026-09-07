@@ -13,6 +13,7 @@ import (
 	_ "github.com/tackhq/tack/internal/module/command"
 	_ "github.com/tackhq/tack/internal/module/copy"
 	_ "github.com/tackhq/tack/internal/module/file"
+	_ "github.com/tackhq/tack/internal/module/waitfor"
 )
 
 func TestCompile_BasicTasks(t *testing.T) {
@@ -183,7 +184,7 @@ func TestInterpolation_Recursive(t *testing.T) {
 		"env": map[string]string{"HOME": "/home/user"},
 		"mydir": "{{ env.HOME }}/projects",
 	}
-	result := interpolateWithVars("{{ mydir }}", vars, false)
+	result := interpolateWithVars("{{ mydir }}", vars, false, nil)
 	if result != "/home/user/projects" {
 		t.Errorf("expected /home/user/projects, got %v", result)
 	}
@@ -191,7 +192,7 @@ func TestInterpolation_Recursive(t *testing.T) {
 
 func TestInterpolation_NoFacts(t *testing.T) {
 	vars := map[string]any{}
-	result := interpolateWithVars("{{ facts.os_type }}", vars, true)
+	result := interpolateWithVars("{{ facts.os_type }}", vars, true, nil)
 	if result != factSentinel {
 		t.Errorf("expected sentinel, got %v", result)
 	}

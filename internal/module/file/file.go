@@ -251,14 +251,46 @@ func getFileInfo(ctx context.Context, conn connector.Connector, path string) (*f
 	return info, nil
 }
 
+// buildMkdirCmd builds the shell command that creates a directory (and any
+// missing parents). When mode is non-empty the directory is created with that
+// mode via -m. Shared by Run (createDirectory) and Emit.
+func buildMkdirCmd(path, mode string) string {
+	if mode != "" {
+		return fmt.Sprintf("mkdir -p -m %s %s", mode, connector.ShellQuote(path))
+	}
+	return fmt.Sprintf("mkdir -p %s", connector.ShellQuote(path))
+}
+
+// buildTouchCmd builds the shell command that creates an empty file or updates
+// its timestamp. Shared by Run (touchFile) and Emit.
+func buildTouchCmd(path string) string {
+	return fmt.Sprintf("touch %s", connector.ShellQuote(path))
+}
+
+// buildRemoveCmd builds the shell command that removes a path. Directories are
+// removed recursively (rm -rf); other paths use rm -f. Shared by Run
+// (removePath) and Emit.
+func buildRemoveCmd(path string, isDir bool) string {
+	if isDir {
+		return fmt.Sprintf("rm -rf %s", connector.ShellQuote(path))
+	}
+	return fmt.Sprintf("rm -f %s", connector.ShellQuote(path))
+}
+
+// buildSymlinkCmd builds the shell command that creates a symlink from src to
+// dst. When force is true an existing link is replaced (ln -sf). Shared by Run
+// (ensureSymlink) and Emit.
+func buildSymlinkCmd(src, dst string, force bool) string {
+	flag := "-s"
+	if force {
+		flag = "-sf"
+	}
+	return fmt.Sprintf("ln %s %s %s", flag, connector.ShellQuote(src), connector.ShellQuote(dst))
+}
+
 // createDirectory creates a directory with optional mode.
 func createDirectory(ctx context.Context, conn connector.Connector, path, mode string) error {
-	cmd := fmt.Sprintf("mkdir -p %s", connector.ShellQuote(path))
-	if mode != "" {
-		cmd = fmt.Sprintf("mkdir -p -m %s %s", mode, connector.ShellQuote(path))
-	}
-
-	if _, err := connector.Run(ctx, conn, cmd); err != nil {
+	if _, err := connector.Run(ctx, conn, buildMkdirCmd(path, mode)); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
 	return nil
@@ -266,7 +298,7 @@ func createDirectory(ctx context.Context, conn connector.Connector, path, mode s
 
 // touchFile creates an empty file or updates its timestamp.
 func touchFile(ctx context.Context, conn connector.Connector, path string) error {
-	if _, err := connector.Run(ctx, conn, fmt.Sprintf("touch %s", connector.ShellQuote(path))); err != nil {
+	if _, err := connector.Run(ctx, conn, buildTouchCmd(path)); err != nil {
 		return fmt.Errorf("failed to touch file: %w", err)
 	}
 	return nil
@@ -274,12 +306,7 @@ func touchFile(ctx context.Context, conn connector.Connector, path string) error
 
 // removePath removes a file or directory.
 func removePath(ctx context.Context, conn connector.Connector, path string, isDir bool) error {
-	cmd := fmt.Sprintf("rm -f %s", connector.ShellQuote(path))
-	if isDir {
-		cmd = fmt.Sprintf("rm -rf %s", connector.ShellQuote(path))
-	}
-
-	if _, err := connector.Run(ctx, conn, cmd); err != nil {
+	if _, err := connector.Run(ctx, conn, buildRemoveCmd(path, isDir)); err != nil {
 		return fmt.Errorf("failed to remove path: %w", err)
 	}
 	return nil
@@ -305,7 +332,7 @@ func ensureSymlink(ctx context.Context, conn connector.Connector, src, dst strin
 	}
 
 	// Create symlink
-	if _, err := connector.Run(ctx, conn, fmt.Sprintf("ln -s %s %s", connector.ShellQuote(src), connector.ShellQuote(dst))); err != nil {
+	if _, err := connector.Run(ctx, conn, buildSymlinkCmd(src, dst, false)); err != nil {
 		return false, fmt.Errorf("failed to create symlink: %w", err)
 	}
 

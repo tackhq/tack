@@ -371,6 +371,38 @@ tack inventory --host web1 -i inventory.yaml
 
 See [`examples/dynamic-inventory/`](examples/dynamic-inventory/) for complete samples and [`examples/inventory.yaml`](examples/inventory.yaml) for a static inventory sample.
 
+## Export
+
+`tack export` compiles a playbook into a standalone `bash` script per host,
+resolving variables, templates, conditionals, loops, and tags at export time.
+The result is a human-readable, deterministic artifact suitable for security
+audits, air-gapped hosts, and debugging.
+
+```bash
+# Print a script for one host to stdout
+tack export setup.yaml --host web01
+
+# Write one script per inventory host into a directory
+tack export setup.yaml --all-hosts --out-file ./scripts/
+
+# Validate only; exits non-zero if any construct is unsupported (CI gate)
+tack export setup.yaml --host web01 --check-only
+
+# Byte-identical output for diff-review
+tack export setup.yaml --host web01 --no-banner-timestamp
+```
+
+Each task becomes one commented block under `set -euo pipefail`, with an `EXIT`
+trap that names the failing task. Unsupported constructs (handlers,
+`block`/`rescue`/`always`, async, dynamic includes) are emitted as
+`# UNSUPPORTED` comments rather than silently dropped. Vault-decrypted values
+appear in plaintext and trigger a prominent `SECRET` warning in the banner; the
+output file is written with mode `0600`.
+
+See [Export](docs/export.md) for the full flag reference, construct matrix,
+determinism guarantees, and audit/air-gapped workflows, plus
+[`examples/export-audit/`](examples/export-audit/) for a worked example.
+
 ## Available Modules
 
 | Module | Description |
@@ -418,6 +450,7 @@ tack vault init secrets.yaml      # create encrypted vault file
 | [Modules](docs/modules.md) | All modules with parameters and examples |
 | [Variables & Facts](docs/variables.md) | Interpolation, filters, system/network/EC2 facts |
 | [Connectors](docs/connectors.md) | Local, Docker, SSH, SSM configuration |
+| [Export](docs/export.md) | Compile playbooks to standalone bash scripts for audit/air-gapped use |
 | [Development](docs/development.md) | Building, testing, project structure |
 | [llms.txt](llms.txt) | LLM-optimized reference (for AI code generation) |
 

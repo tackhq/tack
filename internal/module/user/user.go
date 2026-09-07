@@ -177,11 +177,7 @@ func (m *Module) Run(ctx context.Context, conn connector.Connector, params map[s
 		if !info.Exists {
 			return module.Unchanged("user does not exist"), nil
 		}
-		cmd := "userdel"
-		if module.GetBool(params, "remove", false) {
-			cmd += " -r"
-		}
-		cmd += " " + connector.ShellQuote(name)
+		cmd := buildUserdelCmd(name, module.GetBool(params, "remove", false))
 		if _, err := connector.Run(ctx, conn, cmd); err != nil {
 			return nil, fmt.Errorf("userdel failed: %w", err)
 		}

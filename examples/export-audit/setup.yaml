@@ -1,0 +1,64 @@
+# Example playbook for the `tack export` audit workflow.
+#
+# Run `tack export setup.yaml --host web01 --no-facts --no-banner-timestamp`
+# to compile this into the deterministic bash script checked in as web01.sh.
+# See README.md in this directory for the diff-review workflow.
+- name: Provision a web host
+  hosts:
+    - web01
+  gather_facts: false
+  vars:
+    app_user: appsvc
+    doc_root: /var/www/app
+    packages:
+      - nginx
+      - curl
+  tasks:
+    - name: Install web packages
+      apt:
+        name: "{{ packages }}"
+        state: present
+        update_cache: true
+      tags:
+        - packages
+
+    - name: Create the application user
+      user:
+        name: "{{ app_user }}"
+        state: present
+        system: true
+        shell: /usr/sbin/nologin
+      tags:
+        - users
+
+    - name: Create the document root
+      file:
+        path: "{{ doc_root }}"
+        state: directory
+        owner: "{{ app_user }}"
+        mode: "0755"
+      tags:
+        - files
+
+    - name: Drop a landing page
+      copy:
+        dest: "{{ doc_root }}/index.html"
+        content: "<h1>Deployed by tack</h1>\n"
+        mode: "0644"
+      tags:
+        - files
+
+    - name: Enable and start nginx
+      systemd:
+        name: nginx
+        state: started
+        enabled: true
+      tags:
+        - services
+
+    - name: Prune old caches (only on the cache tier)
+      command:
+        cmd: rm -rf /var/cache/app/*
+      when: role == 'cache'
+      tags:
+        - cleanup

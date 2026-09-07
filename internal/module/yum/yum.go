@@ -363,7 +363,7 @@ func getUpdatable(ctx context.Context, conn connector.Connector, pkgMgr string, 
 
 // runMakecache runs yum/dnf makecache.
 func runMakecache(ctx context.Context, conn connector.Connector, pkgMgr string) error {
-	cmd := fmt.Sprintf("%s makecache -q", pkgMgr)
+	cmd := buildMakecacheCmd(pkgMgr)
 	if _, err := connector.Run(ctx, conn, cmd); err != nil {
 		return fmt.Errorf("%s makecache failed: %w", pkgMgr, err)
 	}

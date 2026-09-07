@@ -29,26 +29,26 @@ func (m *Module) Emit(params map[string]any, vars map[string]any) (*module.EmitR
 
 	// Daemon reload
 	if daemonReload {
-		lines = append(lines, "systemctl daemon-reload")
+		lines = append(lines, systemctlDaemonReloadCmd)
 	}
 
 	// State management
 	switch state {
 	case "started":
 		lines = append(lines, fmt.Sprintf("if ! systemctl is-active --quiet %s; then", qunit))
-		lines = append(lines, fmt.Sprintf("  systemctl start %s", qunit))
+		lines = append(lines, "  "+buildSystemctlCmd("start", unit))
 		lines = append(lines, "  TACK_CHANGED=$((TACK_CHANGED+1))")
 		lines = append(lines, "fi")
 	case "stopped":
 		lines = append(lines, fmt.Sprintf("if systemctl is-active --quiet %s; then", qunit))
-		lines = append(lines, fmt.Sprintf("  systemctl stop %s", qunit))
+		lines = append(lines, "  "+buildSystemctlCmd("stop", unit))
 		lines = append(lines, "  TACK_CHANGED=$((TACK_CHANGED+1))")
 		lines = append(lines, "fi")
 	case "restarted":
-		lines = append(lines, fmt.Sprintf("systemctl restart %s", qunit))
+		lines = append(lines, buildSystemctlCmd("restart", unit))
 		lines = append(lines, "TACK_CHANGED=$((TACK_CHANGED+1))")
 	case "reloaded":
-		lines = append(lines, fmt.Sprintf("systemctl reload %s", qunit))
+		lines = append(lines, buildSystemctlCmd("reload", unit))
 		lines = append(lines, "TACK_CHANGED=$((TACK_CHANGED+1))")
 	}
 
@@ -57,12 +57,12 @@ func (m *Module) Emit(params map[string]any, vars map[string]any) (*module.EmitR
 		enabled, _ := enabledRaw.(bool)
 		if enabled {
 			lines = append(lines, fmt.Sprintf("if ! systemctl is-enabled --quiet %s; then", qunit))
-			lines = append(lines, fmt.Sprintf("  systemctl enable %s", qunit))
+			lines = append(lines, "  "+buildSystemctlCmd("enable", unit))
 			lines = append(lines, "  TACK_CHANGED=$((TACK_CHANGED+1))")
 			lines = append(lines, "fi")
 		} else {
 			lines = append(lines, fmt.Sprintf("if systemctl is-enabled --quiet %s; then", qunit))
-			lines = append(lines, fmt.Sprintf("  systemctl disable %s", qunit))
+			lines = append(lines, "  "+buildSystemctlCmd("disable", unit))
 			lines = append(lines, "  TACK_CHANGED=$((TACK_CHANGED+1))")
 			lines = append(lines, "fi")
 		}
@@ -72,10 +72,10 @@ func (m *Module) Emit(params map[string]any, vars map[string]any) (*module.EmitR
 	if maskedRaw, ok := params["masked"]; ok {
 		masked, _ := maskedRaw.(bool)
 		if masked {
-			lines = append(lines, fmt.Sprintf("systemctl mask %s", qunit))
+			lines = append(lines, buildSystemctlCmd("mask", unit))
 			lines = append(lines, "TACK_CHANGED=$((TACK_CHANGED+1))")
 		} else {
-			lines = append(lines, fmt.Sprintf("systemctl unmask %s", qunit))
+			lines = append(lines, buildSystemctlCmd("unmask", unit))
 			lines = append(lines, "TACK_CHANGED=$((TACK_CHANGED+1))")
 		}
 	}

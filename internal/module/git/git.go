@@ -319,7 +319,7 @@ func doFetch(ctx context.Context, conn connector.Connector, c *config, targetSHA
 		unshallow := fmt.Sprintf("%sgit -C %s fetch --unshallow origin", env, dest)
 		if _, err := connector.Run(ctx, conn, unshallow); err != nil {
 			// If the repo wasn't shallow to begin with, retry as a plain fetch.
-			plain := fmt.Sprintf("%sgit -C %s fetch origin", env, dest)
+			plain := buildFetchOriginCmd(env, c.dest)
 			if _, err2 := connector.Run(ctx, conn, plain); err2 != nil {
 				return fmt.Errorf("git fetch failed: %w", err)
 			}
@@ -332,7 +332,7 @@ func doFetch(ctx context.Context, conn connector.Connector, c *config, targetSHA
 	if c.depth > 0 {
 		cmd = fmt.Sprintf("%sgit -C %s fetch --depth=%d origin", env, dest, c.depth)
 	} else {
-		cmd = fmt.Sprintf("%sgit -C %s fetch origin", env, dest)
+		cmd = buildFetchOriginCmd(env, c.dest)
 	}
 	if _, err := connector.Run(ctx, conn, cmd); err != nil {
 		return fmt.Errorf("git fetch failed: %w", err)
@@ -364,7 +364,7 @@ func doReset(ctx context.Context, conn connector.Connector, dest string) error {
 // doSubmodules runs `git submodule update --init --recursive` inside dest.
 func doSubmodules(ctx context.Context, conn connector.Connector, dest, sshCmd string) error {
 	env := envPrefix(sshCmd)
-	cmd := fmt.Sprintf("%sgit -C %s submodule update --init --recursive", env, connector.ShellQuote(dest))
+	cmd := buildSubmoduleUpdateCmd(env, dest)
 	if _, err := connector.Run(ctx, conn, cmd); err != nil {
 		return fmt.Errorf("git submodule update failed: %w", err)
 	}

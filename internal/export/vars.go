@@ -14,13 +14,17 @@ const factSentinel = "__TACK_FACT_NOT_GATHERED__"
 
 // interpolateWithVars resolves {{ var }} references against the given variable map.
 // It resolves recursively up to maxDepth to handle variables that reference other variables.
-func interpolateWithVars(s string, vars map[string]any, noFacts bool) any {
-	return interpolateRecursive(s, vars, noFacts, 0)
+//
+// onResolve, when non-nil, is invoked with the root key of every variable path
+// successfully resolved (including through nested references). Export uses this
+// to detect when a vault-sourced value flows into the output.
+func interpolateWithVars(s string, vars map[string]any, noFacts bool, onResolve func(rootKey string)) any {
+	return interpolateRecursive(s, vars, noFacts, 0, onResolve)
 }
 
 const maxInterpolateDepth = 10
 
-func interpolateRecursive(s string, vars map[string]any, noFacts bool, depth int) any {
+func interpolateRecursive(s string, vars map[string]any, noFacts bool, depth int, onResolve func(string)) any {
 	if depth >= maxInterpolateDepth {
 		return s
 	}
@@ -32,11 +36,11 @@ func interpolateRecursive(s string, vars map[string]any, noFacts bool, depth int
 		match := varRe.FindStringSubmatch(trimmed)
 		if match != nil && strings.TrimSpace(match[0]) == trimmed {
 			expr := strings.TrimSpace(match[1])
-			val := resolveExpr(expr, vars, noFacts)
+			val := resolveExpr(expr, vars, noFacts, onResolve)
 			if val != nil {
 				// Recurse if result is a string that still has {{ }}
 				if strVal, ok := val.(string); ok && varRe.MatchString(strVal) {
-					return interpolateRecursive(strVal, vars, noFacts, depth+1)
+					return interpolateRecursive(strVal, vars, noFacts, depth+1, onResolve)
 				}
 				return val
 			}
@@ -50,7 +54,7 @@ func interpolateRecursive(s string, vars map[string]any, noFacts bool, depth int
 			return match
 		}
 		expr := strings.TrimSpace(inner[1])
-		val := resolveExpr(expr, vars, noFacts)
+		val := resolveExpr(expr, vars, noFacts, onResolve)
 		if val == nil {
 			return match // leave unresolved
 		}
@@ -59,19 +63,24 @@ func interpolateRecursive(s string, vars map[string]any, noFacts bool, depth int
 
 	// Recurse if result still contains {{ }}
 	if varRe.MatchString(result) && result != s {
-		return interpolateRecursive(result, vars, noFacts, depth+1)
+		return interpolateRecursive(result, vars, noFacts, depth+1, onResolve)
 	}
 
 	return result
 }
 
 // resolveExpr resolves a variable expression like "facts.os_type" or "var | default('x')".
-func resolveExpr(expr string, vars map[string]any, noFacts bool) any {
+func resolveExpr(expr string, vars map[string]any, noFacts bool, onResolve func(string)) any {
 	// Handle filters (e.g., "var | default('x')")
 	parts := strings.SplitN(expr, "|", 2)
 	varName := strings.TrimSpace(parts[0])
 
 	val := resolveVarPath(varName, vars)
+	if val != nil && onResolve != nil {
+		if root, _, _ := strings.Cut(varName, "."); root != "" {
+			onResolve(root)
+		}
+	}
 
 	// Apply filters
 	if len(parts) > 1 {

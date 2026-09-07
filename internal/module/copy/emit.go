@@ -73,7 +73,7 @@ func emitFile(dest string, fileContent []byte, mode, owner, group string, backup
 
 	// Create parent directories
 	if createDirs {
-		lines = append(lines, fmt.Sprintf("mkdir -p %s", connector.ShellQuote(destDir(dest))))
+		lines = append(lines, buildMkdirCmd(destDir(dest)))
 	}
 
 	// Write content via heredoc or base64
@@ -110,7 +110,7 @@ func emitFile(dest string, fileContent []byte, mode, owner, group string, backup
 func emitDir(srcParam, srcPath, dest, mode, dirMode, owner, group string, backup, deleteExtra bool) (*module.EmitResult, error) {
 	remoteRoot := syncRoot(srcParam, srcPath, dest)
 
-	lines := []string{"mkdir -p " + connector.ShellQuote(remoteRoot)}
+	lines := []string{buildMkdirCmd(remoteRoot)}
 	lines = append(lines, attrLines(remoteRoot, dirMode, owner, group)...)
 	var warnings []string
 
@@ -129,7 +129,7 @@ func emitDir(srcParam, srcPath, dest, mode, dirMode, owner, group string, backup
 
 		switch {
 		case d.IsDir():
-			lines = append(lines, "mkdir -p "+connector.ShellQuote(remote))
+			lines = append(lines, buildMkdirCmd(remote))
 			lines = append(lines, attrLines(remote, dirMode, owner, group)...)
 
 		case d.Type()&fs.ModeSymlink != 0:
@@ -137,7 +137,7 @@ func emitDir(srcParam, srcPath, dest, mode, dirMode, owner, group string, backup
 			if err != nil {
 				return fmt.Errorf("read symlink %q: %w", p, err)
 			}
-			lines = append(lines, fmt.Sprintf("ln -sfn %s %s", connector.ShellQuote(target), connector.ShellQuote(remote)))
+			lines = append(lines, buildSymlinkCmd(target, remote))
 
 		case d.Type().IsRegular():
 			data, err := os.ReadFile(p)

@@ -315,14 +315,14 @@ func checkSystemd(ctx context.Context, conn connector.Connector) error {
 }
 
 func runDaemonReload(ctx context.Context, conn connector.Connector) error {
-	if _, err := connector.Run(ctx, conn, "systemctl daemon-reload"); err != nil {
+	if _, err := connector.Run(ctx, conn, systemctlDaemonReloadCmd); err != nil {
 		return fmt.Errorf("daemon-reload failed: %w", err)
 	}
 	return nil
 }
 
 func runSystemctl(ctx context.Context, conn connector.Connector, action, unit string) error {
-	cmd := fmt.Sprintf("systemctl %s %s", action, connector.ShellQuote(unit))
+	cmd := buildSystemctlCmd(action, unit)
 	if _, err := connector.Run(ctx, conn, cmd); err != nil {
 		return fmt.Errorf("systemctl %s %s failed: %w", action, unit, err)
 	}

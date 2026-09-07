@@ -31,10 +31,7 @@ func (m *Module) Emit(params map[string]any, vars map[string]any) (*module.EmitR
 	}
 
 	// Build the command
-	fullCmd := cmd
-	if chdir != "" {
-		fullCmd = fmt.Sprintf("cd %s && %s", connector.ShellQuote(chdir), cmd)
-	}
+	fullCmd := buildFullCmd(cmd, chdir)
 
 	// Change detection
 	if changedWhen != "" {

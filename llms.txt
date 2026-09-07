@@ -816,6 +816,7 @@ rebuilds on every run. Requires a build toolchain on the target.
 | `tack modules`         | List available modules                       |
 | `tack module <name>`   | Show module documentation                    |
 | `tack test <target>`   | Test in ephemeral Docker container           |
+| `tack export <file>`   | Compile a playbook to a standalone bash script |
 | `tack scaffold <name>` | Generate sample role directory structure      |
 | `tack generate`        | Capture live system state as a playbook      |
 | `tack vault init <f>`  | Create new encrypted vault file              |
@@ -881,6 +882,32 @@ Vault password resolution: `TACK_VAULT_PASSWORD` env > `--vault-password-file` >
 | --image |string  | "ubuntu:24.04" | Docker image for testing       |
 | --new   | bool   | false          | Force fresh container          |
 | --rm    | bool   | false          | Remove container after test    |
+
+### Export flags
+
+| Flag                  | Short | Type   | Default | Description                                        |
+|-----------------------|-------|--------|---------|----------------------------------------------------|
+| --host                |       | string | ""      | Target a single host                               |
+| --all-hosts           |       | bool   | false   | One script per inventory host (requires --out-file)|
+| --out-file            | -o    | string | ""      | Output file (--host) or directory (--all-hosts); stdout if unset |
+| --no-facts            |       | bool   | false   | Skip fact gathering; fact refs become sentinels    |
+| --check-only          |       | bool   | false   | Validate only; non-zero exit if unsupported found  |
+| --no-banner-timestamp |       | bool   | false   | Omit timestamp for byte-identical output           |
+| --extra-vars          | -e    | string | ""      | Extra variables (key=value, repeatable)            |
+| --tags                |       | string | ""      | Only export tasks with these tags                  |
+| --skip-tags           |       | string | ""      | Skip tasks with these tags                         |
+| --connection          |       | string | ""      | Connection type for fact gathering                 |
+| --inventory           | -i    | string | ""      | Inventory source (repeatable)                      |
+| --vault-password-file |       | string | ""      | File whose first line is the vault password        |
+
+`tack export` resolves variables, templates, `when:`, loops, and tags at export
+time and emits one `bash` script per host under `set -euo pipefail`. Supported
+modules: command, apt, brew, yum, file, copy, template, lineinfile, blockinfile,
+systemd, user, group, cron, git. Unsupported constructs (handlers,
+block/rescue/always, async, dynamic includes, register-with-runtime-use) are
+emitted as `# UNSUPPORTED` comments. Output is deterministic (sorted maps, no
+randomness); `--no-banner-timestamp` makes it byte-identical across runs. Vault
+values appear in plaintext with a SECRET warning banner; files are mode 0600.
 
 ### Generate flags
 

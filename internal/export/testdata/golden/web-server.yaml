@@ -1,0 +1,49 @@
+- name: Provision a web server
+  hosts:
+    - web01
+  gather_facts: false
+  vars:
+    app_user: appsvc
+    doc_root: /var/www/app
+    packages:
+      - nginx
+      - curl
+  tasks:
+    - name: Install web packages
+      apt:
+        name: "{{ packages }}"
+        state: present
+        update_cache: true
+      tags:
+        - packages
+
+    - name: Create the document root
+      file:
+        path: "{{ doc_root }}"
+        state: directory
+        mode: "0755"
+      tags:
+        - files
+
+    - name: Drop a landing page
+      copy:
+        dest: "{{ doc_root }}/index.html"
+        content: "<h1>Deployed by tack</h1>\n"
+        mode: "0644"
+      tags:
+        - files
+
+    - name: Enable and start nginx
+      systemd:
+        name: nginx
+        state: started
+        enabled: true
+      tags:
+        - services
+
+    - name: Warm the cache (cache tier only)
+      command:
+        cmd: echo warm
+      when: role == 'cache'
+      tags:
+        - cleanup

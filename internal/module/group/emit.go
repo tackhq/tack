@@ -39,7 +39,7 @@ func (m *Module) Emit(params map[string]any, vars map[string]any) (*module.EmitR
 		if gid != 0 {
 			lines = append(lines, fmt.Sprintf("  _tack_gid=$(getent group %s | cut -d: -f3)", qname))
 			lines = append(lines, fmt.Sprintf("  if [ \"$_tack_gid\" != \"%d\" ]; then", gid))
-			lines = append(lines, fmt.Sprintf("    groupmod -g %d %s", gid, qname))
+			lines = append(lines, "    "+buildGroupmodCmd(gid, name))
 			lines = append(lines, "    TACK_CHANGED=$((TACK_CHANGED+1))")
 			lines = append(lines, "  fi")
 		}
@@ -47,7 +47,7 @@ func (m *Module) Emit(params map[string]any, vars map[string]any) (*module.EmitR
 
 	case "absent":
 		lines = append(lines, fmt.Sprintf("if getent group %s >/dev/null 2>&1; then", qname))
-		lines = append(lines, fmt.Sprintf("  groupdel %s", qname))
+		lines = append(lines, "  "+buildGroupdelCmd(name))
 		lines = append(lines, "  TACK_CHANGED=$((TACK_CHANGED+1))")
 		lines = append(lines, "fi")
 	}
