@@ -1421,7 +1421,7 @@ func (e *Executor) runSingleTask(ctx context.Context, pctx *PlayContext, task *p
 		}
 		// until: retry until the condition holds against the result.
 		d, c, msg := taskResultFields(result, nil)
-		ok, cerr := e.evaluateResultCondition(task.Until, pctx, resultEvalVars(d, c, msg))
+		ok, cerr := e.evaluateResultCondition(task.Until, pctx, resultEvalVars(task.Register, d, c, msg))
 		if cerr != nil {
 			lastErr = cerr
 			break
@@ -1441,7 +1441,7 @@ func (e *Executor) runSingleTask(ctx context.Context, pctx *PlayContext, task *p
 	// Variables exposed to changed_when / failed_when expressions: the hoisted
 	// result data keys (e.g. exit_code, stdout), plus changed/message and a
 	// nested `result` map for dotted access.
-	evalVars := resultEvalVars(data, changed, message)
+	evalVars := resultEvalVars(task.Register, data, changed, message)
 
 	// failed_when: when set, the task's failure is determined solely by the
 	// expression (Ansible semantics), overriding a module error or success.
@@ -1521,15 +1521,26 @@ func (e *Executor) runSingleTask(ctx context.Context, pctx *PlayContext, task *p
 
 // resultEvalVars builds the variable set exposed to changed_when / failed_when
 // / until expressions: the hoisted result data keys plus changed/message and a
-// nested `result` map for dotted access.
-func resultEvalVars(data map[string]any, changed bool, message string) map[string]any {
-	ev := make(map[string]any, len(data)+3)
+// nested `result` map for dotted access. When the task has a `register` name,
+// the result is also exposed under that name (e.g. `failed_when: out.exit_code
+// != 0`), matching Ansible; the real registration happens after evaluation.
+func resultEvalVars(register string, data map[string]any, changed bool, message string) map[string]any {
+	ev := make(map[string]any, len(data)+4)
 	for k, v := range data {
 		ev[k] = v
 	}
 	ev["changed"] = changed
 	ev["message"] = message
 	ev["result"] = map[string]any{"changed": changed, "message": message, "data": data}
+	if register != "" {
+		reg := map[string]any{"changed": changed, "message": message, "data": data}
+		for k, v := range data {
+			if _, reserved := reg[k]; !reserved {
+				reg[k] = v
+			}
+		}
+		ev[register] = reg
+	}
 	return ev
 }
 

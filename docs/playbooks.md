@@ -85,6 +85,15 @@ tasks:
 | `changed_when` | string | Override when task reports changed |
 | `failed_when` | string | Override when task reports failed |
 
+`changed_when`, `failed_when` and `until` are evaluated against the task result. Result fields (e.g. `exit_code`, `stdout`, `stderr`) are available bare, and also under the task's own `register` name:
+
+```yaml
+- command:
+    cmd: check-something
+  register: out
+  failed_when: out.exit_code > 5   # same as: exit_code > 5
+```
+
 ## Conditionals (when)
 
 Tasks can be conditionally executed using `when`:

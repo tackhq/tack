@@ -149,3 +149,57 @@ func TestFailedWhen_ExpressionForcesFailure(t *testing.T) {
 		t.Errorf("expected failed status, got %s", res.Status)
 	}
 }
+
+// failed_when / changed_when may reference the task's own register name
+// (Ansible style), not just the bare hoisted keys.
+func TestFailedWhen_RegisterScopedExitCode(t *testing.T) {
+	exec := New()
+
+	// Exit 0: `r.exit_code != 0` must be false, so the task succeeds.
+	pctx, _ := cwPctx(&cwConn{exitCode: 0, stdout: "ok"})
+	task := &playbook.Task{
+		Module:     "command",
+		Params:     map[string]any{"cmd": "check"},
+		Register:   "r",
+		FailedWhen: "r.exit_code != 0",
+	}
+	if _, err := exec.runSingleTask(context.Background(), pctx, task, nil); err != nil {
+		t.Fatalf("exit 0 must not trip r.exit_code != 0, got: %v", err)
+	}
+
+	// Exit 3 tolerated up to 5.
+	pctx, _ = cwPctx(&cwConn{exitCode: 3})
+	task = &playbook.Task{
+		Module:     "command",
+		Params:     map[string]any{"cmd": "check"},
+		Register:   "r",
+		FailedWhen: "r.exit_code > 5",
+	}
+	if _, err := exec.runSingleTask(context.Background(), pctx, task, nil); err != nil {
+		t.Fatalf("exit 3 should be tolerated, got: %v", err)
+	}
+
+	// Exit 7 fails.
+	pctx, _ = cwPctx(&cwConn{exitCode: 7})
+	if _, err := exec.runSingleTask(context.Background(), pctx, task, nil); err == nil {
+		t.Fatal("exit 7 should trip r.exit_code > 5")
+	}
+}
+
+func TestChangedWhen_RegisterScoped(t *testing.T) {
+	exec := New()
+	pctx, _ := cwPctx(&cwConn{exitCode: 0, stdout: "already present"})
+	task := &playbook.Task{
+		Module:      "command",
+		Params:      map[string]any{"cmd": "check"},
+		Register:    "r",
+		ChangedWhen: "'created' in r.stdout",
+	}
+	res, err := exec.runSingleTask(context.Background(), pctx, task, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Changed {
+		t.Error("expected changed=false when r.stdout lacks 'created'")
+	}
+}
