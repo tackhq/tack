@@ -12,13 +12,17 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - name: Wait for CI to succeed
+      - name: Wait for CI on main to succeed
+        timeout-minutes: 30
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "Waiting for CI workflow to complete..."
+          # CI does not run on tags; release the exact commit that CI already
+          # validated on main. Tag after main CI is green for an instant start.
+          echo "Waiting for CI on main (${{ github.sha }})..."
+          missing=0
           while true; do
-            status=$(gh run list --repo ${{ github.repository }} --commit ${{ github.sha }} --workflow CI --json status,conclusion --jq '.[0] | "\(.status) \(.conclusion)"')
+            status=$(gh run list --repo ${{ github.repository }} --commit ${{ github.sha }} --workflow CI --branch main --event push --json status,conclusion --jq '.[0] | "\(.status) \(.conclusion)"')
             echo "CI status: $status"
             if [[ "$status" == "completed success" ]]; then
               echo "CI passed!"
@@ -26,6 +30,12 @@ jobs:
             elif [[ "$status" == "completed"* ]]; then
               echo "CI failed or was cancelled"
               exit 1
+            elif [[ -z "$status" || "$status" == "null null" ]]; then
+              missing=$((missing + 1))
+              if [[ $missing -ge 12 ]]; then
+                echo "No CI run found for this commit on main. Push the commit to main before tagging."
+                exit 1
+              fi
             fi
             sleep 10
           done
@@ -39,6 +49,21 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.24'
+          cache: false
+
+      # Dedicated cache: the release build cross-compiles 4 targets with
+      # -trimpath, which the CI build cache doesn't contain. A per-commit key
+      # (with prefix restore) lets each release refresh it.
+      - name: Cache Go build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: release-go-${{ hashFiles('go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            release-go-${{ hashFiles('go.sum') }}-
+            release-go-
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6

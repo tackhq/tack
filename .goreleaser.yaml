@@ -5,11 +5,6 @@ version: 2
 
 project_name: tack
 
-before:
-  hooks:
-    - go mod tidy
-    - go generate ./...
-
 builds:
   - id: tack
     binary: tack
