@@ -20,14 +20,16 @@ const jsonSchemaVersion = 2
 // JSONEmitter emits newline-delimited JSON events to stdout.
 // Errors are written to stderr. The approval prompt is auto-approved.
 type JSONEmitter struct {
-	w      io.Writer
-	errW   io.Writer
-	debug  bool
-	diff   bool
+	w     io.Writer
+	errW  io.Writer
+	debug bool
+	diff  bool
 	// currentHost tags task_start/task_result events with their host. Set
 	// by HostStart and consumed by subsequent task event emissions until
 	// the next HostStart.
 	currentHost string
+	// taskStart times the running task for task_result's duration_ms.
+	taskStart time.Time
 }
 
 // NewJSONEmitter creates a JSONEmitter writing events to w and errors to errW.
@@ -59,7 +61,7 @@ func (j *JSONEmitter) PlaybookStart(path string) {
 
 // PlaybookEnd emits a playbook_recap event.
 func (j *JSONEmitter) PlaybookEnd(stats Stats) {
-	j.emit(map[string]any{
+	event := map[string]any{
 		"type":     "playbook_recap",
 		"ok":       stats.GetOK(),
 		"changed":  stats.GetChanged(),
@@ -67,7 +69,13 @@ func (j *JSONEmitter) PlaybookEnd(stats Stats) {
 		"skipped":  stats.GetSkipped(),
 		"duration": stats.GetDuration().Seconds(),
 		"success":  stats.GetFailed() == 0,
-	})
+	}
+	if ps, ok := stats.(PhaseStats); ok {
+		event["plan_duration_ms"] = ps.GetPlanDuration().Milliseconds()
+		event["apply_duration_ms"] = ps.GetApplyDuration().Milliseconds()
+		event["approval_wait_ms"] = ps.GetApprovalWait().Milliseconds()
+	}
+	j.emit(event)
 }
 
 // PlayStart emits a play_start event.
@@ -124,6 +132,7 @@ func (j *JSONEmitter) PlayHosts(_ []string) {}
 
 // TaskStart emits a task_start event tagged with the current host.
 func (j *JSONEmitter) TaskStart(name, moduleName string) {
+	j.taskStart = time.Now()
 	event := map[string]any{
 		"type":   "task_start",
 		"task":   name,
@@ -144,6 +153,10 @@ func (j *JSONEmitter) TaskResult(name, status string, changed bool, message stri
 		"changed": changed,
 		"message": message,
 		"tags":    tags,
+	}
+	if !j.taskStart.IsZero() {
+		event["duration_ms"] = time.Since(j.taskStart).Milliseconds()
+		j.taskStart = time.Time{}
 	}
 	if j.currentHost != "" {
 		event["host"] = j.currentHost

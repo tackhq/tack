@@ -46,6 +46,7 @@ type spinner struct {
 // called. Only used in interactive mode.
 func (o *Output) startSpinner(name string) {
 	o.setDetail("")
+	o.spinStart = o.now()
 	o.startSpinnerRender(func(frame string) string {
 		return fmt.Sprintf("\r  %s %s\033[K", frame, o.spinLabel(name, 4))
 	})
@@ -64,8 +65,9 @@ func (o *Output) setDetail(d string) {
 	o.detailMu.Unlock()
 }
 
-// spinLabel returns name followed by the current detail in gray, trimmed so
-// the whole line (reserve columns for indent + glyph) fits the terminal.
+// spinLabel returns name, the live elapsed time (once a step has run for
+// 2s) and the current detail, the last two in gray, trimmed so the whole line
+// (reserve columns for indent + glyph) fits the terminal.
 func (o *Output) spinLabel(name string, reserve int) string {
 	o.detailMu.Lock()
 	d := o.detail
@@ -76,10 +78,20 @@ func (o *Output) spinLabel(name string, reserve int) string {
 	if nameLen >= width {
 		return truncateRunes(name, width)
 	}
-	if d == "" {
+
+	extra := ""
+	if o.timings && !o.spinStart.IsZero() {
+		if el := o.now().Sub(o.spinStart); el >= 2*time.Second {
+			extra = "  " + FormatStepDuration(el)
+		}
+	}
+	if d != "" {
+		extra += " · " + d
+	}
+	if extra == "" {
 		return name
 	}
-	return name + o.color(colorGray, truncateRunes(" · "+d, width-nameLen))
+	return name + o.color(colorGray, truncateRunes(extra, width-nameLen))
 }
 
 // termWidth returns the output terminal's width, or 100 when unknown.

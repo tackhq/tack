@@ -85,6 +85,7 @@ func (e *Executor) gatherFactsParallel(ctx context.Context, play *playbook.Play)
 			hostOutput := output.New(prep.output)
 			if textOut, ok := e.Output.(*output.Output); ok {
 				hostOutput.SetColor(textOut.ColorEnabled())
+				hostOutput.SetTimings(textOut.TimingsEnabled())
 			}
 			hostOutput.SetDebug(e.Debug)
 			hostOutput.SetVerbose(e.Verbose)
@@ -230,6 +231,7 @@ func (e *Executor) discoverAndPlanParallel(ctx context.Context, play *playbook.P
 			hostOutput := output.New(prep.output)
 			if textOut, ok := e.Output.(*output.Output); ok {
 				hostOutput.SetColor(textOut.ColorEnabled())
+				hostOutput.SetTimings(textOut.TimingsEnabled())
 			}
 			hostOutput.SetDebug(e.Debug)
 			hostOutput.SetVerbose(e.Verbose)

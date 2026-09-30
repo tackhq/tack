@@ -856,6 +856,7 @@ Target can be a playbook YAML file or a role directory path.
 | --tags               |       | string | ""      | -                    |
 | --skip-tags          |       | string | ""      | -                    |
 | --forks              | -f    | int    | 1       | TACK_FORKS           |
+| --no-timings         |       | bool   | false   | TACK_NO_TIMINGS      |
 | --auto-approve       |       | bool   | false   | -                    |
 | --ssh-user           |       | string | ""      | TACK_SSH_USER        |
 | --ssh-port           |       | int    | 0       | TACK_SSH_PORT        |

@@ -53,6 +53,13 @@ type Output struct {
 	detailMu    sync.Mutex
 	detail      string // live sub-status shown after the spinner's name
 	hostLabel   string // "host [conn]" of the open HostStart banner
+	timings     bool             // show step durations and phase totals
+	clock       func() time.Time // test hook; nil means time.Now
+	playStart   time.Time        // PlayStart time, base for the plan total
+	hostStartAt time.Time        // HostStart time, fallback base for facts time
+	factsStart  time.Time
+	taskStart   time.Time
+	spinStart   time.Time
 	spinStyle   string // "" / "dots" (default braille) or "shimmer" (color sweep)
 }
 
@@ -157,10 +164,14 @@ func (o *Output) PlaybookEnd(stats Stats) {
 	// In dry-run the apply phase never runs, so the ok/changed/failed counters
 	// are all zero and contradict the plan above. Report an honest summary.
 	if o.dryRun {
+		total := fmt.Sprintf("(%.2fs)", stats.GetDuration().Seconds())
+		if ps, isPhase := stats.(PhaseStats); isPhase && o.timings {
+			total = fmt.Sprintf("(plan %s)", FormatTotalDuration(ps.GetPlanDuration()))
+		}
 		o.printf("\n%s %s %s\n",
 			o.color(colorBold, "RECAP"),
 			o.color(colorCyan, "(dry run) no changes applied — see the plan above"),
-			o.color(colorGray, fmt.Sprintf("(%.2fs)", stats.GetDuration().Seconds())))
+			o.color(colorGray, total))
 		return
 	}
 
@@ -172,6 +183,11 @@ func (o *Output) PlaybookEnd(stats Stats) {
 	skipped := o.color(colorCyan, fmt.Sprintf("skipped=%d", stats.GetSkipped()))
 
 	o.printf("%s %s %s %s", ok, changed, failed, skipped)
+	if ps, isPhase := stats.(PhaseStats); isPhase && o.timings {
+		o.printf(" %s\n", o.color(colorGray, fmt.Sprintf("(plan %s · apply %s)",
+			FormatTotalDuration(ps.GetPlanDuration()), FormatTotalDuration(ps.GetApplyDuration()))))
+		return
+	}
 	o.printf(" %s\n", o.color(colorGray, fmt.Sprintf("(%.2fs)", stats.GetDuration().Seconds())))
 }
 
@@ -180,6 +196,8 @@ func (o *Output) PlaybookEnd(stats Stats) {
 // HostStartDone (when gather_facts: false).
 func (o *Output) HostStart(host, connType string) {
 	o.hostLabel = host + " [" + connType + "]"
+	o.hostStartAt = o.now()
+	o.factsStart = time.Time{}
 	o.printf("\n%s %s", o.color(colorBold, "HOST"), o.hostLabel)
 }
 
@@ -234,6 +252,7 @@ func (o *Output) HostConnectDone(_ string, ok bool, errMsg string) {
 // HostFactsResult; otherwise it is a no-op (HostFactsResult prints the whole
 // suffix in one shot, preserving plain/buffered output).
 func (o *Output) HostFactsStart(_ string) {
+	o.factsStart = o.now()
 	if o.spinnerOn() {
 		o.startLineSpinner(o.factsBanner())
 	}
@@ -248,11 +267,16 @@ func (o *Output) HostFactsResult(_ string, ok bool, errMsg string) {
 	if !ok {
 		mark = o.color(colorRed, "✗")
 	}
+	start := o.factsStart
+	if start.IsZero() {
+		start = o.hostStartAt // parallel pre-pass: connect + facts
+	}
+	took := o.elapsedSuffix(start)
 	if o.spin != nil {
 		o.stopSpinner()
-		o.printf("\r%s %s\033[K\n", o.factsBanner(), mark)
+		o.printf("\r%s %s%s\033[K\n", o.factsBanner(), mark, took)
 	} else {
-		o.printf(" - gathering facts %s\n", mark)
+		o.printf(" - gathering facts %s%s\n", mark, took)
 	}
 	if !ok && errMsg != "" {
 		o.Error("%s", errMsg)
@@ -269,6 +293,7 @@ func (o *Output) HostStartDone(_ string) {
 // emit nothing; the host identity is conveyed by the HOST line (single-host)
 // or the PlayHosts summary line (multi-host) that follows.
 func (o *Output) PlayStart(play *playbook.Play) {
+	o.playStart = o.now()
 	if play.Name == "" {
 		return
 	}
@@ -301,6 +326,7 @@ func (o *Output) PlayHosts(hosts []string) {
 // TaskStart is called when a task begins. In interactive mode it starts a live
 // spinner; otherwise it is a no-op (the result line is printed in TaskResult).
 func (o *Output) TaskStart(name, moduleName string) {
+	o.taskStart = o.now()
 	if o.spinnerOn() {
 		o.startSpinner(name)
 	}
@@ -343,7 +369,8 @@ func (o *Output) TaskResult(name, status string, changed bool, message string, t
 	}
 
 	sd := resolveStatus(status)
-	suffix := o.tagSuffix(tags)
+	suffix := o.tagSuffix(tags) + o.elapsedSuffix(o.taskStart)
+	o.taskStart = time.Time{}
 
 	if o.spinnerOn() {
 		// Stop the spinner and overwrite its line in place with the final glyph.
@@ -636,9 +663,9 @@ func (o *Output) PlanEnd(tasks []PlannedTask, _ bool) {
 	if (willSkip+filtered) > 0 && !o.verbose && !o.debug {
 		tail = " " + o.color(colorGray, "(use -v to show skipped)")
 	}
-	o.printf("\n%s %s%s\n",
+	o.printf("\n%s %s%s%s\n",
 		o.color(colorBold, "Plan:"),
-		strings.Join(summaryParts, ", ")+".", tail)
+		strings.Join(summaryParts, ", ")+".", o.planTotalSuffix(), tail)
 }
 
 // hostColumnMax caps the host-prefix column width so pathological hostnames
@@ -803,7 +830,7 @@ func (o *Output) DisplayMultiHostPlan(tasks []PlannedTask, hosts []string, dryRu
 	if unchanged > 0 {
 		footer += fmt.Sprintf(" (%d unchanged)", unchanged)
 	}
-	o.printf("\n%s %s.\n", o.color(colorBold, "Plan:"), footer)
+	o.printf("\n%s %s.%s\n", o.color(colorBold, "Plan:"), footer, o.planTotalSuffix())
 }
 
 // renderMultiHostPlanLine renders a single PlannedTask as a host-prefixed

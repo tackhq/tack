@@ -62,6 +62,9 @@ type Executor struct {
 	// Output handles formatted output.
 	Output output.Emitter
 
+	// clock times the current play's plan/approval/apply phases.
+	clock *playClock
+
 	// DryRun only shows what would be done without making changes.
 	DryRun bool
 
@@ -210,6 +213,13 @@ type Stats struct {
 	Skipped   int
 	StartTime time.Time
 	EndTime   time.Time
+
+	// Phase totals across plays. PlanTime runs from play start (facts
+	// included) to the approval prompt; ApplyTime from approval to play end.
+	// Time spent waiting at the approval prompt is ApprovalWait only.
+	PlanTime     time.Duration
+	ApplyTime    time.Duration
+	ApprovalWait time.Duration
 }
 
 // Duration returns the total execution time.
@@ -243,6 +253,15 @@ func (s *Stats) GetSkipped() int { return s.Skipped }
 
 // GetDuration returns the duration (implements output.Stats).
 func (s *Stats) GetDuration() time.Duration { return s.Duration() }
+
+// GetPlanDuration returns the plan phase total (implements output.PhaseStats).
+func (s *Stats) GetPlanDuration() time.Duration { return s.PlanTime }
+
+// GetApplyDuration returns the apply phase total (implements output.PhaseStats).
+func (s *Stats) GetApplyDuration() time.Duration { return s.ApplyTime }
+
+// GetApprovalWait returns time spent at the approval prompt (implements output.PhaseStats).
+func (s *Stats) GetApprovalWait() time.Duration { return s.ApprovalWait }
 
 // PlayContext holds state for a play execution.
 type PlayContext struct {
@@ -520,6 +539,8 @@ func (e *Executor) runPlay(ctx context.Context, play *playbook.Play, stats *Stat
 	}
 
 	e.Output.PlayStart(play)
+	e.clock = &playClock{start: time.Now()}
+	defer e.clock.finish(stats)
 
 	// Local connection: single-host fast path.
 	if play.GetConnection() == "local" {
@@ -627,6 +648,7 @@ func (e *Executor) runMultiHostPlay(ctx context.Context, play *playbook.Play, st
 		// a per-host goroutine. Closes the latent stdin race in --forks > 1
 		// mode that existed before this change.
 		if !e.AutoApprove {
+			e.clock.markPlanEnd()
 			if !e.Output.PromptApproval(formatApprovalTarget(play.Hosts, play.GetConnection())) {
 				e.Output.Info("Apply cancelled.")
 				closePrepConnectors(preps)
@@ -640,6 +662,7 @@ func (e *Executor) runMultiHostPlay(ctx context.Context, play *playbook.Play, st
 
 	// Mark the PLAN → APPLY transition (only reached when there are changes to
 	// apply; dry-run and no-change runs returned above).
+	e.clock.markApplyStart()
 	e.Output.Section("APPLY")
 
 	// Rolling batches / failure budget take a dedicated path; everything else
@@ -702,6 +725,7 @@ func (e *Executor) runMultiHostPlay(ctx context.Context, play *playbook.Play, st
 			hostOutput := output.New(buf)
 			if textOut, ok := e.Output.(*output.Output); ok {
 				hostOutput.SetColor(textOut.ColorEnabled())
+				hostOutput.SetTimings(textOut.TimingsEnabled())
 			}
 			hostOutput.SetDebug(e.Debug)
 			hostOutput.SetVerbose(e.Verbose)
@@ -853,6 +877,7 @@ func (e *Executor) applyBatch(ctx context.Context, play *playbook.Play, batch []
 			hostOutput := output.New(buf)
 			if textOut, ok := e.Output.(*output.Output); ok {
 				hostOutput.SetColor(textOut.ColorEnabled())
+				hostOutput.SetTimings(textOut.TimingsEnabled())
 			}
 			hostOutput.SetDebug(e.Debug)
 			hostOutput.SetVerbose(e.Verbose)
@@ -1093,6 +1118,7 @@ func (e *Executor) runPlayOnHost(ctx context.Context, play *playbook.Play, stats
 
 	// Skip the plan preview + approval entirely and go straight to apply.
 	if e.skipPlanPhase() {
+		e.clock.markApplyStart()
 		emitter.Section("APPLY")
 		return e.applyHostPlan(ctx, pctx, stats, allTasks, allHandlers)
 	}
@@ -1138,12 +1164,14 @@ func (e *Executor) runPlayOnHost(ctx context.Context, play *playbook.Play, stats
 
 	// Prompt for approval unless auto-approved
 	if !e.AutoApprove {
+		e.clock.markPlanEnd()
 		if !emitter.PromptApproval(formatApprovalTarget([]string{host}, play.GetConnection())) {
 			emitter.Info("Apply cancelled.")
 			return nil
 		}
 	}
 
+	e.clock.markApplyStart()
 	emitter.Section("APPLY")
 	return e.applyHostPlan(ctx, pctx, stats, allTasks, allHandlers)
 }

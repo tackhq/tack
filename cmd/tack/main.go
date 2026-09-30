@@ -299,6 +299,7 @@ func init() {
 	runCmd.Flags().Bool("no-facts", false, "Skip gathering system facts; speeds up runs that don't depend on facts")
 	runCmd.Flags().Bool("no-plan", false, "Skip the plan preview and approval; apply immediately (ignored with --check/--dry-run)")
 	runCmd.Flags().IntP("forks", "f", 1, "Number of hosts to execute concurrently")
+	runCmd.Flags().Bool("no-timings", false, "Hide per-step durations and plan/apply totals (also: TACK_NO_TIMINGS=1)")
 	runCmd.Flags().StringVar(&outputMode, "output", "text", "Output format: text or json")
 
 	// Inventory flags
@@ -521,6 +522,11 @@ func runPlaybook(cmd *cobra.Command, args []string) error {
 	exec.Output.SetVerbose(verbose)
 	exec.Output.SetDiff(showDiff)
 	exec.Output.SetDryRun(dryRun)
+	if t, ok := exec.Output.(interface{ SetTimings(bool) }); ok {
+		noTimings, _ := cmd.Flags().GetBool("no-timings")
+		env := os.Getenv("TACK_NO_TIMINGS")
+		t.SetTimings(!noTimings && env != "1" && env != "true" && env != "yes")
+	}
 
 	// Run playbook
 	result, err := exec.Run(ctx, pb)
