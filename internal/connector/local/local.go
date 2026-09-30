@@ -84,6 +84,7 @@ func (c *Connector) Connect(ctx context.Context) error {
 
 // Execute runs a command locally and returns the result.
 func (c *Connector) Execute(ctx context.Context, cmd string) (*connector.Result, error) {
+	connector.ReportCommand(ctx, cmd)
 	// Build the command. Any stdin bytes carry the sudo password, fed on the
 	// process's stdin so it never appears in the argv (/proc/<pid>/cmdline).
 	fullCmd, stdin := c.buildCommand(cmd)

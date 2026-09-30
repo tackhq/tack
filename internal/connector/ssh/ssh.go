@@ -184,6 +184,7 @@ func New(host string, opts ...Option) *Connector {
 
 // Connect establishes an SSH connection to the target host.
 func (c *Connector) Connect(ctx context.Context) error {
+	connector.ReportProgress(ctx, "connecting to %s", c.host)
 	// Resolve SSH config for the host alias
 	c.resolveSSHConfig()
 
@@ -344,6 +345,7 @@ func parseProxyJump(spec string) *BastionConfig {
 
 // Execute runs a command on the remote host and returns the result.
 func (c *Connector) Execute(ctx context.Context, cmd string) (*connector.Result, error) {
+	connector.ReportCommand(ctx, cmd)
 	if c.client == nil {
 		return nil, fmt.Errorf("not connected")
 	}
@@ -412,6 +414,7 @@ func (c *Connector) Execute(ctx context.Context, cmd string) (*connector.Result,
 // When sudo is enabled, uploads to a temp file first, then moves it
 // into place via a sudo shell command (SFTP runs as the SSH user).
 func (c *Connector) Upload(ctx context.Context, src io.Reader, dst string, mode uint32) error {
+	connector.ReportProgress(ctx, "uploading %s", dst)
 	if c.client == nil {
 		return fmt.Errorf("not connected")
 	}

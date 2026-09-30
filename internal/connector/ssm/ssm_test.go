@@ -769,3 +769,67 @@ func TestDirOf(t *testing.T) {
 	assert.Equal(t, ".", dirOf("file.txt"))
 	assert.Equal(t, "/a/b", dirOf("/a/b/c"))
 }
+
+// A registered but offline agent would leave commands Pending until delivery
+// times out, which looks like a hang; Connect must fail fast instead.
+func TestConnect_AgentOffline(t *testing.T) {
+	mock := &mockSSM{
+		describeInstanceInfoFn: func(_ context.Context, _ *ssm.DescribeInstanceInformationInput) (*ssm.DescribeInstanceInformationOutput, error) {
+			return &ssm.DescribeInstanceInformationOutput{
+				InstanceInformationList: []ssmtypes.InstanceInformation{
+					{InstanceId: aws.String("i-offline"), PingStatus: ssmtypes.PingStatusConnectionLost},
+				},
+			}, nil
+		},
+	}
+	c := New("i-offline", withSSMClient(mock))
+
+	err := c.Connect(context.Background())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not online")
+}
+
+// Execute reports the command and each non-terminal SSM status to the
+// context's progress sink.
+func TestExecute_ReportsProgress(t *testing.T) {
+	calls := 0
+	mock := &mockSSM{
+		getCommandInvocationFn: func(_ context.Context, _ *ssm.GetCommandInvocationInput) (*ssm.GetCommandInvocationOutput, error) {
+			calls++
+			if calls == 1 {
+				return &ssm.GetCommandInvocationOutput{Status: ssmtypes.CommandInvocationStatusInProgress}, nil
+			}
+			return &ssm.GetCommandInvocationOutput{Status: ssmtypes.CommandInvocationStatusSuccess}, nil
+		},
+	}
+	c := New("i-test123", withSSMClient(mock))
+
+	var msgs []string
+	ctx := connector.WithProgress(context.Background(), func(_ connector.ProgressKind, msg string) {
+		msgs = append(msgs, msg)
+	})
+	_, err := c.Execute(ctx, "apt-get update")
+	require.NoError(t, err)
+	assert.Equal(t, "running: apt-get update", msgs[0])
+	assert.Contains(t, strings.Join(msgs, "\n"), "SSM InProgress")
+}
+
+// Uploads report a status line but never echo the transfer command, which
+// embeds the file content for base64 transfers.
+func TestUpload_DoesNotEchoContent(t *testing.T) {
+	mock := &mockSSM{
+		getCommandInvocationFn: func(_ context.Context, _ *ssm.GetCommandInvocationInput) (*ssm.GetCommandInvocationOutput, error) {
+			return &ssm.GetCommandInvocationOutput{Status: ssmtypes.CommandInvocationStatusSuccess}, nil
+		},
+	}
+	c := New("i-test123", withSSMClient(mock))
+
+	var msgs []string
+	ctx := connector.WithProgress(context.Background(), func(_ connector.ProgressKind, msg string) {
+		msgs = append(msgs, msg)
+	})
+	require.NoError(t, c.Upload(ctx, strings.NewReader("topsecret"), "/etc/app.conf", 0o600))
+	joined := strings.Join(msgs, "\n")
+	assert.Contains(t, joined, "uploading /etc/app.conf")
+	assert.NotContains(t, joined, "running:")
+}

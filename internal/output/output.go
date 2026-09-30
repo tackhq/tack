@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -49,6 +50,8 @@ type Output struct {
 	dryRun      bool
 	interactive bool
 	spin        *spinner
+	detailMu    sync.Mutex
+	detail      string // live sub-status shown after the spinner's name
 	hostLabel   string // "host [conn]" of the open HostStart banner
 	spinStyle   string // "" / "dots" (default braille) or "shimmer" (color sweep)
 }

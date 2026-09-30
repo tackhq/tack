@@ -2,6 +2,7 @@ package executor
 
 import (
 	"context"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -194,3 +195,46 @@ func TestPlannedTask_HostPopulatedByPlanTasks(t *testing.T) {
 
 // Compile-time check that countingEmitter satisfies output.Emitter.
 var _ output.Emitter = (*countingEmitter)(nil)
+
+// resultRecordingEmitter records TaskResult names reaching the run's emitter.
+type resultRecordingEmitter struct {
+	nullEmitter
+	mu      sync.Mutex
+	results []string
+}
+
+func (r *resultRecordingEmitter) TaskResult(name, status string, changed bool, message string, tags []string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.results = append(r.results, name)
+}
+
+// Serial (forks=1) multi-host apply must stream task results to the run's
+// emitter. Previously the apply phase kept writing into the discover+plan
+// buffers, which had already been flushed, so nothing appeared after APPLY.
+func TestMultiHostPlay_SerialApplyStreamsToRunEmitter(t *testing.T) {
+	for _, batched := range []bool{false, true} {
+		hosts := []string{"web1", "web2"}
+		rec := &resultRecordingEmitter{}
+		e := New()
+		e.Output = rec
+		e.AutoApprove = true
+		e.Forks = 1
+		e.connectorFactory = func(play *playbook.Play, host string) (connector.Connector, error) {
+			return &fakeConnector{host: host}, nil
+		}
+		play := &playbook.Play{
+			Hosts:      hosts,
+			Connection: "ssh",
+			Tasks: []*playbook.Task{
+				{Name: "say hi", Module: "command", Params: map[string]any{"cmd": "echo hi"}},
+			},
+		}
+		if batched {
+			play.AnyErrorsFatal = true // routes through applyHostsBatched
+		}
+
+		require.NoError(t, e.runMultiHostPlay(context.Background(), play, &Stats{}, nil, ""))
+		assert.Len(t, rec.results, len(hosts), "batched=%v: expected one task result per host on the run emitter", batched)
+	}
+}

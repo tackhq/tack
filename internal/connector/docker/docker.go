@@ -68,6 +68,7 @@ func New(container string, opts ...Option) *Connector {
 
 // Connect verifies the container exists and is running.
 func (c *Connector) Connect(ctx context.Context) error {
+	connector.ReportProgress(ctx, "connecting to container %s", c.container)
 	// Check if docker is available
 	if _, err := exec.LookPath("docker"); err != nil {
 		return fmt.Errorf("docker command not found: %w", err)
@@ -89,6 +90,7 @@ func (c *Connector) Connect(ctx context.Context) error {
 
 // Execute runs a command inside the container.
 func (c *Connector) Execute(ctx context.Context, cmd string) (*connector.Result, error) {
+	connector.ReportCommand(ctx, cmd)
 	args := c.buildExecArgs(cmd)
 
 	execCmd := exec.CommandContext(ctx, "docker", args...)

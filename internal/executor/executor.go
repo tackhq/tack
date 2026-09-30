@@ -299,6 +299,11 @@ type PlayContext struct {
 	// OnPlanLine then resolves into the task's line.
 	OnPlanCheck func(name string)
 
+	// OnStatus, when set, receives the running task's name and the latest
+	// connector progress detail. Used to drive the live progress line while
+	// hosts run concurrently (their own output is buffered).
+	OnStatus func(task, detail string)
+
 	// PlaybookDir is the directory of the playbook file, used for
 	// resolving relative include paths.
 	PlaybookDir string
@@ -650,6 +655,7 @@ func (e *Executor) runMultiHostPlay(ctx context.Context, play *playbook.Play, st
 			if prep == nil || prep.err != nil || prep.pctx == nil {
 				continue
 			}
+			e.streamSerialApply(prep, play)
 			if err := e.applyHostPlan(ctx, prep.pctx, stats, prep.allTasks, prep.allHandlers); err != nil {
 				_ = prep.conn.Close()
 				prep.conn = nil
@@ -664,7 +670,10 @@ func (e *Executor) runMultiHostPlay(ctx context.Context, play *playbook.Play, st
 	}
 
 	// Parallel apply. Each goroutine runs apply for one host; output is
-	// buffered and flushed in host order after the pool drains.
+	// buffered and flushed in host order after the pool drains, so a live
+	// progress line shows what each host is doing meanwhile.
+	activity := newHostActivity(hosts)
+	stopProgress := e.startProgress(func() string { return activity.label("applying") })
 	pool := NewWorkerPool(forks)
 	for _, host := range hosts {
 		host := host
@@ -702,6 +711,8 @@ func (e *Executor) runMultiHostPlay(ctx context.Context, play *playbook.Play, st
 			// for the apply phase. The pre-pass emitter (which was buffered
 			// and already flushed) is no longer relevant.
 			prep.pctx.Output = hostOutput
+			prep.pctx.OnStatus = activity.statusHook(host)
+			defer activity.finish(host)
 			hostOutput.HostStart(host, play.GetConnection())
 
 			hostStats := &Stats{}
@@ -720,6 +731,7 @@ func (e *Executor) runMultiHostPlay(ctx context.Context, play *playbook.Play, st
 	}
 
 	results := pool.Wait()
+	stopProgress()
 
 	// Flush buffered output in host order
 	FlushBuffers(os.Stdout, hosts, results)
@@ -809,6 +821,7 @@ func (e *Executor) applyBatch(ctx context.Context, play *playbook.Play, batch []
 				}
 				continue
 			}
+			e.streamSerialApply(prep, play)
 			if err := e.applyHostPlan(ctx, prep.pctx, stats, prep.allTasks, prep.allHandlers); err != nil {
 				failed = append(failed, host)
 				e.Output.Error("Host %s failed: %v", host, err)
@@ -819,6 +832,8 @@ func (e *Executor) applyBatch(ctx context.Context, play *playbook.Play, batch []
 		return failed
 	}
 
+	activity := newHostActivity(batch)
+	stopProgress := e.startProgress(func() string { return activity.label("applying") })
 	pool := NewWorkerPool(forks)
 	for _, host := range batch {
 		host := host
@@ -843,6 +858,8 @@ func (e *Executor) applyBatch(ctx context.Context, play *playbook.Play, batch []
 			hostOutput.SetVerbose(e.Verbose)
 			hostOutput.SetDiff(e.ShowDiff)
 			prep.pctx.Output = hostOutput
+			prep.pctx.OnStatus = activity.statusHook(host)
+			defer activity.finish(host)
 			hostOutput.HostStart(host, play.GetConnection())
 
 			hostStats := &Stats{}
@@ -854,6 +871,7 @@ func (e *Executor) applyBatch(ctx context.Context, play *playbook.Play, batch []
 	}
 
 	results := pool.Wait()
+	stopProgress()
 	FlushBuffers(os.Stdout, batch, results)
 	for _, r := range results {
 		stats.Tasks += r.Stats.Tasks
@@ -869,6 +887,17 @@ func (e *Executor) applyBatch(ctx context.Context, play *playbook.Play, batch []
 		}
 	}
 	return failed
+}
+
+// streamSerialApply points a prepared host's context at the run's emitter for
+// a serial apply. The discover+plan pre-pass wrote into a per-host buffer that
+// was already flushed before the plan, so without this the apply output would
+// be written into that buffer and never shown.
+func (e *Executor) streamSerialApply(prep *hostPrep, play *playbook.Play) {
+	prep.pctx.Output = e.Output
+	prep.pctx.OnStatus = nil
+	e.Output.HostStart(prep.host, play.GetConnection())
+	e.Output.HostStartDone(prep.host)
 }
 
 // batchExceedsBudget reports whether a batch's failures should abort the
@@ -1350,6 +1379,7 @@ func (e *Executor) runSingleTask(ctx context.Context, pctx *PlayContext, task *p
 		taskName += " => " + pctx.IterLabel
 	}
 	pctx.Output.TaskStart(taskName, task.Module)
+	ctx = withTaskProgress(ctx, pctx, taskName, task.NoLog)
 
 	// redact hides a task's result message/error from output when no_log is set,
 	// so secrets interpolated into the task never reach logs or CI.
@@ -2351,7 +2381,7 @@ func (e *Executor) planTasks(ctx context.Context, pctx *PlayContext, tasks []*pl
 					}
 				}
 
-				cr, err := checker.Check(ctx, pctx.Connector, checkParams)
+				cr, err := checker.Check(withTaskProgress(ctx, pctx, taskDisplayName(task), task.NoLog), pctx.Connector, checkParams)
 				if err == nil && cr != nil {
 					if cr.Uncertain {
 						pt.Status = "always_runs"

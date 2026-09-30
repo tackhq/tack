@@ -215,19 +215,16 @@ func (e *Executor) discoverAndPlanParallel(ctx context.Context, play *playbook.P
 	// Live progress during the otherwise-silent parallel gather+plan phase
 	// (especially valuable for high-latency connectors like SSM). No-op in
 	// non-interactive mode.
-	stopProgress := func() {}
-	if o, ok := e.Output.(*output.Output); ok {
-		total := len(hosts)
-		stopProgress = o.StartProgress(func() string {
-			return fmt.Sprintf("gathering facts + planning %d/%d hosts", atomic.LoadInt64(&done), total)
-		})
-	}
+	activity := newHostActivity(hosts)
+	stopProgress := e.startProgress(func() string { return activity.label("gathering facts + planning") })
 
 	pool := NewWorkerPool(limit)
 	for _, host := range hosts {
 		host := host
 		pool.Submit(ctx, func(ctx context.Context) *HostResult {
 			defer atomic.AddInt64(&done, 1)
+			defer activity.finish(host)
+			ctx = connector.WithProgress(ctx, activity.progressFor(host))
 			prep := &hostPrep{host: host, output: &bytes.Buffer{}}
 
 			hostOutput := output.New(prep.output)
@@ -266,7 +263,8 @@ func (e *Executor) discoverAndPlanParallel(ctx context.Context, play *playbook.P
 			prep.conn = conn
 
 			if e.shouldGatherFacts(play) {
-				f, gerr := facts.Gather(ctx, conn)
+				activity.set(host, "", "gathering facts")
+				f, gerr := facts.Gather(connector.SuppressCommands(ctx), conn)
 				if gerr != nil {
 					prep.err = fmt.Errorf("failed to gather facts: %w", gerr)
 					hostOutput.HostFactsResult(host, false, gerr.Error())
@@ -295,6 +293,7 @@ func (e *Executor) discoverAndPlanParallel(ctx context.Context, play *playbook.P
 				return &HostResult{Host: host, Success: false, Error: prep.err}
 			}
 			prep.pctx = pctx
+			pctx.OnStatus = activity.statusHook(host)
 
 			// Compute plan for this host.
 			prep.allTasks = playbook.ExpandRoleTasks(roles, play.Tasks)

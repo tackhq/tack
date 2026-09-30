@@ -30,6 +30,15 @@ import (
 const (
 	defaultTimeout = 10 * time.Minute
 	pollInterval   = 2 * time.Second
+
+	// deliveryTimeout bounds how long a command may wait to be delivered to
+	// the instance (agent offline/busy) before SSM gives up on it. SSM's own
+	// default is one hour, which looks like a hang. Minimum allowed is 30s.
+	deliveryTimeout = 2 * time.Minute
+
+	// resultGrace is extra client-side slack beyond delivery + execution
+	// timeouts before tack stops polling and reports the command as stuck.
+	resultGrace = time.Minute
 	maxBase64Bytes = 24 * 1024 // 24 KB limit for base64 inline transfer
 	s3KeyPrefix    = "tack-transfer/"
 
@@ -214,6 +223,7 @@ func New(instanceID string, opts ...Option) *Connector {
 // Connect validates the instance is SSM-managed. If no SSM client was injected,
 // it loads the AWS config and creates real SSM (and optionally S3) clients.
 func (c *Connector) Connect(ctx context.Context) error {
+	connector.ReportProgress(ctx, "connecting to %s via SSM", c.instanceID)
 	if c.ssmClient == nil {
 		var optFns []func(*awsconfig.LoadOptions) error
 		if c.region != "" {
@@ -248,12 +258,18 @@ func (c *Connector) Connect(ctx context.Context) error {
 	if len(out.InstanceInformationList) == 0 {
 		return fmt.Errorf("instance %s is not managed by SSM (check SSM agent and IAM role)", c.instanceID)
 	}
+	// A registered but offline agent accepts commands that then sit in
+	// Pending until delivery times out; fail up front instead.
+	if ping := out.InstanceInformationList[0].PingStatus; ping != "" && ping != ssmtypes.PingStatusOnline {
+		return fmt.Errorf("SSM agent on %s is not online (ping status: %s)", c.instanceID, ping)
+	}
 
 	return nil
 }
 
 // Execute runs a command on the instance via SSM SendCommand and polls for the result.
 func (c *Connector) Execute(ctx context.Context, cmd string) (*connector.Result, error) {
+	connector.ReportCommand(ctx, cmd)
 	fullCmd, err := c.buildCommand(cmd)
 	if err != nil {
 		return nil, err
@@ -271,6 +287,7 @@ func (c *Connector) Execute(ctx context.Context, cmd string) (*connector.Result,
 			"commands":         {fullCmd},
 			"executionTimeout": {fmt.Sprintf("%d", timeoutSec)},
 		},
+		TimeoutSeconds: aws.Int32(int32(deliveryTimeout.Seconds())),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to send command to %s: %w", c.instanceID, err)
@@ -278,11 +295,23 @@ func (c *Connector) Execute(ctx context.Context, cmd string) (*connector.Result,
 
 	commandID := aws.ToString(sendOut.Command.CommandId)
 
-	// Poll for completion
+	// Poll for completion. The deadline guards against invocations that never
+	// reach a terminal status (e.g. InvocationDoesNotExist forever).
+	start := time.Now()
+	deadline := start.Add(deliveryTimeout + time.Duration(timeoutSec)*time.Second + resultGrace)
+	lastStatus := "Sent"
+	connector.ReportProgress(ctx, "SSM command sent, waiting")
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
 
 	for {
+		if time.Now().After(deadline) {
+			cancelCtx, cancelFn := context.WithTimeout(context.Background(), 5*time.Second)
+			_, _ = c.ssmClient.CancelCommand(cancelCtx, &ssm.CancelCommandInput{CommandId: aws.String(commandID)})
+			cancelFn()
+			return nil, fmt.Errorf("no result from SSM command %s on %s after %s (last status: %s)",
+				commandID, c.instanceID, time.Since(start).Round(time.Second), lastStatus)
+		}
 		select {
 		case <-ctx.Done():
 			// Best-effort cancel with a fresh context
@@ -300,15 +329,18 @@ func (c *Connector) Execute(ctx context.Context, cmd string) (*connector.Result,
 			if err != nil {
 				// InvocationDoesNotExist is transient — command may not have registered yet
 				if strings.Contains(err.Error(), "InvocationDoesNotExist") {
+					connector.ReportProgress(ctx, "SSM waiting for invocation (%s)", time.Since(start).Round(time.Second))
 					continue
 				}
 				return nil, fmt.Errorf("failed to get command invocation: %w", err)
 			}
 
+			lastStatus = string(invOut.Status)
 			switch invOut.Status {
 			case ssmtypes.CommandInvocationStatusPending,
 				ssmtypes.CommandInvocationStatusInProgress,
 				ssmtypes.CommandInvocationStatusDelayed:
+				connector.ReportProgress(ctx, "SSM %s (%s)", invOut.Status, time.Since(start).Round(time.Second))
 				continue
 
 			case ssmtypes.CommandInvocationStatusSuccess:
@@ -348,6 +380,11 @@ func (c *Connector) Upload(ctx context.Context, src io.Reader, dst string, mode 
 	}
 
 	modeStr := fmt.Sprintf("%04o", mode)
+
+	// The transfer commands embed the destination and (for base64) the file
+	// content itself, so show a status line instead of echoing them.
+	connector.ReportProgress(ctx, "uploading %s", dst)
+	ctx = connector.SuppressCommands(ctx)
 
 	if c.bucket != "" {
 		return c.uploadViaS3(ctx, data, dst, modeStr)

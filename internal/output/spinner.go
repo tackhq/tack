@@ -2,7 +2,10 @@ package output
 
 import (
 	"fmt"
+	"os"
 	"time"
+
+	"golang.org/x/term"
 )
 
 // spinnerFrames are the braille glyphs cycled while a task runs.
@@ -38,12 +41,67 @@ type spinner struct {
 	done chan struct{}
 }
 
-// startSpinner renders an animated frame followed by name on the current line,
-// updating in place until stopSpinner is called. Only used in interactive mode.
+// startSpinner renders an animated frame followed by name (and any live
+// TaskDetail) on the current line, updating in place until stopSpinner is
+// called. Only used in interactive mode.
 func (o *Output) startSpinner(name string) {
+	o.setDetail("")
 	o.startSpinnerRender(func(frame string) string {
-		return fmt.Sprintf("\r  %s %s\033[K", frame, name)
+		return fmt.Sprintf("\r  %s %s\033[K", frame, o.spinLabel(name, 4))
 	})
+}
+
+// TaskDetail sets the live sub-status shown after the running task's
+// spinner (e.g. "running: apt-get install -y nginx", "SSM InProgress (12s)").
+// Safe to call from any goroutine; a no-op when no spinner is running.
+func (o *Output) TaskDetail(detail string) {
+	o.setDetail(detail)
+}
+
+func (o *Output) setDetail(d string) {
+	o.detailMu.Lock()
+	o.detail = d
+	o.detailMu.Unlock()
+}
+
+// spinLabel returns name followed by the current detail in gray, trimmed so
+// the whole line (reserve columns for indent + glyph) fits the terminal.
+func (o *Output) spinLabel(name string, reserve int) string {
+	o.detailMu.Lock()
+	d := o.detail
+	o.detailMu.Unlock()
+
+	width := o.termWidth() - reserve
+	nameLen := len([]rune(name))
+	if nameLen >= width {
+		return truncateRunes(name, width)
+	}
+	if d == "" {
+		return name
+	}
+	return name + o.color(colorGray, truncateRunes(" · "+d, width-nameLen))
+}
+
+// termWidth returns the output terminal's width, or 100 when unknown.
+func (o *Output) termWidth() int {
+	if f, ok := o.w.(*os.File); ok {
+		if w, _, err := term.GetSize(int(f.Fd())); err == nil && w > 0 {
+			return w
+		}
+	}
+	return 100
+}
+
+// truncateRunes shortens s to at most max runes, ending with an ellipsis.
+func truncateRunes(s string, max int) string {
+	r := []rune(s)
+	if max <= 0 {
+		return ""
+	}
+	if len(r) <= max {
+		return s
+	}
+	return string(r[:max-1]) + "…"
 }
 
 // startLineSpinner animates a spinner at the END of prefix, rewriting the whole
@@ -85,7 +143,7 @@ func (o *Output) StartProgress(labelFn func() string) (stop func()) {
 		return func() {}
 	}
 	o.startSpinnerRender(func(frame string) string {
-		return fmt.Sprintf("\r%s %s\033[K", frame, labelFn())
+		return fmt.Sprintf("\r%s %s\033[K", frame, truncateRunes(labelFn(), o.termWidth()-2))
 	})
 	return func() {
 		o.stopSpinner()
