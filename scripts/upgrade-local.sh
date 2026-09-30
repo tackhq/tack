@@ -6,6 +6,14 @@
 # Brew steps are skipped when Homebrew is not installed.
 set -euo pipefail
 
+# gh must never talk to the terminal: on a TTY it pages output through
+# $PAGER and probes the terminal (color/cursor queries), which can stall or
+# abort the script. Every gh call below has its stdout captured; these
+# settings are a second line of defense.
+export GH_PAGER=cat PAGER=cat GH_PROMPT_DISABLED=1 NO_COLOR=1
+
+trap 'echo "error: command failed (line $LINENO): $BASH_COMMAND" >&2' ERR
+
 REPO="tackhq/tack"
 TAP_REPO="tackhq/homebrew-tap"
 TAP="tackhq/tap"
@@ -41,7 +49,7 @@ else
 fi
 if [ "${STATUS%% *}" != "completed" ]; then
   echo "==> Waiting for Release workflow (run $RUN_ID)..."
-  gh run watch -R "$REPO" "$RUN_ID" --exit-status --interval 20 >/dev/null || {
+  gh run watch -R "$REPO" "$RUN_ID" --exit-status --interval 20 </dev/null >/dev/null 2>&1 || {
     echo "error: Release workflow failed: $(gh run view -R "$REPO" "$RUN_ID" --json url -q .url)" >&2
     exit 1
   }
@@ -54,10 +62,11 @@ if [ -n "$RUN_ID" ]; then
 fi
 
 # 2. GitHub release published
-gh release view -R "$REPO" "$TAG" --json url -q '"==> Published: " + .url' || {
+RELEASE_URL=$(gh release view -R "$REPO" "$TAG" --json url -q .url </dev/null) || {
   echo "error: GitHub release $TAG not found" >&2
   exit 1
 }
+echo "==> Published: $RELEASE_URL"
 
 # 3. Homebrew formula updated in the tap
 TAP_VERSION=$(gh api "repos/$TAP_REPO/contents/Formula/$FORMULA.rb" -q .content \
