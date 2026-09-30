@@ -72,6 +72,7 @@ var (
 )
 
 func main() {
+	captureSecretEnv()
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
@@ -483,7 +484,7 @@ func runPlaybook(cmd *cobra.Command, args []string) error {
 	exec.SSHNoPrompt = noSSHPromptFlag || envSSHOptOut || autoApprove || !term.IsTerminal(int(syscall.Stdin))
 	// Vault password resolution: env > file > prompt (D-01)
 	vaultPwFile, _ := cmd.Flags().GetString("vault-password-file")
-	if envPw := os.Getenv("TACK_VAULT_PASSWORD"); envPw != "" {
+	if envPw := secretEnv("TACK_VAULT_PASSWORD"); envPw != "" {
 		pw := []byte(envPw)
 		exec.ResolveVaultPassword = func() ([]byte, error) { return pw, nil }
 	} else if vaultPwFile != "" {
@@ -1029,7 +1030,7 @@ func buildConnOverrides(cmd *cobra.Command) (*executor.ConnOverrides, error) {
 		} else {
 			o.SSHPass = val
 		}
-	} else if envPass := os.Getenv("TACK_SSH_PASSWORD"); envPass != "" && !o.HasSSHPass {
+	} else if envPass := secretEnv("TACK_SSH_PASSWORD"); envPass != "" && !o.HasSSHPass {
 		o.HasSSHPass = true
 		o.SSHPass = envPass
 	}
@@ -1061,7 +1062,7 @@ func buildConnOverrides(cmd *cobra.Command) (*executor.ConnOverrides, error) {
 		} else {
 			o.SudoPassword = val
 		}
-	} else if envPass := os.Getenv("TACK_SUDO_PASSWORD"); envPass != "" {
+	} else if envPass := secretEnv("TACK_SUDO_PASSWORD"); envPass != "" {
 		o.SudoPassword = envPass
 	}
 

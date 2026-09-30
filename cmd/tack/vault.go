@@ -87,7 +87,7 @@ func init() {
 // When env or file source is used, confirmation is always skipped.
 func resolveVaultPassword(cmd *cobra.Command, confirmPrompt bool) ([]byte, error) {
 	// 1. Environment variable (highest priority; skip confirmation even if confirmPrompt)
-	if envPw := os.Getenv("TACK_VAULT_PASSWORD"); envPw != "" {
+	if envPw := secretEnv("TACK_VAULT_PASSWORD"); envPw != "" {
 		return []byte(envPw), nil
 	}
 
