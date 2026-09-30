@@ -45,7 +45,7 @@ func TestSudoWrap(t *testing.T) {
 			cmd:         "whoami",
 			sudoEnabled: true,
 			password:    "s3cr3t",
-			wantWrapped: "sudo -S -p '' sh -c 'whoami'",
+			wantWrapped: "sudo -S -p '' sh -c 'exec </dev/null; whoami'",
 			wantStdin:   "s3cr3t\n",
 		},
 		{
@@ -53,7 +53,7 @@ func TestSudoWrap(t *testing.T) {
 			cmd:         "echo 'hi'",
 			sudoEnabled: true,
 			password:    "pw",
-			wantWrapped: `sudo -S -p '' sh -c 'echo '"'"'hi'"'"''`,
+			wantWrapped: `sudo -S -p '' sh -c 'exec </dev/null; echo '"'"'hi'"'"''`,
 			wantStdin:   "pw\n",
 		},
 	}
@@ -95,7 +95,7 @@ func TestWrapBecome(t *testing.T) {
 			name:        "sudo to non-root user with password",
 			cmd:         "id",
 			cfg:         BecomeConfig{Enabled: true, User: "postgres", Password: "pw"},
-			wantWrapped: "sudo -S -p '' -u 'postgres' sh -c 'id'",
+			wantWrapped: "sudo -S -p '' -u 'postgres' sh -c 'exec </dev/null; id'",
 			wantStdin:   "pw\n",
 		},
 		{

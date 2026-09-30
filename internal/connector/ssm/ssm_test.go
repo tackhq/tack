@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"io"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -293,8 +294,8 @@ func TestExecute_WithSudo(t *testing.T) {
 	_, _ = c.Execute(context.Background(), "apt update")
 	// Password is fed via a quoted heredoc (SSM has no stdin channel) rather
 	// than on the sudo command line — it must not sit before the pipe/argv.
-	assert.Contains(t, capturedCmd, "sudo -S -p '' sh -c 'apt update'")
-	assert.Contains(t, capturedCmd, "<<'TACK_SUDO_PW'\nsecret\nTACK_SUDO_PW")
+	assert.Contains(t, capturedCmd, "sudo -S -p '' sh -c 'exec </dev/null; apt update'")
+	assert.Regexp(t, `<<'(TACK_SUDO_PW_[0-9a-f]{24})'\nsecret\n(TACK_SUDO_PW_[0-9a-f]{24})$`, capturedCmd)
 }
 
 // Without the opt-in, Execute must fail rather than send the password to SSM.
@@ -743,7 +744,19 @@ func TestBuildCommand_SudoPasswordOptIn(t *testing.T) {
 	c := &Connector{sudo: true, sudoPassword: "secret"}
 	got, err := c.buildCommand("ls")
 	require.NoError(t, err)
-	assert.Equal(t, "sudo -S -p '' sh -c 'ls' <<'TACK_SUDO_PW'\nsecret\nTACK_SUDO_PW", got)
+	m := regexp.MustCompile(`^sudo -S -p '' sh -c 'exec </dev/null; ls' <<'(TACK_SUDO_PW_[0-9a-f]{24})'\nsecret\n(TACK_SUDO_PW_[0-9a-f]{24})$`).FindStringSubmatch(got)
+	require.NotNil(t, m, "unexpected command: %q", got)
+	assert.Equal(t, m[1], m[2], "heredoc must close with its own delimiter")
+}
+
+// A password containing a newline could terminate the heredoc early and run
+// the rest as shell commands, so it is refused.
+func TestBuildCommand_SudoPasswordNewlineRejected(t *testing.T) {
+	t.Setenv("TACK_SSM_ALLOW_SUDO_PASSWORD", "1")
+	c := &Connector{sudo: true, sudoPassword: "x\nTACK_SUDO_PW\nrm -rf /"}
+	_, err := c.buildCommand("ls")
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "rm -rf")
 }
 
 func TestShellQuote(t *testing.T) {

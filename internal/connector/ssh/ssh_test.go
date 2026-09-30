@@ -84,7 +84,7 @@ func TestBuildCommand(t *testing.T) {
 			sudo:          true,
 			sudoPassword:  "secret",
 			cmd:           "whoami",
-			expected:      "sudo -S -p '' sh -c 'whoami'",
+			expected:      "sudo -S -p '' sh -c 'exec </dev/null; whoami'",
 			expectedStdin: "secret\n",
 		},
 		{

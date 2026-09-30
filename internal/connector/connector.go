@@ -171,7 +171,11 @@ func WrapBecome(cmd string, cfg BecomeConfig, isRoot bool) (wrapped string, stdi
 			userFlag = "-u " + ShellQuote(cfg.User) + " "
 		}
 		if cfg.Password != "" {
-			return fmt.Sprintf("sudo -S -p '' %ssh -c '%s'", userFlag, escaped), []byte(cfg.Password + "\n")
+			// sudo only reads the password from stdin when it actually needs to
+			// authenticate. With NOPASSWD or a cached timestamp the unread
+			// password would be inherited by the wrapped command, so the inner
+			// shell detaches stdin before running it.
+			return fmt.Sprintf("sudo -S -p '' %ssh -c 'exec </dev/null; %s'", userFlag, escaped), []byte(cfg.Password + "\n")
 		}
 		return fmt.Sprintf("sudo %ssh -c '%s'", userFlag, escaped), nil
 	}
