@@ -244,9 +244,11 @@ tasks:
     sudo: false
 ```
 
-Provide the sudo password via `--sudo-password` flag, `TACK_SUDO_PASSWORD` env var, or the play-level `sudo_password` field. The interactive password prompt only appears when `-s`/`--sudo` is passed on the CLI — a playbook's own `sudo: true` does not trigger it, so passwordless sudo (NOPASSWD) keeps working without any prompt.
+Provide the sudo password via `TACK_SUDO_PASSWORD` env var, the play-level `sudo_password` field, or `--sudo-password` (with no value it prompts; avoid `--sudo-password=VALUE`, which exposes the password in process listings and shell history).
 
-> **Note:** Tack uses `sudo`, NOT `become`/`become_user` (those are Ansible-specific).
+When a run uses sudo (`-s`/`--sudo`, or `sudo: true` on a play or task) and no password was provided, tack prompts for it once, before the first play that needs it, and reuses it for the rest of the run. The prompt is skipped when stdin is not a terminal, or with `--no-sudo-prompt` / `TACK_SUDO_NO_PROMPT=1` for passwordless sudo (NOPASSWD).
+
+Escalation can target another user or method with `become_user` and `become_method` (`sudo`, `su`, `doas`) at play or task level. Only `sudo` accepts a password; `su` and `doas` require passwordless configuration.
 
 ## Complete Example
 
