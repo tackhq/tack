@@ -4,7 +4,9 @@ package ssm
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -534,8 +536,27 @@ func (c *Connector) buildCommand(cmd string) (string, error) {
 		return "", fmt.Errorf("refusing to send the sudo password over SSM: it would be recorded in SSM Run Command history and CloudTrail. " +
 			"Configure passwordless sudo (NOPASSWD) for SSM targets, or set TACK_SSM_ALLOW_SUDO_PASSWORD=1 to override (not recommended)")
 	}
+	// The password must be a single line: a newline would let it terminate
+	// the heredoc early and run the remainder as shell commands.
+	if strings.ContainsAny(c.sudoPassword, "\r\n") {
+		return "", fmt.Errorf("sudo password must not contain newline characters")
+	}
+	delim, err := heredocDelimiter()
+	if err != nil {
+		return "", err
+	}
 	// stdin already carries the trailing newline; the heredoc adds its own.
-	return fmt.Sprintf("%s <<'TACK_SUDO_PW'\n%sTACK_SUDO_PW", wrapped, stdin), nil
+	return fmt.Sprintf("%s <<'%s'\n%s%s", wrapped, delim, stdin, delim), nil
+}
+
+// heredocDelimiter returns a random heredoc terminator so no password
+// content can predict (and close) it.
+func heredocDelimiter() (string, error) {
+	b := make([]byte, 12)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("generate heredoc delimiter: %w", err)
+	}
+	return "TACK_SUDO_PW_" + hex.EncodeToString(b), nil
 }
 
 // sudoPasswordOverSSMAllowed reports whether the operator has explicitly
