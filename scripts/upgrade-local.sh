@@ -29,10 +29,16 @@ command -v gh >/dev/null || { echo "error: gh CLI is required" >&2; exit 1; }
 RUN_ID=$(gh run list -R "$REPO" --workflow Release --branch "$TAG" -L 1 \
   --json databaseId -q '.[0].databaseId // empty')
 if [ -z "$RUN_ID" ]; then
-  echo "error: no Release workflow run found for $TAG (was the tag pushed?)" >&2
-  exit 1
+  # The run lookup only serves to wait for an in-flight release; the release
+  # and tap checks below still verify the result, so carry on.
+  echo "warning: could not find the Release workflow run for $TAG; checking the published release directly" >&2
+  if [ -n "${GH_TOKEN:-}${GITHUB_TOKEN:-}" ]; then
+    echo "         (GH_TOKEN/GITHUB_TOKEN is set; it may lack Actions read access)" >&2
+  fi
+  STATUS="completed success"
+else
+  STATUS=$(gh run view -R "$REPO" "$RUN_ID" --json status,conclusion -q '.status + " " + .conclusion')
 fi
-STATUS=$(gh run view -R "$REPO" "$RUN_ID" --json status,conclusion -q '.status + " " + .conclusion')
 if [ "${STATUS%% *}" != "completed" ]; then
   echo "==> Waiting for Release workflow (run $RUN_ID)..."
   gh run watch -R "$REPO" "$RUN_ID" --exit-status --interval 20 >/dev/null || {
@@ -43,7 +49,9 @@ elif [ "${STATUS#* }" != "success" ]; then
   echo "error: Release workflow concluded '${STATUS#* }': $(gh run view -R "$REPO" "$RUN_ID" --json url -q .url)" >&2
   exit 1
 fi
-echo "==> Release workflow succeeded"
+if [ -n "$RUN_ID" ]; then
+  echo "==> Release workflow succeeded"
+fi
 
 # 2. GitHub release published
 gh release view -R "$REPO" "$TAG" --json url -q '"==> Published: " + .url' || {
