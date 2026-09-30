@@ -1,4 +1,4 @@
-.PHONY: build test test-integration test-docker test-docker-up test-docker-run test-docker-down lint clean run install release release-dry-run release-snapshot list
+.PHONY: build test test-integration test-docker test-docker-up test-docker-run test-docker-down lint clean run install release release-dry-run release-snapshot upgrade-local list
 
 list: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*##' $(MAKEFILE_LIST) | sort | awk -F ':.*## ' '{printf "  %-24s %s\n", $$1, $$2}'
@@ -103,6 +103,9 @@ release: ## Create and push a release tag
 		git push origin $(TAG) && \
 		echo "Release $(TAG) pushed. GitHub Actions will build and publish artifacts."; \
 	fi
+
+upgrade-local: ## Wait for a release (TAG=vX.Y.Z, default latest), verify the brew formula, upgrade local install
+	@scripts/upgrade-local.sh $(TAG)
 
 release-dry-run: ## Test release without publishing
 	goreleaser release --snapshot --clean --skip=publish
