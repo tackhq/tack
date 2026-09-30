@@ -82,3 +82,26 @@ func TestNeedsSudoPassword_NoPrompterErrors(t *testing.T) {
 		t.Fatal("expected an error when sudo is required but no prompter is available")
 	}
 }
+
+func TestNeedsSudoPassword_PromptsOncePerRun(t *testing.T) {
+	// A multi-play playbook must prompt once and reuse the answer, including
+	// an empty answer (passwordless sudo users pressing Enter).
+	for _, answer := range []string{"s3cret", ""} {
+		calls := 0
+		e := New()
+		e.PromptSudoPassword = func() (string, error) { calls++; return answer, nil }
+
+		plays := []*playbook.Play{{Sudo: true}, {Sudo: true}, {Sudo: true}}
+		for _, p := range plays {
+			if err := e.needsSudoPassword(p); err != nil {
+				t.Fatal(err)
+			}
+			if p.SudoPassword != answer {
+				t.Errorf("SudoPassword = %q, want %q", p.SudoPassword, answer)
+			}
+		}
+		if calls != 1 {
+			t.Errorf("answer %q: prompted %d times, want 1", answer, calls)
+		}
+	}
+}

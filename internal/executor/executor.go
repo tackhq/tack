@@ -112,6 +112,12 @@ type Executor struct {
 	// for users who've configured passwordless sudo.
 	SudoNoPrompt bool
 
+	// promptedSudoPassword caches the interactively prompted sudo password
+	// for the rest of the run so multi-play playbooks prompt only once.
+	// sudoPasswordPrompted distinguishes "prompted, empty" from "not yet".
+	promptedSudoPassword string
+	sudoPasswordPrompted bool
+
 	// PromptSSHPassword is called lazily by an SSH connector when it
 	// actually attempts password authentication (key/agent auth was
 	// unavailable or the server rejected it) and no --ssh-password /
@@ -2601,6 +2607,12 @@ func (e *Executor) needsSudoPassword(play *playbook.Play) error {
 		return nil
 	}
 
+	// Already prompted earlier in this run — reuse the answer.
+	if e.sudoPasswordPrompted {
+		play.SudoPassword = e.promptedSudoPassword
+		return nil
+	}
+
 	// Need a password — prompt for it
 	if e.PromptSudoPassword == nil {
 		return fmt.Errorf("sudo requires a password; use --sudo-password or configure passwordless sudo")
@@ -2611,6 +2623,8 @@ func (e *Executor) needsSudoPassword(play *playbook.Play) error {
 		return fmt.Errorf("failed to read sudo password: %w", err)
 	}
 
+	e.promptedSudoPassword = pass
+	e.sudoPasswordPrompted = true
 	play.SudoPassword = pass
 	return nil
 }
