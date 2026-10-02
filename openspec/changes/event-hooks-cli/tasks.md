@@ -71,6 +71,6 @@
 
 ## 10. Release
 
-- [ ] 10.1 Run `make lint` and `make test`
+- [ ] 10.1 Run `task lint` and `task test`
 - [ ] 10.2 Manual smoke: invoke a failing playbook with `--on-failure "cat > /tmp/tack-payload.json"` and verify payload
 - [ ] 10.3 Manual smoke: verify timeout kills a `sleep 60` hook with `--hook-timeout 1s`

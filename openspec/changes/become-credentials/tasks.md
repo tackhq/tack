@@ -60,4 +60,4 @@
 
 - [ ] 8.1 Rewrite the privilege-escalation docs (`docs/playbooks.md`, `docs/connectors.md`, `docs/ci-cd.md`, `llms.txt`) around "escalation vs credential", with the precedence table and a migration table
 - [ ] 8.2 Release notes: behavior changes (no prompt from `-s` alone, earlier non-TTY failure, probe) and deprecations
-- [ ] 8.3 Run `make test`, `make lint` and the integration tests (NOPASSWD and password-sudo containers)
+- [ ] 8.3 Run `task test`, `task lint` and the integration tests (NOPASSWD and password-sudo containers)

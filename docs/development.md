@@ -32,9 +32,10 @@ tack/
 ## Build & Run
 
 ```bash
-make build              # Build for current platform (output: ./bin/tack)
-make test               # Run unit tests with race detector
-make lint               # Run golangci-lint
+task build              # Build for current platform (output: ./bin/tack)
+task test               # Run unit tests
+task lint               # Run golangci-lint
+task --list             # Show all tasks
 go run ./cmd/tack       # Run directly without building
 ```
 
@@ -45,7 +46,7 @@ go run ./cmd/tack       # Run directly without building
 go test -short ./...
 
 # Integration tests (requires Docker)
-make test-integration
+task test-integration
 
 # Or directly
 go test -v ./tests/integration/...

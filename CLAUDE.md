@@ -4,9 +4,9 @@
 Tack is a Go-based configuration management and system bootstrapping tool inspired by Ansible. It supports local execution, SSH, and AWS SSM connectors.
 
 ## Build & Run
-- `make build` - Build the binary
-- `make test` - Run tests
-- `make lint` - Run linter (golangci-lint)
+- `task build` - Build the binary
+- `task test` - Run tests
+- `task lint` - Run linter (golangci-lint)
 - `go run ./cmd/tack` - Run directly
 
 ## Project Structure
@@ -80,7 +80,7 @@ Tack is a Go-based configuration management and system bootstrapping tool inspir
 - Go standard `testing` package
 - `github.com/stretchr/testify` v1.11.1 - Test assertions
 - `github.com/testcontainers/testcontainers-go` v0.40.0 - Docker-based integration tests
-- `make` - Build orchestration (`Makefile`)
+- `task` ([Task](https://taskfile.dev)) - Build orchestration (`Taskfile.yml`)
 - `golangci-lint` v1.64 - Linting (invoked in CI via `golangci/golangci-lint-action@v6`)
 - GoReleaser v2 - Release automation (`.goreleaser.yaml`)
 ## Key Dependencies
@@ -99,14 +99,14 @@ Tack is a Go-based configuration management and system bootstrapping tool inspir
 - No `.env` files; configuration is via CLI flags and environment variables
 - Environment variable prefix: `TACK_` (e.g., `TACK_CONNECTION`, `TACK_SSH_USER`, `TACK_SSH_KEY`, `TACK_SSH_PORT`, `TACK_SSH_PASSWORD`, `TACK_SSH_INSECURE`, `TACK_HOSTS`, `TACK_SSM_INSTANCES`, `TACK_SSM_TAGS`, `TACK_SSM_REGION`, `TACK_SSM_BUCKET`, `TACK_SUDO_PASSWORD`)
 - AWS credentials: standard AWS SDK credential chain (env vars, shared config, IAM roles)
-- `Makefile` - Primary build entry point
+- `Taskfile.yml` - Primary build entry point (`task --list`)
 - `.goreleaser.yaml` - Release builds with ldflags for version embedding
-- Version injected via ldflags: `-X main.version`, `-X main.commit`, `-X main.date` (see `Makefile` lines 12, `cmd/tack/main.go` lines 36-40)
+- Version injected via ldflags: `-X main.version`, `-X main.commit`, `-X main.date` (see `LDFLAGS` in `Taskfile.yml`, `cmd/tack/main.go` lines 36-40)
 ## Platform Requirements
 - Linux amd64, arm64
 - macOS (Darwin) amd64, arm64
 - Go 1.24+
-- `make`
+- `task` (go-task, `brew install go-task`)
 - `golangci-lint` (for linting)
 - Docker (for integration tests and `tack test` command)
 - `git` (for source fetching feature)

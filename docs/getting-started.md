@@ -22,7 +22,7 @@ go install github.com/tackhq/tack/cmd/tack@latest
 
 ```bash
 git clone https://github.com/tackhq/tack.git
-cd tack && make build
+cd tack && task build   # or: go build -o bin/tack ./cmd/tack
 # Binary at ./bin/tack
 ```
 

@@ -23,8 +23,13 @@ jobs:
       - name: Check go.mod is tidy
         run: go mod tidy -diff
 
+      - name: Set up Task
+        uses: go-task/setup-task@v2
+        with:
+          version: 3.x
+
       - name: Build
-        run: make build
+        run: task build
 
       - name: Verify binary
         run: ./bin/tack --version
@@ -74,8 +79,13 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
 
+      - name: Set up Task
+        uses: go-task/setup-task@v2
+        with:
+          version: 3.x
+
       - name: Validate example playbooks
-        run: make validate-examples
+        run: task validate-examples
 
   integration:
     runs-on: ubuntu-latest
@@ -87,5 +97,10 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
 
+      - name: Set up Task
+        uses: go-task/setup-task@v2
+        with:
+          version: 3.x
+
       - name: Run integration tests
-        run: make test-integration
+        run: task test-integration

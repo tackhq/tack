@@ -41,20 +41,20 @@ go install github.com/goreleaser/goreleaser/v2@latest
 
 ```bash
 # Check GoReleaser configuration
-make release-check
+task release-check
 
 # Test build without publishing
-make release-dry-run
+task release-dry-run
 
 # Create a snapshot release
-make release-snapshot
+task release-snapshot
 ```
 
 ### 2. Create Release Tag
 
 ```bash
 # Create and push a new tag
-make release TAG=v1.0.0
+task release TAG=v1.0.0
 ```
 
 This will:
