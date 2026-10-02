@@ -25,24 +25,6 @@ tasks:
       - mkdir -p {{.BUILD_DIR}}
       - go build -ldflags "{{.LDFLAGS}}" -o {{.BUILD_DIR}}/{{.BINARY}} ./cmd/tack
 
-  build-all:
-    desc: Build for all platforms
-    deps: [build-linux, build-darwin]
-
-  build-linux:
-    desc: Build for Linux (amd64, arm64)
-    cmds:
-      - mkdir -p {{.BUILD_DIR}}
-      - for: [amd64, arm64]
-        cmd: GOOS=linux GOARCH={{.ITEM}} go build -ldflags "{{.LDFLAGS}}" -o {{.BUILD_DIR}}/{{.BINARY}}-linux-{{.ITEM}} ./cmd/tack
-
-  build-darwin:
-    desc: Build for macOS (amd64, arm64)
-    cmds:
-      - mkdir -p {{.BUILD_DIR}}
-      - for: [amd64, arm64]
-        cmd: GOOS=darwin GOARCH={{.ITEM}} go build -ldflags "{{.LDFLAGS}}" -o {{.BUILD_DIR}}/{{.BINARY}}-darwin-{{.ITEM}} ./cmd/tack
-
   test:
     desc: Run unit tests
     cmds:
